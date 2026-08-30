@@ -1,0 +1,121 @@
+import os from 'node:os';
+import path from 'node:path';
+import { walkFiles, readJsonl } from '../fsutils.js';
+
+export const id = 'zcode';
+export const label = 'ZCode';
+
+export function sourceRoots({ env = process.env, home = os.homedir() } = {}) {
+  const base = env.ZCODE_HOME || path.join(home, '.zcode');
+  return [base];
+}
+
+// ZCode v2 keeps per-request usage in ~/.zcode/cli/db/db.sqlite
+// (model_usage table, joined with `session` for directory/title). The SQLite
+// database is the source of truth; ~/.zcode/cli/rollout/model-io-*.jsonl files
+// carry the same data and are only used when the database cannot be read
+// (e.g. Node without node:sqlite) so requests are never double counted.
+export async function collect({ env, home, roots } = {}) {
+  const scanRoots = roots ?? sourceRoots({ env, home });
+  const base = scanRoots[0];
+  const warnings = [];
+
+  const dbEntries = await collectFromDb(base, warnings);
+  if (dbEntries) return { entries: dbEntries, warnings };
+
+  const entries = await collectFromRollout(base);
+  return { entries, warnings };
+}
+
+async function collectFromDb(base, warnings) {
+  let db;
+  try {
+    const { DatabaseSync } = await import('node:sqlite');
+    db = new DatabaseSync(path.join(base, 'cli', 'db', 'db.sqlite'), { readOnly: true });
+  } catch (err) {
+    warnings.push(`zcode: database unreadable (${err.message}), falling back to rollout logs`);
+    return null;
+  }
+
+  try {
+    let rows;
+    try {
+      rows = db
+        .prepare(
+          `SELECT mu.session_id, mu.model_id, mu.started_at, mu.completed_at,
+                  mu.input_tokens, mu.output_tokens, mu.reasoning_tokens,
+                  mu.cache_creation_input_tokens, mu.cache_read_input_tokens,
+                  s.directory AS session_directory, s.title AS session_title
+           FROM model_usage mu LEFT JOIN session s ON s.id = mu.session_id`,
+        )
+        .all();
+    } catch (err) {
+      warnings.push(`zcode: model_usage table unavailable (${err.message})`);
+      return [];
+    }
+
+    const entries = [];
+    for (const r of rows) {
+      const input = r.input_tokens ?? 0;
+      const output = r.output_tokens ?? 0;
+      const cacheRead = r.cache_read_input_tokens ?? 0;
+      const cacheWrite = r.cache_creation_input_tokens ?? 0;
+      if (!input && !output && !cacheRead && !cacheWrite) continue;
+      entries.push({
+        client: id,
+        sessionId: r.session_id,
+        model: r.model_id || 'unknown',
+        timestamp: r.completed_at ?? r.started_at ?? null,
+        inputTokens: input,
+        outputTokens: output,
+        reasoningTokens: r.reasoning_tokens ?? 0,
+        cacheReadTokens: cacheRead,
+        cacheWriteTokens: cacheWrite,
+        costUsd: null,
+        directory: r.session_directory ?? null,
+        title: r.session_title ?? null,
+      });
+    }
+    return entries;
+  } finally {
+    try {
+      db.close();
+    } catch {
+      // ignore
+    }
+  }
+}
+
+async function collectFromRollout(base) {
+  const dir = path.join(base, 'cli', 'rollout');
+  const files = await walkFiles(dir, { filter: (name) => name.endsWith('.jsonl') });
+  const entries = [];
+
+  for (const file of files) {
+    await readJsonl(file, (o) => {
+      if (!o || o.type !== 'model_io') return;
+      const usage = o.response?.usage;
+      if (!usage) return;
+      const input = usage.inputTokens ?? 0;
+      const output = usage.outputTokens ?? 0;
+      const cacheRead = usage.cacheReadTokens ?? 0;
+      const cacheWrite = usage.cacheWriteTokens ?? 0;
+      if (!input && !output && !cacheRead && !cacheWrite) return;
+      entries.push({
+        client: id,
+        sessionId: o.sessionId || path.basename(file, '.jsonl'),
+        model: o.model?.modelId || 'unknown',
+        timestamp: o.completedAt ? Date.parse(o.completedAt) : o.startedAt ? Date.parse(o.startedAt) : null,
+        inputTokens: input,
+        outputTokens: output,
+        reasoningTokens: 0,
+        cacheReadTokens: cacheRead,
+        cacheWriteTokens: cacheWrite,
+        costUsd: null,
+        directory: null,
+        title: null,
+      });
+    });
+  }
+  return entries;
+}

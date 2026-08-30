@@ -1,0 +1,40 @@
+{
+  "name": "toksight",
+  "version": "0.1.0",
+  "description": "Track token usage, cost and cache hit rate of AI coding agents (ZCode, Claude Code, Codex, OpenCode, Gemini CLI) from your terminal.",
+  "type": "module",
+  "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
+  "bin": {
+    "toksight": "bin/toksight.js"
+  },
+  "files": [
+    "bin",
+    "src",
+    "README.md",
+    "README.zh-CN.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "test": "node --test",
+    "smoke": "node bin/toksight.js"
+  },
+  "keywords": [
+    "token",
+    "usage",
+    "cost",
+    "claude-code",
+    "codex",
+    "opencode",
+    "gemini",
+    "zcode",
+    "cli",
+    "analytics"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Sanstoolow0513/toksight.git"
+  }
+}

@@ -1,0 +1,143 @@
+# 🔭 toksight
+
+**Track token usage, cost and cache hit rate of AI coding agents — right from your terminal.**
+
+toksight reads the local session files your AI coding agents already write and turns them into
+totals, per-model / per-day / per-session breakdowns and cost estimates. It is a Node.js CLI with
+zero runtime dependencies. Phase 1 is stats only — no TUI.
+
+Inspired by [tokscale](https://github.com/junhoyeo/tokscale) (and in the same spirit as
+[ccusage](https://github.com/ryoppippi/ccusage)); the implementation is original. 中文文档见
+[README.zh-CN.md](./README.zh-CN.md)。
+
+## Supported agents
+
+| Client | Data source (default) | Env override |
+| --- | --- | --- |
+| ZCode | `~/.zcode/cli/db/db.sqlite`, fallback `~/.zcode/cli/rollout/*.jsonl` | `ZCODE_HOME` |
+| Claude Code | `~/.claude/projects/**/*.jsonl` | `CLAUDE_CONFIG_DIR` |
+| Codex CLI | `~/.codex/sessions/**/*.jsonl` | `CODEX_HOME` |
+| OpenCode | `~/.local/share/opencode/storage/message/**/*.json` | `OPENCODE_PATH` |
+| Gemini CLI | `~/.gemini/tmp/*/chats/*.json` | `GEMINI_CLI_HOME` |
+
+## Install
+
+```bash
+npm install -g toksight
+# or one-off
+npx toksight
+```
+
+Requires Node.js >= 20. On Node >= 22.5 the ZCode SQLite database is read with the built-in
+`node:sqlite`; older versions automatically fall back to ZCode rollout logs.
+
+## Usage
+
+```bash
+toksight              # overview: totals + per-client + top models
+toksight daily        # grouped by local day
+toksight monthly      # grouped by month
+toksight models       # grouped by model
+toksight sessions     # top sessions by cost
+toksight env          # show detected data sources + pricing state
+```
+
+Example (`toksight`):
+
+```
+Tokens 3,668,215  Cost $0.378  36 requests · 1 sessions
+input 1.87M · cache read 1.74M (48.2% hit · write 0) · output 55.9K
+range: all time · clients: all
+
+By client
+Client  Req  Sessions  Tokens    Cost
+──────  ───  ────────  ──────  ──────
+zcode    36         1   3.67M  $0.378
+
+Top models (up to 20)
+Client  Model          Req  Input  Cache R  Cache W  Output    Hit     Cost
+──────  ─────────────  ───  ─────  ───────  ──────  ──────  ─────  ───────
+zcode   GLM-5.3-Flash   35  1.86M    1.74M        0   55.8K  48.4%   $0.359
+zcode   GLM-5.3          1  13.8K        0        0     126   0.0%  $0.0199
+```
+
+### Options
+
+```
+--client <a,b>   only include these clients (zcode, claude, codex, opencode, gemini)
+--since <date>   local date (YYYY-MM-DD), inclusive
+--until <date>   local date (YYYY-MM-DD), inclusive
+--today --week --month   date shortcuts
+--top <n>        row limit for models/sessions tables (default 20)
+--json           machine-readable JSON on stdout
+--offline        skip the LiteLLM pricing fetch
+--no-color       disable ANSI colors
+```
+
+Day grouping and date filters use your **local** timezone.
+
+## Pricing
+
+Costs are computed per request from token counts, with three layers (later wins):
+
+1. **Built-in table** — best-effort USD-per-MTok estimates for common model families,
+   always available offline.
+2. **LiteLLM** — fetched from the community
+   [model prices](https://github.com/BerriAI/litellm/blob/main/model_prices_and_context_window.json)
+   list with a 1-hour disk cache at `<config>/toksight/cache/litellm-pricing.json`. This is the
+   freshest source; skip it with `--offline`.
+3. **User overrides** — edit `<config>/toksight/pricing.json` (per-MTok USD):
+
+   ```json
+   {
+     "my-model": { "input": 3, "output": 15, "cacheRead": 0.3, "cacheWrite": 3.75 }
+   }
+   ```
+
+   Model names match exactly or by provider suffix (`zhipuai/glm-5.3` also covers `GLM-5.3`).
+
+`<config>` is `%XDG_CONFIG_HOME% || ~/.config` (override with `TOKSIGHT_CONFIG_DIR`).
+Models without a price are still counted; their cost shows as `—` and they are listed under
+`pricing.unpricedModels` in JSON output. OpenCode costs reported by OpenCode itself are used as-is.
+
+### Cache hit rate
+
+`cacheRead / (freshInput + cacheRead)` — the share of prompt tokens served from cache. Cache
+*writes* are excluded (they are cold traffic being stored, not served).
+
+## Privacy
+
+toksight is local-first: it only **reads** session files on your machine and never sends your data
+anywhere. The single network call is the anonymous LiteLLM pricing fetch; run `--offline` to
+disable even that.
+
+## JSON output
+
+Every command accepts `--json` (e.g. `toksight daily --json`). Shape: `totals`, `cacheHitRate`,
+`clients`, `models`, `daily`, `monthly`, `sessions`, `pricing` (incl. `unpricedModels`), `warnings`.
+
+## Development
+
+```bash
+npm test        # node:test suite with per-client fixtures (no network needed)
+node bin/toksight.js   # run from source
+```
+
+```
+bin/toksight.js        executable entry
+src/cli.js             arg parsing, commands, rendering
+src/clients/           one parser per agent, normalized to a common entry shape
+src/pricing.js         built-in table + LiteLLM cache + user overrides
+src/aggregate.js       grouping/totals
+src/format.js          ANSI tables & number formatting
+```
+
+### Roadmap
+
+- [ ] TUI dashboard & watch mode (phase 2)
+- [ ] More clients (Cursor, Windsurf, pi…)
+- [ ] `--export csv`, leaderboard-style sharing
+
+## License
+
+MIT. Not affiliated with Zhipu AI, Anthropic, OpenAI or any agent vendor.

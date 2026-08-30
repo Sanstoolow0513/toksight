@@ -1,0 +1,1 @@
+{"uuid":"g-sess-1","name":"fixture chat","messages":[{"role":"user","content":"hello"},{"role":"model","timestamp":"2026-08-29T10:00:00.000Z","usageMetadata":{"promptTokenCount":500,"candidatesTokenCount":100,"thoughtsTokenCount":50,"cachedContentTokenCount":300,"totalTokenCount":650}}]}
