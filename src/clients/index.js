@@ -1,10 +1,11 @@
 import * as claude from './claude.js';
 import * as codex from './codex.js';
 import * as gemini from './gemini.js';
+import * as kimi from './kimi.js';
 import * as opencode from './opencode.js';
 import * as zcode from './zcode.js';
 
-export const clients = { zcode, claude, codex, opencode, gemini };
+export const clients = { zcode, claude, codex, opencode, gemini, kimi };
 
 export const clientAliases = {
   claude: 'claude',
@@ -12,6 +13,8 @@ export const clientAliases = {
   codex: 'codex',
   opencode: 'opencode',
   gemini: 'gemini',
+  kimi: 'kimi',
+  'kimi-code': 'kimi',
   zcode: 'zcode',
 };
 

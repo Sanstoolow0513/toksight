@@ -19,6 +19,7 @@ toksight 读取各 AI 编程智能体已经写在本地磁盘的会话文件，�
 | Codex CLI | `~/.codex/sessions/**/*.jsonl` | `CODEX_HOME` |
 | OpenCode | `~/.local/share/opencode/storage/message/**/*.json` | `OPENCODE_PATH` |
 | Gemini CLI | `~/.gemini/tmp/*/chats/*.json` | `GEMINI_CLI_HOME` |
+| Kimi Code | `~/.kimi-code/sessions/**/agents/*/wire.jsonl` | `KIMI_CODE_HOME` |
 
 ## 安装
 
@@ -65,7 +66,7 @@ zcode   GLM-5.3          1  13.8K        0        0     126   0.0%  $0.0199
 ### 参数
 
 ```
---client <a,b>   只统计指定客户端（zcode, claude, codex, opencode, gemini）
+--client <a,b>   只统计指定客户端（zcode, claude, codex, opencode, gemini, kimi）
 --since <date>   本地日期（YYYY-MM-DD），含当天
 --until <date>   本地日期（YYYY-MM-DD），含当天
 --today --week --month   日期快捷方式
