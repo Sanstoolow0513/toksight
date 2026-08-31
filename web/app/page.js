@@ -5,6 +5,8 @@ import { fmtTokens, fmtCost, fmtPct, fmtDateTime, fmtDuration } from '@/lib/form
 import Heatmap from '@/components/Heatmap';
 import TrendChart from '@/components/TrendChart';
 import Donut from '@/components/Donut';
+import RangeTable from '@/components/RangeTable';
+import ModelBars from '@/components/ModelBars';
 import { HourBars, MonthlyBars } from '@/components/Bars';
 
 const CLIENT_LABELS = {
@@ -27,14 +29,14 @@ function Section({ title, desc, children }) {
   );
 }
 
-function Kpi({ label, value, sub, accent }) {
+function Stat({ label, value, sub, accent }) {
   return (
-    <div className="card kpi">
-      <div className="kpi-label">{label}</div>
-      <div className="kpi-value" style={accent ? { color: accent } : undefined}>
+    <div className="stat">
+      <div className="stat-label">{label}</div>
+      <div className="stat-value" style={accent ? { color: accent } : undefined}>
         {value}
       </div>
-      {sub ? <div className="kpi-sub">{sub}</div> : null}
+      {sub ? <div className="stat-sub">{sub}</div> : null}
     </div>
   );
 }
@@ -46,6 +48,7 @@ const baseDir = (dir) => {
   return parts[parts.length - 1] || String(dir);
 };
 const clientLabel = (id) => CLIENT_LABELS[id] || id;
+const dateOnly = (ts) => (ts == null ? '—' : fmtDateTime(ts).slice(0, 10));
 
 export default function Page() {
   const [data, setData] = useState(null);
@@ -114,10 +117,11 @@ export default function Page() {
   const t = data.totals ?? {};
   const unpriced = data.pricing?.unpricedModels ?? [];
   const longest = data.longestSession;
-  const topAgent = agents[0];
   const heatDays = data.heatmap?.days ?? [];
-  const activeDays = heatDays.filter((d) => d.tokens > 0).length;
-  const peak = heatDays.reduce((best, d) => (!best || d.tokens > best.tokens ? d : best), null);
+  const activeWindowDays = heatDays.filter((d) => d.tokens > 0).length;
+  const windowPeak = heatDays.reduce((best, d) => (!best || d.tokens > best.tokens ? d : best), null);
+  const streaks = data.streaks ?? {};
+  const peakDay = data.peakDay;
   const filtered = Boolean(data.clientsFilter?.length || data.range?.since != null || data.range?.until != null);
 
   return (
@@ -168,35 +172,46 @@ export default function Page() {
         </div>
       ) : (
         <>
-          <div className="kpis">
-            <Kpi label="今日" value={fmtTokens(data.today?.tokens)} sub={`${fmtCost(data.today?.costUsd)} · ${data.today?.sessions ?? 0} 会话`} />
-            <Kpi label="近 7 天" value={fmtTokens(data.last7Days?.tokens)} sub={`${fmtCost(data.last7Days?.costUsd)} · ${data.last7Days?.sessions ?? 0} 会话`} />
-            <Kpi label="本月" value={fmtTokens(data.thisMonth?.tokens)} sub={`${fmtCost(data.thisMonth?.costUsd)} · ${data.thisMonth?.sessions ?? 0} 会话`} />
-            <Kpi label="全部 Tokens" value={fmtTokens(t.totalTokens)} sub={`${t.requests ?? 0} 次请求 · ${t.sessions ?? 0} 会话`} />
-            <Kpi label="全部费用" value={fmtCost(t.costUsd)} sub={unpriced.length ? `${unpriced.length} 个模型未定价` : '全部模型已定价'} />
-            <Kpi label="缓存命中率" value={fmtPct(data.cacheHitRate)} accent="var(--green)" sub={`缓存读 ${fmtTokens(t.cacheReadTokens)} tokens`} />
-            <Kpi
+          <div className="card stat-strip">
+            <Stat label="累计 Tokens" value={fmtTokens(t.totalTokens)} sub={`${t.requests ?? 0} 次请求 · ${t.sessions ?? 0} 会话`} />
+            <Stat label="总费用" value={fmtCost(t.costUsd)} sub={unpriced.length ? `${unpriced.length} 个模型未定价` : '全部模型已定价'} />
+            <Stat label="缓存命中率" value={fmtPct(data.cacheHitRate)} accent="var(--green)" sub={`缓存读 ${fmtTokens(t.cacheReadTokens)} tokens`} />
+            <Stat
+              label="活跃天数"
+              value={data.activeDays ?? activeWindowDays}
+              sub={data.activityRange?.firstAt ? `自 ${dateOnly(data.activityRange.firstAt)}` : '—'}
+            />
+            <Stat
+              label="连续活跃"
+              value={Number.isFinite(streaks.current) ? `${streaks.current} 天` : '—'}
+              sub={Number.isFinite(streaks.longest) ? `最长 ${streaks.longest} 天` : null}
+            />
+            <Stat
+              label="峰值日"
+              value={peakDay ? fmtTokens(peakDay.tokens) : '—'}
+              sub={peakDay?.date ?? (windowPeak?.tokens > 0 ? `${windowPeak.date} · ${fmtTokens(windowPeak.tokens)}` : null)}
+            />
+            <Stat
               label="最长会话"
               value={fmtDuration(longest?.durationMs)}
-              sub={longest ? `${clientLabel(longest.client)} · ${fmtTokens(longest.totalTokens)} tokens` : '—'}
-            />
-            <Kpi
-              label="最活跃 Agent"
-              value={topAgent ? clientLabel(topAgent.id) : '—'}
-              sub={topAgent ? `${fmtTokens(topAgent.totalTokens)} tokens · ${fmtCost(topAgent.costUsd)}` : '—'}
+              sub={longest ? `${clientLabel(longest.client)} · ${fmtTokens(longest.totalTokens)}` : '—'}
             />
           </div>
 
           <Section
-            title="活动热力图"
-            desc={`近 ${data.heatmap?.weeks ?? 53} 周 · 每日 tokens${activeDays ? ` · ${activeDays} 天有活动` : ''}${peak && peak.tokens > 0 ? ` · 峰值 ${peak.date}（${fmtTokens(peak.tokens)}）` : ''}`}
+            title="Token 活动"
+            desc={`近 ${data.heatmap?.weeks ?? 53} 周 · 每日 tokens${activeWindowDays ? ` · 本窗口 ${activeWindowDays} 天有活动` : ''}`}
           >
             <Heatmap heatmap={data.heatmap} />
           </Section>
 
+          <Section title="Token 趋势" desc="按天堆叠 · 新输入 / 缓存读取 / 缓存写入 / 输出">
+            <TrendChart trends={{ 7: data.trend7, 30: data.trend, 90: data.trend90 }} />
+          </Section>
+
           <div className="grid-2">
-            <Section title="近 30 天趋势" desc="按天堆叠 tokens">
-              <TrendChart trend={data.trend} />
+            <Section title="时间范围" desc="近期用量与占比">
+              <RangeTable data={data} totals={t} />
             </Section>
             <Section title="Agent 分布" desc="按 tokens 占比">
               <Donut
@@ -216,39 +231,43 @@ export default function Page() {
             </Section>
           </div>
 
-          <Section title="模型明细" desc="按费用排序">
-            <div className="table-scroll">
-              <table className="tbl">
-                <thead>
-                  <tr>
-                    <th>模型</th>
-                    <th>Agent</th>
-                    <th className="num">请求</th>
-                    <th className="num">输入</th>
-                    <th className="num">缓存读</th>
-                    <th className="num">缓存写</th>
-                    <th className="num">输出</th>
-                    <th className="num">命中率</th>
-                    <th className="num">费用</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {(data.models ?? []).map((m) => (
-                    <tr key={`${m.client}/${m.model}`}>
-                      <td className="mono">{m.model}</td>
-                      <td className="dim">{clientLabel(m.client)}</td>
-                      <td className="num">{m.requests}</td>
-                      <td className="num">{fmtTokens(m.inputTokens)}</td>
-                      <td className="num">{fmtTokens(m.cacheReadTokens)}</td>
-                      <td className="num">{fmtTokens(m.cacheWriteTokens)}</td>
-                      <td className="num">{fmtTokens(m.outputTokens)}</td>
-                      <td className="num">{fmtPct(m.cacheHitRate)}</td>
-                      <td className="num">{fmtCost(m.costUsd)}</td>
+          <Section title="模型用量" desc="跨 Agent 汇总 · 按 tokens 排序">
+            <ModelBars models={data.models ?? []} totalTokens={t.totalTokens} />
+            <details className="details">
+              <summary>按 Agent × 模型 展开明细</summary>
+              <div className="table-scroll">
+                <table className="tbl">
+                  <thead>
+                    <tr>
+                      <th>模型</th>
+                      <th>Agent</th>
+                      <th className="num">请求</th>
+                      <th className="num">输入</th>
+                      <th className="num">缓存读</th>
+                      <th className="num">缓存写</th>
+                      <th className="num">输出</th>
+                      <th className="num">命中率</th>
+                      <th className="num">费用</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody>
+                    {(data.models ?? []).map((m) => (
+                      <tr key={`${m.client}/${m.model}`}>
+                        <td className="mono">{m.model}</td>
+                        <td className="dim">{clientLabel(m.client)}</td>
+                        <td className="num">{m.requests}</td>
+                        <td className="num">{fmtTokens(m.inputTokens)}</td>
+                        <td className="num">{fmtTokens(m.cacheReadTokens)}</td>
+                        <td className="num">{fmtTokens(m.cacheWriteTokens)}</td>
+                        <td className="num">{fmtTokens(m.outputTokens)}</td>
+                        <td className="num">{fmtPct(m.cacheHitRate)}</td>
+                        <td className="num">{fmtCost(m.costUsd)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </details>
           </Section>
 
           <Section title="会话 Top" desc={`按 tokens 排序 · 前 ${data.topSessions?.length ?? 0} 个`}>

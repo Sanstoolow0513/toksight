@@ -114,15 +114,19 @@ session files on every request — data never leaves your machine.
 
 The dashboard includes:
 
-- **KPI cards** — today / last 7 days / this month / all-time tokens & cost, cache hit rate,
-  the longest session by wall-clock duration, and your most active agent
+- **Overview stat strip** — all-time tokens & cost, cache hit rate, active days, current/longest
+  activity streak, peak day and the longest session, in one compact row (no wall of KPI cards)
 - **Activity heatmap** — GitHub-style grid of daily token volume for the last ~53 weeks, with
   per-day tooltips (tokens, cost, sessions, requests)
-- **30-day stacked trend** — fresh input / cache reads / output per day
+- **Smooth stacked trend** — 7 / 30 / 90-day windows, fresh input / cache reads / cache writes /
+  output per day as a hoverable stacked area chart
+- **Compact ranges table** — today / last 7 days / last 30 days / this month as rows with cost,
+  sessions and share bars
 - **Agent donut, hourly & monthly histograms** — where your tokens and money go, by client,
   time of day and month
-- **Model & session tables** — per-model breakdown and top sessions by tokens with duration,
-  title, directory and cost
+- **Ranked model bars** — models aggregated across agents with tokens, cost and share; the
+  per-agent×model table remains as a collapsible detail
+- **Top sessions table** — by tokens with duration, title, directory and cost
 
 All filters (`--client`, `--since`, `--until`, `--today/--week/--month`) work for `web` too, and
 the page offers a manual refresh plus a 30s auto-refresh toggle.
@@ -160,8 +164,9 @@ Every command accepts `--json` (e.g. `toksight daily --json`). Shape: `totals`, 
 `clients`, `models`, `daily`, `monthly`, `sessions`, `pricing` (incl. `unpricedModels`), `warnings`.
 
 The web dashboard consumes the same payload (plus web-only extras such as `heatmap`, `trend`,
-`hourly`, `today`, `last7Days`, `thisMonth`, `topSessions`, `longestSession`, `activityRange`,
-`timezone`) from `GET /api/data` on its own origin.
+`trend7`, `trend90`, `hourly`, `today`, `last7Days`, `last30Days`, `thisMonth`, `activeDays`,
+`streaks`, `peakDay`, `topSessions`, `longestSession`, `activityRange`, `timezone`) from
+`GET /api/data` on its own origin.
 
 ## Development
 

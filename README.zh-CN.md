@@ -111,13 +111,17 @@ OpenCode 自带的价格（`cost` 字段）会被直接采用。
 
 仪表盘包含：
 
-- **KPI 卡片** — 今日 / 近 7 天 / 本月 / 全部 tokens 与费用、缓存命中率、
-  按真实时长推算的最长会话、最活跃的 agent
+- **概览统计条** — 全部 tokens 与费用、缓存命中率、活跃天数、当前/最长连续活跃、
+  峰值日、最长会话，一行紧凑排布（不再是一墙 KPI 卡片）
 - **活动热力图** — GitHub 风格的近 53 周每日 token 热力网格，悬停可看单日
   tokens、费用、会话数、请求数
-- **近 30 天趋势** — 每天的新输入 / 缓存读取 / 输出堆叠柱
+- **平滑堆叠趋势图** — 7 / 30 / 90 天窗口切换，按新输入 / 缓存读取 / 缓存写入 / 输出
+  堆叠成面积图，悬停查看每日明细
+- **时间范围紧凑表** — 今日 / 近 7 天 / 近 30 天 / 本月 一张小表呈现，含费用、会话与占比条
 - **Agent 环形图、按小时与按月直方图** — tokens 和费用流向了哪个客户端、哪个时段、哪个月
-- **模型与会话表格** — 按模型细分；按 tokens 排序的 Top 会话（含时长、标题、目录、费用）
+- **模型用量排行条** — 跨 Agent 汇总的模型排行（tokens、费用、占比）；Agent × 模型
+  明细表折叠保留
+- **会话 Top 表** — 按 tokens 排序的 Top 会话（含时长、标题、目录、费用）
 
 所有筛选参数（`--client`、`--since`、`--until`、`--today/--week/--month`）对 `web` 同样生效；
 页面支持手动刷新和 30 秒自动刷新开关。
@@ -152,8 +156,9 @@ LiteLLM 价格拉取；`--offline` 可以连它也关掉。
 所有命令都支持 `--json`（如 `toksight daily --json`）。结构包含：`totals`、`cacheHitRate`、
 `clients`、`models`、`daily`、`monthly`、`sessions`、`pricing`（含 `unpricedModels`）、`warnings`。
 
-网页仪表盘消费同一份载荷（外加 web 专属字段：`heatmap`、`trend`、`hourly`、`today`、
-`last7Days`、`thisMonth`、`topSessions`、`longestSession`、`activityRange`、`timezone`），
+网页仪表盘消费同一份载荷（外加 web 专属字段：`heatmap`、`trend`、`trend7`、`trend90`、
+`hourly`、`today`、`last7Days`、`last30Days`、`thisMonth`、`activeDays`、`streaks`、
+`peakDay`、`topSessions`、`longestSession`、`activityRange`、`timezone`），
 来自其同源的 `GET /api/data`。
 
 ## 开发
