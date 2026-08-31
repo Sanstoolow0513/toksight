@@ -127,6 +127,8 @@ The dashboard includes:
   time of day and month
 - **Ranked model bars** — models aggregated across agents with tokens, cost and share; the
   per-agent×model table remains as a collapsible detail
+- **Hit rate by agent** — an "All" tab compares every agent's cache hit rate (click a bar to drill
+  in), each agent tab shows the big rate plus that agent's per-model breakdown
 - **Top sessions table** — by tokens with duration, title, directory and cost
 
 All filters (`--client`, `--since`, `--until`, `--today/--week/--month`) work for `web` too, and
@@ -152,7 +154,9 @@ for UI development — run it alongside `npm run web:dev` in `web/`).
 ### Cache hit rate
 
 `cacheRead / (freshInput + cacheRead)` — the share of prompt tokens served from cache. Cache
-*writes* are excluded (they are cold traffic being stored, not served).
+*writes* are excluded (they are cold traffic being stored, not served). Stats are attributed per
+request, so a session that switched models splits cleanly across the per-agent / per-model views —
+a model's cache can only ever hit for that same model, so request-level attribution is exact.
 
 ## Privacy
 
@@ -164,6 +168,8 @@ disable even that.
 
 Every command accepts `--json` (e.g. `toksight daily --json`). Shape: `totals`, `cacheHitRate`,
 `clients`, `models`, `daily`, `monthly`, `sessions`, `pricing` (incl. `unpricedModels`), `warnings`.
+Each `clients` entry is that agent's totals plus its own `cacheHitRate`; the map is built from the
+filtered entries, so `--client` / `--since` / `--until` apply to it like every other slice.
 
 The web dashboard consumes the same payload (plus web-only extras such as `heatmap`, `trend`,
 `trend7`, `trend90`, `hourly`, `today`, `last7Days`, `last30Days`, `thisMonth`, `activeDays`,

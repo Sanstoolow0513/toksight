@@ -122,6 +122,8 @@ OpenCode 自带的价格（`cost` 字段）会被直接采用。
 - **Agent 环形图、按小时与按月直方图** — tokens 和费用流向了哪个客户端、哪个时段、哪个月
 - **模型用量排行条** — 跨 Agent 汇总的模型排行（tokens、费用、占比）；Agent × 模型
   明细表折叠保留
+- **Agent 命中率** — 「全部」标签对比各 Agent 的缓存命中率（点击条目钻取），单 Agent
+  标签展示大号命中率与该 Agent 的分模型明细
 - **会话 Top 表** — 按 tokens 排序的 Top 会话（含时长、标题、目录、费用）
 
 所有筛选参数（`--client`、`--since`、`--until`、`--today/--week/--month`）对 `web` 同样生效；
@@ -146,7 +148,9 @@ toksight web             # 启动服务
 ### 缓存命中率
 
 `cacheRead / (新鲜输入 + cacheRead)` — 即提示词 token 中由缓存服务的比例。缓存**写入**不计入
-分母（那是被存储的冷数据，不是被服务的流量）。
+分母（那是被存储的冷数据，不是被服务的流量）。统计按**每次请求**归因：一个会话中途切换模型，
+会被干净地拆分到分 Agent / 分模型视图里——缓存本来就绑定模型，A 模型的缓存不可能对 B 模型
+命中，因此按请求归属是精确的。
 
 ## 隐私
 
@@ -157,6 +161,8 @@ LiteLLM 价格拉取；`--offline` 可以连它也关掉。
 
 所有命令都支持 `--json`（如 `toksight daily --json`）。结构包含：`totals`、`cacheHitRate`、
 `clients`、`models`、`daily`、`monthly`、`sessions`、`pricing`（含 `unpricedModels`）、`warnings`。
+`clients` 的每一项是该 Agent 的 totals 外加它自己的 `cacheHitRate`；该映射由**过滤后**的
+entries 构建，`--client` / `--since` / `--until` 对它与其余切片一样生效。
 
 网页仪表盘消费同一份载荷（外加 web 专属字段：`heatmap`、`trend`、`trend7`、`trend90`、
 `hourly`、`today`、`last7Days`、`last30Days`、`thisMonth`、`activeDays`、`streaks`、

@@ -10,7 +10,7 @@ local dashboard (still no TUI).
 
 ## Commands
 
-- `node --test` (or `npm test`) — run the node:test suite (30 tests); uses per-client fixtures, no
+- `node --test` (or `npm test`) — run the node:test suite (34 tests); uses per-client fixtures, no
   network needed. Note: `node --test test/` with a directory arg fails with MODULE_NOT_FOUND on
   Node v24/Windows (the directory is treated as a module to load) — that's why the script passes
   no path; explicit file paths or a glob like `node --test "test/*.test.js"` also work.
@@ -40,10 +40,10 @@ src/format.js       ANSI tables & number formatting
 src/fsutils.js      walkFiles, streaming readJsonl, readJson, pathExists
 web/                Next.js (App Router, JS, no Tailwind) dashboard, statically exported to
                     web/out and served by the CLI; app/page.js + components/ (Heatmap,
-                    TrendChart, Donut, Bars, RangeTable, ModelBars) + lib/format.js +
-                    lib/i18n.js (zh-CN / en, localStorage `toksight-locale`); Vercel-style
-                    pure-black theme (design-spec.md v2), Geist fonts + lucide-react icons
-                    (build-time deps in web/package.json)
+                    TrendChart, Donut, Bars, RangeTable, ModelBars, AgentHitRate) +
+                    lib/format.js + lib/i18n.js (zh-CN / en, localStorage `toksight-locale`);
+                    Vercel-style pure-black theme (design-spec.md v2), Geist fonts +
+                    lucide-react icons (build-time deps in web/package.json)
 ```
 
 Each client parser exports `id`, `label`, `sourceRoots({ env, home })`, and
@@ -81,10 +81,14 @@ cost (only OpenCode does).
   API (`GET /api/data`) reuses this exact payload (via `buildPayload`) and layers the
   `src/webdata.js` extras on top (`heatmap, trend, hourly, today, last7Days, thisMonth,
   topSessions, longestSession, activityRange, timezone`); the extras are additive and must stay
-  backwards compatible too.
+  backwards compatible too. Each `clients` entry is that agent's totals plus its own
+  `cacheHitRate`, built via `agg.byClient` from the **filtered** entries, so `--client` /
+  `--since` / `--until` apply to it like every other slice (pinned by `test/payload.test.js`).
 - **Local timezone**: day grouping and `--since`/`--until` use the machine's local time, not UTC.
 - **Cache hit rate** = `cacheRead / (freshInput + cacheRead)`; cache *writes* are excluded
-  (they're cold traffic being stored, not served).
+  (they're cold traffic being stored, not served). Attributed **per request** — each entry carries
+  its own model and token split, so a session that switched models splits cleanly across the
+  per-agent / per-model views (a model's cache can only hit for that same model).
 - **Zero runtime dependencies**: do not add packages to the root CLI; use `node:` builtins.
   `web/` is the only place allowed to have dependencies (Next/React, build-time only).
 - **Web serving rules**: `toksight web` re-collects on every request (fresh data, no caching);
