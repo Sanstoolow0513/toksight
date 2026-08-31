@@ -6,16 +6,13 @@
 
 import { useState } from 'react';
 import { fmtTokens, fmtCost } from '@/lib/format';
+import { HEAT_MONTHS, HEAT_WEEKDAYS, t } from '@/lib/i18n';
 
-const LEVEL_COLORS = ['#151c26', '#0d2f5e', '#1450a3', '#2f81f7', '#79c0ff'];
-const CELL = 11;
-const GAP = 3;
+const CELL = 12;
+const GAP = 4;
 const PITCH = CELL + GAP;
-const LABEL_X = 34;
-const TOP = 18;
-
-const MONTHS = ['1月', '2月', '3月', '4月', '5月', '6月', '7月', '8月', '9月', '10月', '11月', '12月'];
-const WEEKDAYS = ['日', '一', '二', '三', '四', '五', '六'];
+const LABEL_X = 48;
+const TOP = 16;
 
 function levelOf(tokens, max) {
   if (tokens <= 0 || max <= 0) return 0;
@@ -30,10 +27,13 @@ function weekdayOf(date) {
   return new Date(Date.parse(`${date}T00:00:00`)).getDay();
 }
 
-export default function Heatmap({ heatmap }) {
+export default function Heatmap({ heatmap, locale = 'zh-CN' }) {
   const [tip, setTip] = useState(null);
-  if (!heatmap?.days?.length) return <div className="muted">暂无数据</div>;
+  const tr = (key, vars) => t(locale, key, vars);
+  if (!heatmap?.days?.length) return <div className="muted">{tr('heatEmpty')}</div>;
 
+  const months = HEAT_MONTHS[locale] ?? HEAT_MONTHS['zh-CN'];
+  const weekdays = HEAT_WEEKDAYS[locale] ?? HEAT_WEEKDAYS['zh-CN'];
   const { days, maxTokens } = heatmap;
   const cols = [];
   for (let i = 0; i < days.length; i += 7) cols.push(days.slice(i, i + 7));
@@ -42,7 +42,7 @@ export default function Heatmap({ heatmap }) {
   cols.forEach((col, ci) => {
     const firstOfMonth = col.find((d) => d.date.endsWith('-01'));
     if (firstOfMonth) {
-      monthLabels.push({ x: LABEL_X + ci * PITCH, label: MONTHS[Number(firstOfMonth.date.slice(5, 7)) - 1] });
+      monthLabels.push({ x: LABEL_X + ci * PITCH, label: months[Number(firstOfMonth.date.slice(5, 7)) - 1] });
     }
   });
 
@@ -52,43 +52,45 @@ export default function Heatmap({ heatmap }) {
   return (
     <div className="hm" onMouseLeave={() => setTip(null)}>
       <div className="hm-scroll">
-        <svg width={width} height={height} role="img" aria-label="每日活动热力图">
+        <svg width={width} height={height} role="img" aria-label={tr('heatAria')}>
           {monthLabels.map((m) => (
-            <text key={m.label + m.x} x={m.x} y={11} className="hm-text">
+            <text key={m.label + m.x} x={m.x} y="12" className="hm-text">
               {m.label}
             </text>
           ))}
-          {WEEKDAYS.map((w, i) =>
+          {weekdays.map((w, i) =>
             i % 2 === 1 ? (
-              <text key={w} x={LABEL_X - 7} y={TOP + i * PITCH + CELL} textAnchor="end" className="hm-text">
+              <text key={i} x={LABEL_X - 8} y={TOP + i * PITCH + CELL} textAnchor="end" className="hm-text">
                 {w}
               </text>
             ) : null,
           )}
           {cols.map((col, ci) =>
-            col.map((d, ri) => (
-              <rect
-                key={d.date}
-                x={LABEL_X + ci * PITCH}
-                y={TOP + ri * PITCH}
-                width={CELL}
-                height={CELL}
-                rx={2.5}
-                fill={LEVEL_COLORS[levelOf(d.tokens, maxTokens)]}
-                stroke={d.tokens > 0 ? 'none' : 'rgba(255,255,255,0.05)'}
-                onMouseEnter={(e) => setTip({ d, x: e.clientX, y: e.clientY })}
-                onMouseMove={(e) => setTip((t) => (t && t.d === d ? t : { d, x: e.clientX, y: e.clientY }))}
-              />
-            )),
+            col.map((d, ri) => {
+              const level = levelOf(d.tokens, maxTokens);
+              return (
+                <rect
+                  key={d.date}
+                  x={LABEL_X + ci * PITCH}
+                  y={TOP + ri * PITCH}
+                  width={CELL}
+                  height={CELL}
+                  rx="4"
+                  className={`heat-${level}${d.tokens > 0 ? '' : ' heat-empty'}`}
+                  onMouseEnter={(e) => setTip({ d, x: e.clientX, y: e.clientY })}
+                  onMouseMove={(e) => setTip((cur) => (cur && cur.d === d ? cur : { d, x: e.clientX, y: e.clientY }))}
+                />
+              );
+            }),
           )}
         </svg>
       </div>
       <div className="hm-legend">
-        <span>少</span>
-        {LEVEL_COLORS.map((c) => (
-          <i key={c} style={{ background: c }} />
+        <span>{tr('heatLess')}</span>
+        {[0, 1, 2, 3, 4].map((n) => (
+          <i key={n} className={`heat-${n}`} />
         ))}
-        <span>多</span>
+        <span>{tr('heatMore')}</span>
       </div>
       {tip && (
         <div
@@ -99,18 +101,18 @@ export default function Heatmap({ heatmap }) {
           }}
         >
           <div className="tip-title">
-            {tip.d.date} · 周{WEEKDAYS[weekdayOf(tip.d.date)]}
+            {tip.d.date} · {tr('heatWeekday', { day: weekdays[weekdayOf(tip.d.date)] })}
           </div>
           <div className="tip-row">
-            <span>Tokens</span>
+            <span>{tr('heatTokens')}</span>
             <b>{fmtTokens(tip.d.tokens)}</b>
           </div>
           <div className="tip-row">
-            <span>费用</span>
+            <span>{tr('heatCost')}</span>
             <b>{fmtCost(tip.d.costUsd)}</b>
           </div>
           <div className="tip-row">
-            <span>会话 / 请求</span>
+            <span>{tr('heatSessReq')}</span>
             <b>
               {tip.d.sessions} / {tip.d.requests}
             </b>

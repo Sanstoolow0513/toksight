@@ -29,9 +29,11 @@ npm run dev
 
 ## 结构
 
-- `app/page.js` — 仪表盘页面（客户端组件：KPI、热力图、趋势、Agent 分布、小时/月度分布、模型与会话表格）
-- `components/` — `Heatmap`（GitHub 风格活动热力图）、`TrendChart`（近 30 天堆叠柱）、`Donut`（Agent 占比）、`Bars`（小时/月度直方图）
+- `app/page.js` — 仪表盘页面（客户端组件：KPI、热力图、趋势、Agent 分布、小时/月度分布、模型与会话表格；中英切换）
+- `components/` — `Heatmap`、`TrendChart`、`Donut`、`Bars`、`RangeTable`、`ModelBars`
 - `lib/format.js` — 数字/时间格式化（与 CLI `src/format.js` 口径一致）
+- `lib/i18n.js` — 界面文案（`zh-CN` / `en`）
+- `lib/palette.js` — 分类色（与 `design-spec.md` / `globals.css` 的 `--color-cat-*` 对齐）
 - `next.config.mjs` — 静态导出 / dev 代理配置
 
 API 返回 `--json` 载荷外加 web 专属字段（`heatmap`、`trend`、`hourly`、`today`、

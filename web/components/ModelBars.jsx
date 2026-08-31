@@ -1,14 +1,15 @@
 'use client';
 
-// Cursor-style ranked model list: one row per model (aggregated across
-// agents) with tokens/cost/share and a comparable bar. The per-client×model
-// detail lives in the collapsible table below.
+// Ranked model list: one row per model (aggregated across agents) with
+// tokens/cost/share and a comparable bar. The per-client×model detail lives
+// in the collapsible table below.
 
 import { useMemo } from 'react';
 import { fmtTokens, fmtCost, fmtPct } from '@/lib/format';
 import { colorAt } from '@/lib/palette';
+import { t } from '@/lib/i18n';
 
-export default function ModelBars({ models = [], totalTokens = 0, limit = 8 }) {
+export default function ModelBars({ models = [], totalTokens = 0, limit = 8, locale = 'zh-CN' }) {
   const { rows, rest } = useMemo(() => {
     const merged = new Map();
     for (const m of models) {
@@ -23,7 +24,7 @@ export default function ModelBars({ models = [], totalTokens = 0, limit = 8 }) {
     return { rows: sorted.slice(0, limit), rest: sorted.slice(limit) };
   }, [models, limit]);
 
-  if (!rows.length) return <div className="muted">暂无数据</div>;
+  if (!rows.length) return <div className="muted">{t(locale, 'modelEmpty')}</div>;
   const max = Math.max(...rows.map((r) => r.tokens), 1);
   const restTokens = rest.reduce((s, r) => s + r.tokens, 0);
 
@@ -44,7 +45,12 @@ export default function ModelBars({ models = [], totalTokens = 0, limit = 8 }) {
               </span>
             </div>
             <div className="mrow-bar">
-              <i style={{ width: `${Math.max((r.tokens / max) * 100, 1)}%`, background: colorAt(i) }} />
+              <i
+                style={{
+                  width: `${Math.max((r.tokens / max) * 100, 1)}%`,
+                  '--bar-color': colorAt(i),
+                }}
+              />
             </div>
           </div>
         );
@@ -52,7 +58,7 @@ export default function ModelBars({ models = [], totalTokens = 0, limit = 8 }) {
       {rest.length > 0 && (
         <div className="mrow mrow-rest">
           <div className="mrow-top">
-            <span className="mrow-name">其余 {rest.length} 个模型</span>
+            <span className="mrow-name">{t(locale, 'modelRest', { n: rest.length })}</span>
             <span className="mrow-meta">
               <b>{fmtTokens(restTokens)}</b> tokens
             </span>

@@ -1,6 +1,26 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import {
+  Activity,
+  BarChart3,
+  CalendarDays,
+  CalendarRange,
+  CircleDollarSign,
+  Clock,
+  Database,
+  Filter,
+  Flame,
+  Inbox,
+  Layers,
+  ListOrdered,
+  PieChart,
+  RefreshCw,
+  Timer,
+  TrendingUp,
+  TriangleAlert,
+  Zap,
+} from 'lucide-react';
 import { fmtTokens, fmtCost, fmtPct, fmtDateTime, fmtDuration } from '@/lib/format';
 import Heatmap from '@/components/Heatmap';
 import TrendChart from '@/components/TrendChart';
@@ -8,6 +28,7 @@ import Donut from '@/components/Donut';
 import RangeTable from '@/components/RangeTable';
 import ModelBars from '@/components/ModelBars';
 import { HourBars, MonthlyBars } from '@/components/Bars';
+import { DEFAULT_LOCALE, readStoredLocale, t, writeStoredLocale } from '@/lib/i18n';
 
 const CLIENT_LABELS = {
   zcode: 'ZCode',
@@ -17,11 +38,19 @@ const CLIENT_LABELS = {
   gemini: 'Gemini CLI',
 };
 
-function Section({ title, desc, children }) {
+function coded(text) {
+  const parts = String(text).split(/`([^`]+)`/);
+  return parts.map((p, i) => (i % 2 ? <code key={i}>{p}</code> : p));
+}
+
+function Section({ icon: Icon, title, desc, children }) {
   return (
     <section className="card section">
       <div className="section-head">
-        <h2>{title}</h2>
+        <h2>
+          <Icon size={16} strokeWidth={2} />
+          {title}
+        </h2>
         {desc ? <span className="section-desc">{desc}</span> : null}
       </div>
       {children}
@@ -29,14 +58,32 @@ function Section({ title, desc, children }) {
   );
 }
 
-function Stat({ label, value, sub, accent }) {
+function Kpi({ icon: Icon, label, value, sub, accent }) {
   return (
-    <div className="stat">
-      <div className="stat-label">{label}</div>
-      <div className="stat-value" style={accent ? { color: accent } : undefined}>
-        {value}
+    <div className="kpi">
+      <div className="kpi-head">
+        <span className="kpi-label">{label}</span>
+        <span className={accent ? 'kpi-icon accent' : 'kpi-icon'}>
+          <Icon size={14} strokeWidth={2} />
+        </span>
       </div>
-      {sub ? <div className="stat-sub">{sub}</div> : null}
+      <div className={accent ? 'kpi-value accent' : 'kpi-value'}>{value}</div>
+      {sub ? <div className="kpi-sub">{sub}</div> : null}
+    </div>
+  );
+}
+
+function Substat({ icon: Icon, label, value, sub }) {
+  return (
+    <div className="substat">
+      <span className="substat-icon">
+        <Icon size={16} strokeWidth={2} />
+      </span>
+      <div className="substat-body">
+        <div className="substat-label">{label}</div>
+        <div className="substat-value">{value}</div>
+        {sub ? <div className="substat-sub">{sub}</div> : null}
+      </div>
     </div>
   );
 }
@@ -50,16 +97,67 @@ const baseDir = (dir) => {
 const clientLabel = (id) => CLIENT_LABELS[id] || id;
 const dateOnly = (ts) => (ts == null ? '—' : fmtDateTime(ts).slice(0, 10));
 
+function LangSwitch({ locale, onChange, label }) {
+  return (
+    <div className="seg" role="group" aria-label={label}>
+      <button type="button" className={locale === 'zh-CN' ? 'on' : ''} onClick={() => onChange('zh-CN')}>
+        中文
+      </button>
+      <button type="button" className={locale === 'en' ? 'on' : ''} onClick={() => onChange('en')}>
+        EN
+      </button>
+    </div>
+  );
+}
+
+function Skeleton() {
+  return (
+    <>
+      <div className="kpi-grid">
+        {[0, 1, 2, 3].map((i) => (
+          <div key={i} className="kpi">
+            <div className="skel" style={{ height: 14, width: 96, marginBottom: 16 }} />
+            <div className="skel" style={{ height: 30, width: 128 }} />
+            <div className="skel" style={{ height: 12, width: 160, marginTop: 12 }} />
+          </div>
+        ))}
+      </div>
+      {[0, 1].map((i) => (
+        <div key={i} className="skel-block">
+          <div className="skel" style={{ height: 16, width: 140, marginBottom: 20 }} />
+          <div className="skel" style={{ height: i === 0 ? 140 : 220 }} />
+        </div>
+      ))}
+    </>
+  );
+}
+
 export default function Page() {
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(true);
   const [auto, setAuto] = useState(false);
+  const [locale, setLocaleState] = useState(DEFAULT_LOCALE);
 
-  const load = useCallback(async () => {
+  const setLocale = useCallback((next) => {
+    setLocaleState(next);
+    writeStoredLocale(next);
+  }, []);
+
+  useEffect(() => {
+    setLocaleState(readStoredLocale());
+  }, []);
+
+  useEffect(() => {
+    document.documentElement.lang = locale;
+    document.title = t(locale, 'docTitle');
+  }, [locale]);
+
+  const load = useCallback(async (opts = {}) => {
+    if (!opts.silent) setLoading(true);
     try {
       const res = await fetch('/api/data', { cache: 'no-store' });
-      if (!res.ok) throw new Error(`API 返回 ${res.status}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
       setData(await res.json());
       setError(null);
     } catch (err) {
@@ -75,46 +173,80 @@ export default function Page() {
 
   useEffect(() => {
     if (!auto) return undefined;
-    const id = setInterval(load, 30_000);
+    const id = setInterval(() => load({ silent: true }), 30_000);
     return () => clearInterval(id);
   }, [auto, load]);
 
   const agents = useMemo(() => {
     if (!data?.clients) return [];
     return Object.entries(data.clients)
-      .map(([id, t]) => ({ id, ...t }))
+      .map(([id, row]) => ({ id, ...row }))
       .sort((a, b) => b.totalTokens - a.totalTokens);
   }, [data]);
 
-  if (error && !data) {
-    return (
-      <div className="wrap">
-        <div className="card error-card">
-          <h1>无法加载 toksight 数据</h1>
-          <p>
-            <code>/api/data</code> 请求失败：{error}
-          </p>
-          <p>
-            请通过 <code>toksight web</code> 打开本页面。开发模式下先运行{' '}
-            <code>node bin/toksight.js web --api-only</code>，再执行 <code>npm run web:dev</code>。
-          </p>
-          <button className="btn" onClick={load}>
-            重试
+  const tx = useCallback((key, vars) => t(locale, key, vars), [locale]);
+
+  const nav = (
+    <div className="topnav">
+      <div className="topnav-inner">
+        <div className="brand">
+          <h1 className="logo">
+            toksight<span className="logo-dot">.</span>
+          </h1>
+          <span className="live-badge">
+            <i className="live-dot" />
+            {tx('live')}
+          </span>
+        </div>
+        <div className="head-actions">
+          <LangSwitch locale={locale} onChange={setLocale} label={tx('langGroup')} />
+          <label className="auto-label">
+            <input type="checkbox" checked={auto} onChange={(e) => setAuto(e.target.checked)} />
+            {tx('autoRefresh')}
+          </label>
+          <button className="btn" type="button" onClick={load} disabled={loading}>
+            <RefreshCw size={14} strokeWidth={2} className={loading ? 'icon-spin' : undefined} />
+            {loading ? tx('refreshing') : tx('refresh')}
           </button>
         </div>
       </div>
+    </div>
+  );
+
+  if (error && !data) {
+    return (
+      <>
+        {nav}
+        <div className="wrap">
+          <div className="card error-card">
+            <h1>
+              <TriangleAlert size={18} strokeWidth={2} />
+              {tx('errorTitle')}
+            </h1>
+            <p>{coded(tx('errorFail', { error }))}</p>
+            <p>{coded(tx('errorHint'))}</p>
+            <button className="btn" type="button" onClick={load}>
+              <RefreshCw size={14} strokeWidth={2} />
+              {tx('retry')}
+            </button>
+          </div>
+        </div>
+      </>
     );
   }
 
   if (!data) {
     return (
-      <div className="wrap">
-        <p className="muted center">加载中…</p>
-      </div>
+      <>
+        {nav}
+        <div className="wrap">
+          <Skeleton />
+        </div>
+      </>
     );
   }
 
-  const t = data.totals ?? {};
+  const totals = data.totals ?? {};
   const unpriced = data.pricing?.unpricedModels ?? [];
   const longest = data.longestSession;
   const heatDays = data.heatmap?.days ?? [];
@@ -123,200 +255,228 @@ export default function Page() {
   const streaks = data.streaks ?? {};
   const peakDay = data.peakDay;
   const filtered = Boolean(data.clientsFilter?.length || data.range?.since != null || data.range?.until != null);
+  const heatDesc = [tx('heatDesc', { weeks: data.heatmap?.weeks ?? 53 }), activeWindowDays ? tx('heatActive', { n: activeWindowDays }) : null]
+    .filter(Boolean)
+    .join(' · ');
 
   return (
-    <div className="wrap">
-      <header className="head">
-        <div>
-          <h1 className="logo">
-            toksight<span className="logo-dot">.</span>
-          </h1>
-          <p className="head-sub">AI agent token 用量仪表盘{data.timezone ? ` · ${data.timezone}` : ''}</p>
-        </div>
-        <div className="head-actions">
-          <label className="auto-label">
-            <input type="checkbox" checked={auto} onChange={(e) => setAuto(e.target.checked)} />
-            自动刷新
-          </label>
-          <button className="btn" onClick={load} disabled={loading}>
-            {loading ? '刷新中…' : '刷新'}
-          </button>
-        </div>
-      </header>
+    <>
+      {nav}
+      <div className="wrap">
+        <p className="head-sub">
+          {tx('subtitle')}
+          {data.timezone ? ` · ${data.timezone}` : ''}
+        </p>
 
-      {data.warnings?.length > 0 && (
-        <div className="warn">
-          {data.warnings.map((w, i) => (
-            <div key={i}>⚠ {w}</div>
-          ))}
-        </div>
-      )}
-
-      {filtered && (
-        <div className="filter-note">
-          生效筛选：
-          {[
-            data.clientsFilter?.length ? `client = ${data.clientsFilter.map(clientLabel).join(', ')}` : null,
-            data.range?.since != null ? `since ${fmtDateTime(data.range.since).slice(0, 10)}` : null,
-            data.range?.until != null ? `until ${fmtDateTime(data.range.until).slice(0, 10)}` : null,
-          ]
-            .filter(Boolean)
-            .join(' · ')}
-        </div>
-      )}
-
-      {t.requests === 0 ? (
-        <div className="card error-card">
-          <h1>未找到会话数据</h1>
-          <p>先用你的 AI agent 跑几个会话，稍后刷新本页。也可以在终端运行 <code>toksight env</code> 查看各 agent 的扫描位置，或用 <code>--client</code> / <code>--since</code> 调整筛选。</p>
-        </div>
-      ) : (
-        <>
-          <div className="card stat-strip">
-            <Stat label="累计 Tokens" value={fmtTokens(t.totalTokens)} sub={`${t.requests ?? 0} 次请求 · ${t.sessions ?? 0} 会话`} />
-            <Stat label="总费用" value={fmtCost(t.costUsd)} sub={unpriced.length ? `${unpriced.length} 个模型未定价` : '全部模型已定价'} />
-            <Stat label="缓存命中率" value={fmtPct(data.cacheHitRate)} accent="var(--green)" sub={`缓存读 ${fmtTokens(t.cacheReadTokens)} tokens`} />
-            <Stat
-              label="活跃天数"
-              value={data.activeDays ?? activeWindowDays}
-              sub={data.activityRange?.firstAt ? `自 ${dateOnly(data.activityRange.firstAt)}` : '—'}
-            />
-            <Stat
-              label="连续活跃"
-              value={Number.isFinite(streaks.current) ? `${streaks.current} 天` : '—'}
-              sub={Number.isFinite(streaks.longest) ? `最长 ${streaks.longest} 天` : null}
-            />
-            <Stat
-              label="峰值日"
-              value={peakDay ? fmtTokens(peakDay.tokens) : '—'}
-              sub={peakDay?.date ?? (windowPeak?.tokens > 0 ? `${windowPeak.date} · ${fmtTokens(windowPeak.tokens)}` : null)}
-            />
-            <Stat
-              label="最长会话"
-              value={fmtDuration(longest?.durationMs)}
-              sub={longest ? `${clientLabel(longest.client)} · ${fmtTokens(longest.totalTokens)}` : '—'}
-            />
+        {data.warnings?.length > 0 && (
+          <div className="warn">
+            <TriangleAlert size={14} strokeWidth={2} />
+            <div>
+              {data.warnings.map((w, i) => (
+                <div key={i}>
+                  {tx('warnPrefix')}：{w}
+                </div>
+              ))}
+            </div>
           </div>
+        )}
 
-          <Section
-            title="Token 活动"
-            desc={`近 ${data.heatmap?.weeks ?? 53} 周 · 每日 tokens${activeWindowDays ? ` · 本窗口 ${activeWindowDays} 天有活动` : ''}`}
-          >
-            <Heatmap heatmap={data.heatmap} />
-          </Section>
+        {filtered && (
+          <div className="filter-note">
+            <Filter size={14} strokeWidth={2} />
+            <span>
+              {tx('filterNote')}
+              {[
+                data.clientsFilter?.length ? tx('filterClient', { clients: data.clientsFilter.map(clientLabel).join(', ') }) : null,
+                data.range?.since != null ? tx('filterSince', { date: fmtDateTime(data.range.since).slice(0, 10) }) : null,
+                data.range?.until != null ? tx('filterUntil', { date: fmtDateTime(data.range.until).slice(0, 10) }) : null,
+              ]
+                .filter(Boolean)
+                .join(' · ')}
+            </span>
+          </div>
+        )}
 
-          <Section title="Token 趋势" desc="按天堆叠 · 新输入 / 缓存读取 / 缓存写入 / 输出">
-            <TrendChart trends={{ 7: data.trend7, 30: data.trend, 90: data.trend90 }} />
-          </Section>
-
-          <div className="grid-2">
-            <Section title="时间范围" desc="近期用量与占比">
-              <RangeTable data={data} totals={t} />
-            </Section>
-            <Section title="Agent 分布" desc="按 tokens 占比">
-              <Donut
-                items={agents.map((a) => ({ name: clientLabel(a.id), value: a.totalTokens, costUsd: a.costUsd }))}
-                centerValue={fmtTokens(t.totalTokens)}
-                centerLabel="全部 tokens"
+        {totals.requests === 0 ? (
+          <div className="card error-card">
+            <h1>
+              <Inbox size={18} strokeWidth={2} />
+              {tx('emptyTitle')}
+            </h1>
+            <p>{coded(tx('emptyBody'))}</p>
+          </div>
+        ) : (
+          <>
+            <div className="kpi-grid">
+              <Kpi
+                icon={Zap}
+                label={tx('statTokens')}
+                value={fmtTokens(totals.totalTokens)}
+                sub={tx('statTokensSub', { requests: totals.requests ?? 0, sessions: totals.sessions ?? 0 })}
               />
-            </Section>
-          </div>
+              <Kpi
+                icon={CircleDollarSign}
+                label={tx('statCost')}
+                value={fmtCost(totals.costUsd)}
+                sub={unpriced.length ? tx('statCostUnpriced', { n: unpriced.length }) : tx('statCostPriced')}
+              />
+              <Kpi
+                icon={Database}
+                label={tx('statCache')}
+                value={fmtPct(data.cacheHitRate)}
+                accent
+                sub={tx('statCacheSub', { tokens: fmtTokens(totals.cacheReadTokens) })}
+              />
+              <Kpi
+                icon={CalendarDays}
+                label={tx('statActiveDays')}
+                value={data.activeDays ?? activeWindowDays}
+                sub={data.activityRange?.firstAt ? tx('statActiveSince', { date: dateOnly(data.activityRange.firstAt) }) : '—'}
+              />
+            </div>
 
-          <div className="grid-2">
-            <Section title="按小时分布" desc="当地时间 · tokens">
-              <HourBars hourly={data.hourly} />
-            </Section>
-            <Section title="按月分布" desc="全部历史 · tokens">
-              <MonthlyBars monthly={data.monthly} />
-            </Section>
-          </div>
+            <div className="card section substats">
+              <Substat
+                icon={Flame}
+                label={tx('statStreak')}
+                value={Number.isFinite(streaks.current) ? tx('statStreakValue', { n: streaks.current }) : '—'}
+                sub={Number.isFinite(streaks.longest) ? tx('statStreakLongest', { n: streaks.longest }) : null}
+              />
+              <Substat
+                icon={TrendingUp}
+                label={tx('statPeak')}
+                value={peakDay ? fmtTokens(peakDay.tokens) : '—'}
+                sub={peakDay?.date ?? (windowPeak?.tokens > 0 ? `${windowPeak.date} · ${fmtTokens(windowPeak.tokens)}` : null)}
+              />
+              <Substat
+                icon={Timer}
+                label={tx('statLongest')}
+                value={fmtDuration(longest?.durationMs)}
+                sub={longest ? `${clientLabel(longest.client)} · ${fmtTokens(longest.totalTokens)}` : '—'}
+              />
+            </div>
 
-          <Section title="模型用量" desc="跨 Agent 汇总 · 按 tokens 排序">
-            <ModelBars models={data.models ?? []} totalTokens={t.totalTokens} />
-            <details className="details">
-              <summary>按 Agent × 模型 展开明细</summary>
+            <Section icon={Activity} title={tx('heatTitle')} desc={heatDesc}>
+              <Heatmap heatmap={data.heatmap} locale={locale} />
+            </Section>
+
+            <Section icon={TrendingUp} title={tx('trendTitle')} desc={tx('trendDesc')}>
+              <TrendChart trends={{ 7: data.trend7, 30: data.trend, 90: data.trend90 }} locale={locale} />
+            </Section>
+
+            <div className="grid-2">
+              <Section icon={CalendarRange} title={tx('rangeTitle')} desc={tx('rangeDesc')}>
+                <RangeTable data={data} totals={totals} locale={locale} />
+              </Section>
+              <Section icon={PieChart} title={tx('donutTitle')} desc={tx('donutDesc')}>
+                <Donut
+                  locale={locale}
+                  items={agents.map((a) => ({ name: clientLabel(a.id), value: a.totalTokens, costUsd: a.costUsd }))}
+                  centerValue={fmtTokens(totals.totalTokens)}
+                  centerLabel={tx('donutCenter')}
+                />
+              </Section>
+            </div>
+
+            <div className="grid-2">
+              <Section icon={Clock} title={tx('hourTitle')} desc={tx('hourDesc')}>
+                <HourBars hourly={data.hourly} locale={locale} />
+              </Section>
+              <Section icon={BarChart3} title={tx('monthTitle')} desc={tx('monthDesc')}>
+                <MonthlyBars monthly={data.monthly} locale={locale} />
+              </Section>
+            </div>
+
+            <Section icon={Layers} title={tx('modelTitle')} desc={tx('modelDesc')}>
+              <ModelBars models={data.models ?? []} totalTokens={totals.totalTokens} locale={locale} />
+              <details className="details">
+                <summary>{tx('details')}</summary>
+                <div className="table-scroll">
+                  <table className="tbl">
+                    <thead>
+                      <tr>
+                        <th>{tx('thModel')}</th>
+                        <th>{tx('thAgent')}</th>
+                        <th className="num">{tx('thRequests')}</th>
+                        <th className="num">{tx('thInput')}</th>
+                        <th className="num">{tx('thCacheRead')}</th>
+                        <th className="num">{tx('thCacheWrite')}</th>
+                        <th className="num">{tx('thOutput')}</th>
+                        <th className="num">{tx('thHitRate')}</th>
+                        <th className="num">{tx('thCost')}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(data.models ?? []).map((m) => (
+                        <tr key={`${m.client}/${m.model}`}>
+                          <td className="mono">{m.model}</td>
+                          <td className="dim">{clientLabel(m.client)}</td>
+                          <td className="num">{m.requests}</td>
+                          <td className="num">{fmtTokens(m.inputTokens)}</td>
+                          <td className="num">{fmtTokens(m.cacheReadTokens)}</td>
+                          <td className="num">{fmtTokens(m.cacheWriteTokens)}</td>
+                          <td className="num">{fmtTokens(m.outputTokens)}</td>
+                          <td className="num">{fmtPct(m.cacheHitRate)}</td>
+                          <td className="num">{fmtCost(m.costUsd)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </details>
+            </Section>
+
+            <Section icon={ListOrdered} title={tx('sessTitle')} desc={tx('sessDesc', { n: data.topSessions?.length ?? 0 })}>
               <div className="table-scroll">
                 <table className="tbl">
                   <thead>
                     <tr>
-                      <th>模型</th>
-                      <th>Agent</th>
-                      <th className="num">请求</th>
-                      <th className="num">输入</th>
-                      <th className="num">缓存读</th>
-                      <th className="num">缓存写</th>
-                      <th className="num">输出</th>
-                      <th className="num">命中率</th>
-                      <th className="num">费用</th>
+                      <th>{tx('thSession')}</th>
+                      <th>{tx('thAgent')}</th>
+                      <th>{tx('thModel')}</th>
+                      <th>{tx('thStarted')}</th>
+                      <th className="num">{tx('thDuration')}</th>
+                      <th className="num">{tx('thTokens')}</th>
+                      <th className="num">{tx('thCost')}</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {(data.models ?? []).map((m) => (
-                      <tr key={`${m.client}/${m.model}`}>
-                        <td className="mono">{m.model}</td>
-                        <td className="dim">{clientLabel(m.client)}</td>
-                        <td className="num">{m.requests}</td>
-                        <td className="num">{fmtTokens(m.inputTokens)}</td>
-                        <td className="num">{fmtTokens(m.cacheReadTokens)}</td>
-                        <td className="num">{fmtTokens(m.cacheWriteTokens)}</td>
-                        <td className="num">{fmtTokens(m.outputTokens)}</td>
-                        <td className="num">{fmtPct(m.cacheHitRate)}</td>
-                        <td className="num">{fmtCost(m.costUsd)}</td>
+                    {(data.topSessions ?? []).map((s) => (
+                      <tr key={`${s.client}/${s.sessionId}`} title={s.directory || undefined}>
+                        <td>
+                          <div className="sess-title">{s.title || shortId(s.sessionId)}</div>
+                          {baseDir(s.directory) ? <div className="sess-dir">{baseDir(s.directory)}</div> : null}
+                        </td>
+                        <td className="dim">{clientLabel(s.client)}</td>
+                        <td className="dim mono">
+                          {s.models?.length ? `${s.models.slice(0, 2).join(', ')}${s.models.length > 2 ? ` +${s.models.length - 2}` : ''}` : '—'}
+                        </td>
+                        <td className="dim">{fmtDateTime(s.startedAt)}</td>
+                        <td className="num">{fmtDuration(s.durationMs)}</td>
+                        <td className="num">{fmtTokens(s.totalTokens)}</td>
+                        <td className="num">{fmtCost(s.costUsd)}</td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
-            </details>
-          </Section>
+            </Section>
+          </>
+        )}
 
-          <Section title="会话 Top" desc={`按 tokens 排序 · 前 ${data.topSessions?.length ?? 0} 个`}>
-            <div className="table-scroll">
-              <table className="tbl">
-                <thead>
-                  <tr>
-                    <th>会话</th>
-                    <th>Agent</th>
-                    <th>模型</th>
-                    <th>开始时间</th>
-                    <th className="num">时长</th>
-                    <th className="num">Tokens</th>
-                    <th className="num">费用</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {(data.topSessions ?? []).map((s) => (
-                    <tr key={`${s.client}/${s.sessionId}`} title={s.directory || undefined}>
-                      <td>
-                        <div className="sess-title">{s.title || shortId(s.sessionId)}</div>
-                        {baseDir(s.directory) ? <div className="sess-dir">{baseDir(s.directory)}</div> : null}
-                      </td>
-                      <td className="dim">{clientLabel(s.client)}</td>
-                      <td className="dim mono">
-                        {s.models?.length ? `${s.models.slice(0, 2).join(', ')}${s.models.length > 2 ? ` +${s.models.length - 2}` : ''}` : '—'}
-                      </td>
-                      <td className="dim">{fmtDateTime(s.startedAt)}</td>
-                      <td className="num">{fmtDuration(s.durationMs)}</td>
-                      <td className="num">{fmtTokens(s.totalTokens)}</td>
-                      <td className="num">{fmtCost(s.costUsd)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </Section>
-        </>
-      )}
-
-      <footer className="foot">
-        <span>
-          统计范围：
-          {data.activityRange?.firstAt ? `${fmtDateTime(data.activityRange.firstAt)} → ${fmtDateTime(data.activityRange.lastAt)}` : '—'}
-        </span>
-        <span>生成于 {fmtDateTime(data.generatedAt)}</span>
-        {unpriced.length > 0 && <span>未定价模型（按 0 计费）：{unpriced.join(', ')}</span>}
-        <span>toksight v{data.version} · 本地优先，数据不出你的机器</span>
-      </footer>
-    </div>
+        <footer className="foot">
+          <span>
+            {tx('footRange', {
+              range: data.activityRange?.firstAt
+                ? `${fmtDateTime(data.activityRange.firstAt)} → ${fmtDateTime(data.activityRange.lastAt)}`
+                : '—',
+            })}
+          </span>
+          <span>{tx('footGenerated', { time: fmtDateTime(data.generatedAt) })}</span>
+          {unpriced.length > 0 && <span>{tx('footUnpriced', { models: unpriced.join(', ') })}</span>}
+          <span>{tx('footLocal', { version: data.version })}</span>
+        </footer>
+      </div>
+    </>
   );
 }

@@ -9,19 +9,21 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { fmtTokens, fmtCost } from '@/lib/format';
+import { t as tr } from '@/lib/i18n';
 
-const CLASSES = [
-  { key: 'input', label: '新输入', color: '#58a6ff' },
-  { key: 'cacheRead', label: '缓存读取', color: '#3fb950' },
-  { key: 'cacheWrite', label: '缓存写入', color: '#bc8cff' },
-  { key: 'output', label: '输出', color: '#d29922' },
-];
+const CLASS_KEYS = ['input', 'cacheRead', 'cacheWrite', 'output'];
+const CLASS_LABEL_KEYS = {
+  input: 'trendInput',
+  cacheRead: 'trendCacheRead',
+  cacheWrite: 'trendCacheWrite',
+  output: 'trendOutput',
+};
 
 const PAD_L = 48;
 const PAD_R = 12;
 const PAD_T = 12;
-const PAD_B = 26;
-const HEIGHT = 260;
+const PAD_B = 24;
+const HEIGHT = 256;
 
 function useWidth() {
   const ref = useRef(null);
@@ -75,22 +77,22 @@ function niceStep(rough) {
 
 const shortDate = (date) => `${Number(date.slice(5, 7))}/${Number(date.slice(8, 10))}`;
 
-export default function TrendChart({ trends = {} }) {
+export default function TrendChart({ trends = {}, locale = 'zh-CN' }) {
   const options = [
-    { days: 7, label: '近 7 天', rows: trends[7] },
-    { days: 30, label: '近 30 天', rows: trends[30] },
-    { days: 90, label: '近 90 天', rows: trends[90] },
+    { days: 7, labelKey: 'trend7', rows: trends[7] },
+    { days: 30, labelKey: 'trend30', rows: trends[30] },
+    { days: 90, labelKey: 'trend90', rows: trends[90] },
   ].filter((o) => Array.isArray(o.rows) && o.rows.length > 0);
   const [days, setDays] = useState(null);
   const [ref, width] = useWidth();
   const [hover, setHover] = useState(null);
 
-  if (!options.length) return <div className="muted">暂无数据</div>;
+  if (!options.length) return <div className="muted">{tr(locale, 'trendEmpty')}</div>;
   const active = options.find((o) => o.days === days) || options.find((o) => o.days === 30) || options[0];
   const rows = active.rows;
   const n = rows.length;
 
-  const totals = rows.map((d) => CLASSES.reduce((s, c) => s + (d[c.key] || 0), 0));
+  const totals = rows.map((d) => CLASS_KEYS.reduce((s, key) => s + (d[key] || 0), 0));
   const maxVal = Math.max(...totals, 1);
   const step = niceStep(maxVal / 3.5);
   const top = Math.max(Math.ceil(maxVal / step) * step, step);
@@ -103,11 +105,10 @@ export default function TrendChart({ trends = {} }) {
   const y = (v) => PAD_T + innerH * (1 - v / top);
   const baseY = y(0);
 
-  // Cumulative sums per class, bottom of stack first; drawn top-most first.
   const cumulatives = [];
   let acc = rows.map(() => 0);
-  for (const c of CLASSES) {
-    acc = acc.map((v, i) => v + (rows[i][c.key] || 0));
+  for (const key of CLASS_KEYS) {
+    acc = acc.map((v, i) => v + (rows[i][key] || 0));
     cumulatives.push(acc.slice());
   }
 
@@ -117,41 +118,37 @@ export default function TrendChart({ trends = {} }) {
   const windowCost = rows.reduce((s, d) => s + (d.costUsd || 0), 0);
 
   const pick = (e) => {
+    // The overlay rect already starts at PAD_L, so rect.left includes the
+    // left padding — do not subtract it again.
     const rect = e.currentTarget.getBoundingClientRect();
-    const rel = (e.clientX - rect.left - PAD_L) / innerW;
+    const rel = (e.clientX - rect.left) / rect.width;
     const i = Math.max(0, Math.min(n - 1, Math.round(rel * (n - 1))));
     setHover({ i, x: e.clientX, y: e.clientY });
   };
 
+  const labelOf = (key) => tr(locale, CLASS_LABEL_KEYS[key]);
+
   return (
     <div>
       <div className="trend-head">
-        <div className="seg" role="tablist" aria-label="时间范围">
+        <div className="seg" role="tablist" aria-label={tr(locale, 'trendRange')}>
           {options.map((o) => (
-            <button key={o.days} role="tab" aria-selected={o.days === active.days} className={o.days === active.days ? 'on' : ''} onClick={() => setDays(o.days)}>
-              {o.label}
+            <button key={o.days} type="button" role="tab" aria-selected={o.days === active.days} className={o.days === active.days ? 'on' : ''} onClick={() => setDays(o.days)}>
+              {tr(locale, o.labelKey)}
             </button>
           ))}
         </div>
         <span className="trend-sum">
-          合计 <b>{fmtTokens(windowTokens)}</b> tokens · {fmtCost(windowCost)}
+          {tr(locale, 'trendTotal')} <b>{fmtTokens(windowTokens)}</b> tokens · {fmtCost(windowCost)}
         </span>
       </div>
       <div ref={ref} className="trend-chart" onMouseLeave={() => setHover(null)}>
         {width > 0 && (
-          <svg width={width} height={HEIGHT} role="img" aria-label="每日 tokens 堆叠面积图">
-            <defs>
-              {CLASSES.map((c) => (
-                <linearGradient key={c.key} id={`tg-${c.key}`} x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor={c.color} stopOpacity="0.8" />
-                  <stop offset="100%" stopColor={c.color} stopOpacity="0.35" />
-                </linearGradient>
-              ))}
-            </defs>
+          <svg width={width} height={HEIGHT} role="img" aria-label={tr(locale, 'trendAria')}>
             {ticks.map((v) => (
               <g key={v}>
                 <line x1={PAD_L} x2={width - PAD_R} y1={y(v)} y2={y(v)} className="tc-grid" />
-                <text x={PAD_L - 7} y={y(v) + 3.5} textAnchor="end" className="tc-text">
+                <text x={PAD_L - 8} y={y(v) + 4} textAnchor="end" className="tc-text">
                   {fmtTokens(v)}
                 </text>
               </g>
@@ -159,13 +156,13 @@ export default function TrendChart({ trends = {} }) {
             <line x1={PAD_L} x2={width - PAD_R} y1={baseY} y2={baseY} className="tc-axis" />
             {[...cumulatives].reverse().map((cum, rev) => {
               const k = cumulatives.length - 1 - rev;
-              const c = CLASSES[k];
+              const key = CLASS_KEYS[k];
               const pts = cum.map((v, i) => [x(i), y(v)]);
               const d = `${monotonePath(pts)}L${x(n - 1)},${baseY} L${x(0)},${baseY} Z`;
-              return <path key={c.key} d={d} fill={`url(#tg-${c.key})`} stroke={c.color} strokeWidth="1" strokeOpacity="0.9" />;
+              return <path key={key} d={d} className={`trend-band-${key}`} strokeWidth="1" strokeOpacity="0.9" />;
             })}
             {xTickIdx.map((i) => (
-              <text key={i} x={x(i)} y={HEIGHT - 7} textAnchor={i === 0 ? 'start' : i === n - 1 ? 'end' : 'middle'} className="tc-text">
+              <text key={i} x={x(i)} y={HEIGHT - 8} textAnchor={i === 0 ? 'start' : i === n - 1 ? 'end' : 'middle'} className="tc-text">
                 {shortDate(rows[i].date)}
               </text>
             ))}
@@ -173,7 +170,7 @@ export default function TrendChart({ trends = {} }) {
               <line x1={x(hover.i)} x2={x(hover.i)} y1={PAD_T} y2={baseY} className="tc-guide" />
             )}
             {hover && (
-              <circle cx={x(hover.i)} cy={y(totals[hover.i])} r="3" fill="#e6edf3" stroke="#0d1117" strokeWidth="1.5" />
+              <circle cx={x(hover.i)} cy={y(totals[hover.i])} r="3" className="trend-dot" strokeWidth="1.5" />
             )}
             <rect
               x={PAD_L}
@@ -194,24 +191,22 @@ export default function TrendChart({ trends = {} }) {
               top: hover.y + 14,
             }}
           >
-            <div className="tip-title">
-              {rows[hover.i].date}
-            </div>
-            {CLASSES.slice().reverse().map((c) => (
-              <div key={c.key} className="tip-row">
+            <div className="tip-title">{rows[hover.i].date}</div>
+            {[...CLASS_KEYS].reverse().map((key) => (
+              <div key={key} className="tip-row">
                 <span>
-                  <i className="tip-dot" style={{ background: c.color }} />
-                  {c.label}
+                  <i className={`tip-dot tip-dot-${key}`} />
+                  {labelOf(key)}
                 </span>
-                <b>{fmtTokens(rows[hover.i][c.key] || 0)}</b>
+                <b>{fmtTokens(rows[hover.i][key] || 0)}</b>
               </div>
             ))}
             <div className="tip-row tip-total">
-              <span>合计</span>
+              <span>{tr(locale, 'trendTotal')}</span>
               <b>{fmtTokens(totals[hover.i])}</b>
             </div>
             <div className="tip-row">
-              <span>费用 / 会话</span>
+              <span>{tr(locale, 'trendCostSess')}</span>
               <b>
                 {fmtCost(rows[hover.i].costUsd)} · {rows[hover.i].sessions}
               </b>
@@ -220,10 +215,10 @@ export default function TrendChart({ trends = {} }) {
         )}
       </div>
       <div className="legend-row">
-        {CLASSES.map((c) => (
-          <span key={c.key}>
-            <i style={{ background: c.color }} />
-            {c.label}
+        {CLASS_KEYS.map((key) => (
+          <span key={key}>
+            <i className={`tip-dot-${key}`} />
+            {labelOf(key)}
           </span>
         ))}
       </div>

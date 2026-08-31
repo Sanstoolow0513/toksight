@@ -1,16 +1,17 @@
 'use client';
 
-// Cursor-style compact ranges table: today / 7d / 30d / this month as rows
-// (not big KPI cards), with an inline share bar against the busiest range.
+// Compact ranges table: today / 7d / 30d / this month as rows, with an
+// inline share bar against the busiest range.
 
 import { fmtTokens, fmtCost, fmtPct } from '@/lib/format';
+import { t } from '@/lib/i18n';
 
-export default function RangeTable({ data, totals }) {
+export default function RangeTable({ data, totals, locale = 'zh-CN' }) {
   const rows = [
-    { key: 'today', label: '今日', r: data?.today },
-    { key: '7d', label: '近 7 天', r: data?.last7Days },
-    { key: '30d', label: '近 30 天', r: data?.last30Days },
-    { key: 'month', label: '本月', r: data?.thisMonth },
+    { key: 'today', label: t(locale, 'rangeToday'), r: data?.today },
+    { key: '7d', label: t(locale, 'range7d'), r: data?.last7Days },
+    { key: '30d', label: t(locale, 'range30d'), r: data?.last30Days },
+    { key: 'month', label: t(locale, 'rangeMonth'), r: data?.thisMonth },
   ];
   const grand = Number(totals?.totalTokens) || 0;
   const max = Math.max(...rows.map((x) => x.r?.tokens || 0), 1);
@@ -19,11 +20,11 @@ export default function RangeTable({ data, totals }) {
     <table className="tbl rtable">
       <thead>
         <tr>
-          <th>范围</th>
-          <th className="num">Tokens</th>
-          <th className="num">费用</th>
-          <th className="num">会话</th>
-          <th className="num rt-share">占全部</th>
+          <th>{t(locale, 'rangeHeadRange')}</th>
+          <th className="num">{t(locale, 'rangeHeadTokens')}</th>
+          <th className="num">{t(locale, 'rangeHeadCost')}</th>
+          <th className="num">{t(locale, 'rangeHeadSessions')}</th>
+          <th className="num rt-share">{t(locale, 'rangeHeadShare')}</th>
         </tr>
       </thead>
       <tbody>
