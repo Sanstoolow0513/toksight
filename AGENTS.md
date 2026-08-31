@@ -5,29 +5,42 @@
 `toksight` — a Node.js CLI (zero runtime dependencies, ESM only, Node >= 20) that tracks token
 usage, cost, and cache hit rate of AI coding agents by reading the local session files those
 agents already write. Local-first: it only reads; the sole network call is the LiteLLM pricing
-fetch (skippable with `--offline`). Phase 1 is stats only — no TUI.
+fetch (skippable with `--offline`). Phase 1 (stats) is done; phase 2 adds the `toksight web`
+local dashboard (still no TUI).
 
 ## Commands
 
-- `node --test` (or `npm test`) — run the node:test suite (12 tests); uses per-client fixtures, no
+- `node --test` (or `npm test`) — run the node:test suite (27 tests); uses per-client fixtures, no
   network needed. Note: `node --test test/` with a directory arg fails with MODULE_NOT_FOUND on
   Node v24/Windows (the directory is treated as a module to load) — that's why the script passes
   no path; explicit file paths or a glob like `node --test "test/*.test.js"` also work.
 - `node bin/toksight.js` (or `npm run smoke`) — run the CLI from source against real agent data.
+- `npm run web:build` — build the dashboard's static export into `web/out/` (runs
+  `npm install && npm run build` inside `web/`; needs network the first time). Required once
+  before `toksight web` shows the UI; until then `/` serves a setup page while `/api/data` works.
+- `npm run web:dev` — Next dev server for the dashboard; needs `node bin/toksight.js web
+  --api-only` running (default port 4729, proxied via `TOKSIGHT_DEV_API` in `web/next.config.mjs`).
 - No linter or typechecker is configured; plain JavaScript ESM throughout (no TypeScript).
-- No dependencies to install — the repo has zero runtime deps (`package-lock.json` only records
-  the root package).
+- The **root CLI keeps zero runtime deps** (`package-lock.json` only records the root package);
+  dashboard dependencies live solely in `web/package.json` and are build-time only.
 
 ## Architecture
 
 ```
 bin/toksight.js     executable entry, calls src/cli.js main()
-src/cli.js          arg parsing, commands, all rendering (text + --json)
+src/cli.js          arg parsing, commands, all rendering (text + --json); buildPayload feeds
+                    both --json and the web API
 src/clients/        one parser per agent, registered in src/clients/index.js
 src/pricing.js      3-layer pricing: builtin table → LiteLLM (1h disk cache) → user overrides
 src/aggregate.js    grouping/totals (summarize, byModel/Day/Month/Session, cacheHitRate)
+src/webdata.js      web-dashboard aggregations over entries (heatmap, trend, hourly,
+                    today/last7Days/thisMonth, topSessions, longestSession) — pure functions
+src/webserver.js    zero-dep node:http server: static web/out + live /api/data
 src/format.js       ANSI tables & number formatting
 src/fsutils.js      walkFiles, streaming readJsonl, readJson, pathExists
+web/                Next.js (App Router, JS, no Tailwind) dashboard, statically exported to
+                    web/out and served by the CLI; app/page.js + components/ (Heatmap,
+                    TrendChart, Donut, Bars) + lib/format.js
 ```
 
 Each client parser exports `id`, `label`, `sourceRoots({ env, home })`, and
@@ -59,19 +72,29 @@ cost (only OpenCode does).
   directly, so tests can point them at fixtures (e.g. `ZCODE_HOME`, `CLAUDE_CONFIG_DIR`,
   `CODEX_HOME`, `OPENCODE_PATH`, `GEMINI_CLI_HOME`).
 - **`--json` output is a user-facing contract**: shape is `totals, cacheHitRate, clients, models,
-  daily, monthly, sessions, pricing (incl. unpricedModels), warnings` — don't break it.
+  daily, monthly, sessions, pricing (incl. unpricedModels), warnings` — don't break it. The web
+  API (`GET /api/data`) reuses this exact payload (via `buildPayload`) and layers the
+  `src/webdata.js` extras on top (`heatmap, trend, hourly, today, last7Days, thisMonth,
+  topSessions, longestSession, activityRange, timezone`); the extras are additive and must stay
+  backwards compatible too.
 - **Local timezone**: day grouping and `--since`/`--until` use the machine's local time, not UTC.
 - **Cache hit rate** = `cacheRead / (freshInput + cacheRead)`; cache *writes* are excluded
   (they're cold traffic being stored, not served).
-- **Zero runtime dependencies**: do not add packages; use `node:` builtins.
+- **Zero runtime dependencies**: do not add packages to the root CLI; use `node:` builtins.
+  `web/` is the only place allowed to have dependencies (Next/React, build-time only).
+- **Web serving rules**: `toksight web` re-collects on every request (fresh data, no caching);
+  binds 127.0.0.1 by default (never 0.0.0.0 by default); static assets under `web/out/_next/`
+  are immutable-cached, everything else `no-cache`; path traversal is rejected (403); if
+  `web/out/index.html` is missing, `/` serves the built-in setup page instead of failing.
 - Windows compatibility matters (paths, fixtures use `C:\\...` directories); `pathExists`
   handles `ENOTDIR` for files.
 
 ## Docs
 
 `README.md` and `README.zh-CN.md` are bilingual mirrors — update both when changing CLI options,
-data sources, pricing behavior, or the JSON shape. `pricing.json` user overrides match model
-names exactly or by `provider/`-suffix (e.g. `zhipuai/glm-5.3` covers `GLM-5.3`).
+data sources, pricing behavior, the web dashboard, or the JSON shape. `pricing.json` user
+overrides match model names exactly or by `provider/`-suffix (e.g. `zhipuai/glm-5.3` covers
+`GLM-5.3`). `web/AGENTS.md` is generated by Next.js tooling — keep it when committing.
 
 ## Researched but not implemented
 
