@@ -7,7 +7,7 @@
 import { useState } from 'react';
 import { fmtTokens, fmtCost } from '@/lib/format';
 
-const LEVEL_COLORS = ['#1b2129', '#0e4429', '#196d32', '#2ea043', '#56d364'];
+const LEVEL_COLORS = ['#151c26', '#0d2f5e', '#1450a3', '#2f81f7', '#79c0ff'];
 const CELL = 11;
 const GAP = 3;
 const PITCH = CELL + GAP;

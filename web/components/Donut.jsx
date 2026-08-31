@@ -3,8 +3,8 @@
 // SVG donut for share-by-client, with a legend carrying tokens and cost.
 
 import { fmtTokens, fmtCost } from '@/lib/format';
+import { colorAt } from '@/lib/palette';
 
-const PALETTE = ['#58a6ff', '#3fb950', '#d29922', '#bc8cff', '#f778ba', '#39c5cf', '#f85149'];
 const R = 56;
 const C = 2 * Math.PI * R;
 
@@ -28,7 +28,7 @@ export default function Donut({ items, centerValue, centerLabel }) {
                 cy="80"
                 r={R}
                 fill="none"
-                stroke={PALETTE[i % PALETTE.length]}
+                stroke={colorAt(i)}
                 strokeWidth="22"
                 strokeDasharray={dash}
                 strokeDashoffset={-acc * C}
@@ -50,7 +50,7 @@ export default function Donut({ items, centerValue, centerLabel }) {
         {items.length === 0 && <li className="muted">暂无数据</li>}
         {items.map((it, i) => (
           <li key={it.name}>
-            <i style={{ background: PALETTE[i % PALETTE.length] }} />
+            <i style={{ background: colorAt(i) }} />
             <span className="legend-name">{it.name}</span>
             <span className="legend-val">{fmtTokens(it.value)}</span>
             <span className="legend-cost">{fmtCost(it.costUsd)}</span>

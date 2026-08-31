@@ -144,8 +144,39 @@ test('range stats: today / last 7 days / this month use local boundaries', () =>
   assert.equal(extras.today.tokens, 100 + 5);
   assert.equal(extras.today.sessions, 1);
   assert.equal(extras.last7Days.tokens, (100 + 5) + (200 + 5));
+  // Last 30 days reaches back to Jul 14, so the Jul 31 entry counts too.
+  assert.equal(extras.last30Days.tokens, (100 + 5) + (200 + 5) + (400 + 5) + (800 + 5));
   assert.equal(extras.thisMonth.tokens, (100 + 5) + (200 + 5) + (400 + 5));
   assert.ok(!(Date.now() === now)); // sanity: fixed `now` injection is not live time
+});
+
+test('streaks, peak day and activeDays cover the full history', () => {
+  const now = new Date(2026, 7, 15, 9).getTime(); // 2026-08-15, no activity today yet
+  const days = [
+    [2026, 6, 10], [2026, 6, 11], [2026, 6, 12], // 3-day run in July (longest)
+    [2026, 7, 1], // lone day
+    [2026, 7, 13], [2026, 7, 14], [2026, 7, 15], // Aug 13–15 run, ends "today"
+  ];
+  const entries = days.map(([y, m, d]) =>
+    entry({ sessionId: `s-${y}-${m}-${d}`, inputTokens: 10, timestamp: new Date(y, m, d, 10).getTime() }),
+  );
+  // Peak day gets extra tokens.
+  entries.push(entry({ sessionId: 'peak', inputTokens: 1000, timestamp: new Date(2026, 7, 14, 20).getTime() }));
+
+  const extras = buildWebExtras(entries, { now });
+  assert.equal(extras.streaks.current, 3); // Aug 13–15, today counts even at 9am
+  assert.equal(extras.streaks.longest, 3);
+  assert.equal(extras.activeDays, 7);
+  assert.equal(extras.peakDay.date, '2026-08-14');
+  assert.equal(extras.peakDay.tokens, 10 + 5 + 1000 + 5); // day entry + peak entry (both +5 output)
+  assert.ok(Math.abs(extras.peakDay.costUsd - 0.02) < 1e-9);
+
+  // A stale history (nothing today or yesterday) reports a zero current streak.
+  const stale = buildWebExtras([entry({ timestamp: new Date(2026, 6, 10, 10).getTime() })], { now });
+  assert.equal(stale.streaks.current, 0);
+  assert.equal(stale.streaks.longest, 1);
+  assert.equal(stale.activeDays, 1);
+  assert.equal(stale.peakDay.tokens, 10 + 5);
 });
 
 test('trend zero-fills the recent window and keeps token classes separate', () => {
@@ -179,10 +210,16 @@ test('buildWebExtras exposes the dashboard payload shape', () => {
     'activityRange',
     'heatmap',
     'trend',
+    'trend7',
+    'trend90',
     'hourly',
     'today',
     'last7Days',
+    'last30Days',
     'thisMonth',
+    'activeDays',
+    'streaks',
+    'peakDay',
     'topSessions',
     'longestSession',
   ]) {
@@ -196,4 +233,9 @@ test('buildWebExtras exposes the dashboard payload shape', () => {
   assert.equal(extras.heatmap.weeks, 53);
   assert.equal(extras.hourly.length, 24);
   assert.equal(extras.trend.length, 30);
+  assert.equal(extras.trend7.length, 7);
+  assert.equal(extras.trend90.length, 90);
+  assert.deepEqual(extras.streaks, { current: 1, longest: 1 });
+  assert.equal(extras.activeDays, 1);
+  assert.equal(extras.peakDay.date, localDate(new Date(2026, 7, 10, 12).getTime()));
 });

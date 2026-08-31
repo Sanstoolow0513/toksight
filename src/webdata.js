@@ -193,19 +193,70 @@ function localTimezone() {
   }
 }
 
+// DST-safe day step on local midnights (never a blind +24h hop).
+function stepDay(ts, n) {
+  const d = new Date(ts);
+  d.setDate(d.getDate() + n);
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+}
+
+// Consecutive active-day runs over ALL history (not just the heatmap window).
+// `current` may end yesterday: a day still in progress shouldn't reset it.
+function computeStreaks(activeDates, now) {
+  const active = new Set(activeDates);
+  let longest = 0;
+  let run = 0;
+  let prev = null;
+  for (const date of activeDates) {
+    const ts = Date.parse(`${date}T00:00:00`);
+    run = prev != null && stepDay(prev, 1) === ts ? run + 1 : 1;
+    if (run > longest) longest = run;
+    prev = ts;
+  }
+  let cursor = startOfDay(now);
+  if (!active.has(localDate(cursor))) cursor = stepDay(cursor, -1);
+  let current = 0;
+  while (active.has(localDate(cursor))) {
+    current += 1;
+    cursor = stepDay(cursor, -1);
+  }
+  return { current, longest };
+}
+
+// Per-day rows over the FULL history (heatmap only covers the recent window).
+function allDayRows(entries) {
+  return [...buildDayBuckets(entries).entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([date, b]) => bucketRow(b, date));
+}
+
 // Everything the dashboard needs beyond the `--json` payload. `top` mirrors the
 // CLI --top limit for the sessions table.
 export function buildWebExtras(entries, { top = 20, weeks = 53, now = Date.now() } = {}) {
   const { topSessions, longestSession } = buildSessionRows(entries, { top });
+  const activeDays = allDayRows(entries).filter((d) => d.tokens > 0);
+  const peakDay = activeDays.reduce(
+    (best, d) => (best == null || d.tokens > best.tokens ? { date: d.date, tokens: d.tokens, costUsd: d.costUsd } : best),
+    null,
+  );
   return {
     timezone: localTimezone(),
     activityRange: activityRange(entries),
     heatmap: buildHeatmap(entries, { weeks, now }),
     trend: buildTrend(entries, { days: 30, now }),
+    trend7: buildTrend(entries, { days: 7, now }),
+    trend90: buildTrend(entries, { days: 90, now }),
     hourly: buildHourly(entries),
     today: rangeStats(entries, (e) => Number.isFinite(e.timestamp) && localDate(e.timestamp) === localDate(now)),
     last7Days: rangeStats(entries, (e) => Number.isFinite(e.timestamp) && e.timestamp >= startOfDay(now - 6 * DAY_MS)),
+    last30Days: rangeStats(entries, (e) => Number.isFinite(e.timestamp) && e.timestamp >= startOfDay(now - 29 * DAY_MS)),
     thisMonth: rangeStats(entries, (e) => Number.isFinite(e.timestamp) && localMonth(e.timestamp) === localMonth(now)),
+    activeDays: activeDays.length,
+    streaks: computeStreaks(
+      activeDays.map((d) => d.date),
+      now,
+    ),
+    peakDay,
     topSessions,
     longestSession,
   };
