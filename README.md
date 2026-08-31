@@ -19,6 +19,7 @@ Inspired by [tokscale](https://github.com/junhoyeo/tokscale) (and in the same sp
 | Codex CLI | `~/.codex/sessions/**/*.jsonl` | `CODEX_HOME` |
 | OpenCode | `~/.local/share/opencode/storage/message/**/*.json` | `OPENCODE_PATH` |
 | Gemini CLI | `~/.gemini/tmp/*/chats/*.json` | `GEMINI_CLI_HOME` |
+| Kimi Code | `~/.kimi-code/sessions/**/agents/*/wire.jsonl` | `KIMI_CODE_HOME` |
 
 ## Install
 
@@ -65,7 +66,7 @@ zcode   GLM-5.3          1  13.8K        0        0     126   0.0%  $0.0199
 ### Options
 
 ```
---client <a,b>   only include these clients (zcode, claude, codex, opencode, gemini)
+--client <a,b>   only include these clients (zcode, claude, codex, opencode, gemini, kimi)
 --since <date>   local date (YYYY-MM-DD), inclusive
 --until <date>   local date (YYYY-MM-DD), inclusive
 --today --week --month   date shortcuts

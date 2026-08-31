@@ -10,7 +10,7 @@ local dashboard (still no TUI).
 
 ## Commands
 
-- `node --test` (or `npm test`) — run the node:test suite (29 tests); uses per-client fixtures, no
+- `node --test` (or `npm test`) — run the node:test suite (30 tests); uses per-client fixtures, no
   network needed. Note: `node --test test/` with a directory arg fails with MODULE_NOT_FOUND on
   Node v24/Windows (the directory is treated as a module to load) — that's why the script passes
   no path; explicit file paths or a glob like `node --test "test/*.test.js"` also work.
@@ -69,11 +69,13 @@ cost (only OpenCode does).
   into `warnings`, skip empty-usage rows. `cli.js` collects clients via `Promise.allSettled` and
   prints warnings on stderr (they also appear under `warnings` in JSON output).
 - **Dedup/diff semantics per client**: Claude dedupes message ids; Codex prefers `last_token_usage`
-  and diffs cumulative totals; Gemini splits cached prompt tokens and adds thoughts to output.
+  and diffs cumulative totals; Gemini splits cached prompt tokens and adds thoughts to output;
+  Kimi counts every `usage.record` as-is (per-request, never cumulative; both `turn` and
+  `session` usageScope records are real spend).
   Preserve these when editing parsers — tests pin them.
 - **Env injection**: parsers take `{ env, home }` params instead of reading `process.env`
   directly, so tests can point them at fixtures (e.g. `ZCODE_HOME`, `CLAUDE_CONFIG_DIR`,
-  `CODEX_HOME`, `OPENCODE_PATH`, `GEMINI_CLI_HOME`).
+  `CODEX_HOME`, `OPENCODE_PATH`, `GEMINI_CLI_HOME`, `KIMI_CODE_HOME`).
 - **`--json` output is a user-facing contract**: shape is `totals, cacheHitRate, clients, models,
   daily, monthly, sessions, pricing (incl. unpricedModels), warnings` — don't break it. The web
   API (`GET /api/data`) reuses this exact payload (via `buildPayload`) and layers the

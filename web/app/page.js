@@ -36,6 +36,7 @@ const CLIENT_LABELS = {
   codex: 'Codex CLI',
   opencode: 'OpenCode',
   gemini: 'Gemini CLI',
+  kimi: 'Kimi Code',
 };
 
 function coded(text) {

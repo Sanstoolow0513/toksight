@@ -8,6 +8,7 @@ import * as claude from '../src/clients/claude.js';
 import * as codex from '../src/clients/codex.js';
 import * as opencode from '../src/clients/opencode.js';
 import * as gemini from '../src/clients/gemini.js';
+import * as kimi from '../src/clients/kimi.js';
 import * as zcode from '../src/clients/zcode.js';
 
 const fixtures = path.join(path.dirname(fileURLToPath(import.meta.url)), 'fixtures');
@@ -83,6 +84,41 @@ test('gemini parser splits cached prompt and adds thoughts to output', async () 
   assert.equal(e.cacheReadTokens, 300);
   assert.equal(e.outputTokens, 150); // 100 candidates + 50 thoughts
   assert.equal(e.reasoningTokens, 50);
+});
+
+test('kimi parser reads wire.jsonl usage records and state metadata', async () => {
+  const { entries, warnings } = await kimi.collect({
+    env: { KIMI_CODE_HOME: path.join(fixtures, 'kimi') },
+    home: os.homedir(),
+  });
+  assert.equal(warnings.length, 0);
+  // 3 kept main records (zero-usage, usage-less and malformed lines dropped)
+  // + 1 sub-agent record + 1 from the state.json-less session
+  assert.equal(entries.length, 5);
+
+  const first = entries.find((e) => e.timestamp === 1788000001000);
+  assert.equal(first.client, 'kimi');
+  assert.equal(first.sessionId, 'session_test1');
+  assert.equal(first.model, 'kimi-code/k3');
+  assert.equal(first.directory, 'C:\\work\\demo');
+  assert.equal(first.title, 'fix the bug');
+  assert.equal(first.inputTokens, 100);
+  assert.equal(first.outputTokens, 50);
+  assert.equal(first.cacheReadTokens, 900);
+  assert.equal(first.cacheWriteTokens, 25);
+  assert.equal(first.reasoningTokens, 0);
+  assert.equal(first.costUsd, null);
+
+  // session-scope records (e.g. title generation) are real spend too
+  assert.ok(entries.some((e) => e.timestamp === 1788000003000));
+  // sub-agent usage is collected alongside main
+  assert.ok(entries.some((e) => e.timestamp === 1788000006000));
+
+  // session without state.json: falls back to directory names
+  const orphan = entries.find((e) => e.timestamp === 1788000007000);
+  assert.equal(orphan.sessionId, 'session_test2');
+  assert.equal(orphan.directory, 'wd_demo_abc');
+  assert.equal(orphan.title, null);
 });
 
 test('zcode rollout parser reads model_io usage and skips empty', async () => {
