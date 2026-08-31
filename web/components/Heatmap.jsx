@@ -77,6 +77,7 @@ export default function Heatmap({ heatmap, locale = 'zh-CN' }) {
                   height={CELL}
                   rx="4"
                   className={`heat-${level}${d.tokens > 0 ? '' : ' heat-empty'}`}
+                  style={{ '--d': `${ci * 9 + ri * 3}ms` }}
                   onMouseEnter={(e) => setTip({ d, x: e.clientX, y: e.clientY })}
                   onMouseMove={(e) => setTip((cur) => (cur && cur.d === d ? cur : { d, x: e.clientX, y: e.clientY }))}
                 />

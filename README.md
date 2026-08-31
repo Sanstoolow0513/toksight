@@ -40,7 +40,7 @@ toksight daily        # grouped by local day
 toksight monthly      # grouped by month
 toksight models       # grouped by model
 toksight sessions     # top sessions by cost
-toksight web          # local web dashboard (heatmap, charts, session analytics)
+toksight web          # local web dashboard (heatmap, trend & model analytics)
 toksight env          # show detected data sources + pricing state
 ```
 
@@ -113,27 +113,26 @@ statically-exported [Next.js](https://nextjs.org) dashboard plus a live JSON API
 browser (default `http://127.0.0.1:4729`). It binds to localhost only and re-aggregates your
 session files on every request — data never leaves your machine.
 
-The dashboard includes:
+The dashboard is a fluid, card-based layout with entrance/count-up/wipe animations (disabled
+under `prefers-reduced-motion`). It includes:
 
-- **Overview stat strip** — all-time tokens & cost, cache hit rate, active days, current/longest
-  activity streak, peak day and the longest session, in one compact row (no wall of KPI cards)
-- **Activity heatmap** — GitHub-style grid of daily token volume for the last ~53 weeks, with
-  per-day tooltips (tokens, cost, sessions, requests)
-- **Smooth stacked trend** — 7 / 30 / 90-day windows, fresh input / cache reads / cache writes /
-  output per day as a hoverable stacked area chart
-- **Compact ranges table** — today / last 7 days / last 30 days / this month as rows with cost,
-  sessions and share bars
-- **Agent donut, hourly & monthly histograms** — where your tokens and money go, by client,
-  time of day and month
-- **Ranked model bars** — models aggregated across agents with tokens, cost and share; the
-  per-agent×model table remains as a collapsible detail
-- **Hit rate by agent** — an "All" tab compares every agent's cache hit rate (click a bar to drill
-  in), each agent tab shows the big rate plus that agent's per-model breakdown
-- **Top sessions table** — by tokens with duration, title, directory and cost
+- **Activity card** — a compact stat strip (all-time tokens & cost, cache hit rate, active days,
+  streak, peak day, longest session by *active* time) above a GitHub-style heatmap of daily token
+  volume for the last ~53 weeks, with per-day tooltips
+- **Trend card** — 7 / 30 / 90-day windows crossed with two stack modes: by token class (fresh
+  input / cache reads / cache writes / output) or by agent; legend chips toggle series, and
+  today / 7d / 30d / this-month summary chips replace the old ranges table
+- **Agent mix card** — per-agent share bars (tokens, cost, share) with cache hit rate; click a
+  row to expand that agent's per-model hit rates
+- **Model usage card** — models aggregated across agents; every bar splits cache reads (green)
+  from fresh traffic, so cache-heavy models no longer look like raw spend; the per-agent×model
+  table remains as a collapsible detail
+- **Hourly & monthly histograms** — when your tokens and money move, by time of day and month
 
-All filters (`--client`, `--since`, `--until`, `--today/--week/--month`) work for `web` too, and
-the page offers a manual refresh, a 30s auto-refresh toggle, and a 中文 / EN language switch
-(stored in `localStorage` as `toksight-locale`, default Chinese).
+Session leaderboards were dropped from the UI (the API still exposes `topSessions`). All filters
+(`--client`, `--since`, `--until`, `--today/--week/--month`) work for `web` too, and the page
+offers a manual refresh, a 30s auto-refresh toggle, and a 中文 / EN language switch (stored in
+`localStorage` as `toksight-locale`, default Chinese).
 
 ### Building the dashboard
 
@@ -172,9 +171,11 @@ Each `clients` entry is that agent's totals plus its own `cacheHitRate`; the map
 filtered entries, so `--client` / `--since` / `--until` apply to it like every other slice.
 
 The web dashboard consumes the same payload (plus web-only extras such as `heatmap`, `trend`,
-`trend7`, `trend90`, `hourly`, `today`, `last7Days`, `last30Days`, `thisMonth`, `activeDays`,
-`streaks`, `peakDay`, `topSessions`, `longestSession`, `activityRange`, `timezone`) from
-`GET /api/data` on its own origin.
+`trend7`, `trend90`, `trendByAgent`, `hourly`, `today`, `last7Days`, `last30Days`, `thisMonth`,
+`activeDays`, `streaks`, `peakDay`, `topSessions`, `longestSession`, `activityRange`, `timezone`)
+from `GET /api/data` on its own origin. Session rows carry both `durationMs` (raw wall-clock span)
+and `activeMs` (inter-request gaps capped at 5 minutes); `longestSession` ranks by `activeMs`, so
+a session left open overnight no longer counts its idle hours.
 
 ## Development
 

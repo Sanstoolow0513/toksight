@@ -40,7 +40,7 @@ toksight daily        # 按天统计
 toksight monthly      # 按月统计
 toksight models       # 按模型统计
 toksight sessions     # 按成本排序的会话
-toksight web          # 本地网页仪表盘（热力图、图表、会话分析）
+toksight web          # 本地网页仪表盘（热力图、趋势与模型分析）
 toksight env          # 查看检测到的数据源与定价状态
 ```
 
@@ -110,25 +110,23 @@ OpenCode 自带的价格（`cost` 字段）会被直接采用。
 （默认 `http://127.0.0.1:4729`）。只绑定本机回环地址，每次请求都重新聚合会话文件——
 数据不出你的机器。
 
-仪表盘包含：
+仪表盘为流式卡片布局，带入场 / 数字滚动 / 图表揭示动画（`prefers-reduced-motion` 下自动
+关闭）。包含：
 
-- **概览统计条** — 全部 tokens 与费用、缓存命中率、活跃天数、当前/最长连续活跃、
-  峰值日、最长会话，一行紧凑排布（不再是一墙 KPI 卡片）
-- **活动热力图** — GitHub 风格的近 53 周每日 token 热力网格，悬停可看单日
-  tokens、费用、会话数、请求数
-- **平滑堆叠趋势图** — 7 / 30 / 90 天窗口切换，按新输入 / 缓存读取 / 缓存写入 / 输出
-  堆叠成面积图，悬停查看每日明细
-- **时间范围紧凑表** — 今日 / 近 7 天 / 近 30 天 / 本月 一张小表呈现，含费用、会话与占比条
-- **Agent 环形图、按小时与按月直方图** — tokens 和费用流向了哪个客户端、哪个时段、哪个月
-- **模型用量排行条** — 跨 Agent 汇总的模型排行（tokens、费用、占比）；Agent × 模型
-  明细表折叠保留
-- **Agent 命中率** — 「全部」标签对比各 Agent 的缓存命中率（点击条目钻取），单 Agent
-  标签展示大号命中率与该 Agent 的分模型明细
-- **会话 Top 表** — 按 tokens 排序的 Top 会话（含时长、标题、目录、费用）
+- **活动卡片** — 紧凑统计条（累计 tokens 与费用、缓存命中率、活跃天数、连续活跃、峰值日、
+  按*活跃时长*计的最长会话）+ GitHub 风格近 53 周每日热力网格，悬停可看单日明细
+- **趋势卡片** — 7 / 30 / 90 天窗口 × 两种堆叠维度交叉统计：按 token 构成（新输入 / 缓存
+  读取 / 缓存写入 / 输出）或按 Agent；图例可点选隐藏序列；今日 / 近 7 天 / 近 30 天 / 本月
+  汇总胶囊取代了旧的时间范围表
+- **Agent 分布卡片** — 各 Agent 份额条（tokens、费用、占比）与缓存命中率，点击行展开
+  该 Agent 的分模型命中率
+- **模型用量卡片** — 跨 Agent 汇总的模型排行；每根条内以绿色分段呈现缓存读取占比，
+  缓存为主的模型不再"看着很多"；Agent × 模型明细表折叠保留
+- **按小时与按月直方图** — tokens 和费用流向了哪个时段、哪个月
 
-所有筛选参数（`--client`、`--since`、`--until`、`--today/--week/--month`）对 `web` 同样生效；
-页面支持手动刷新、30 秒自动刷新，以及顶栏 中文 / EN 切换（记在 `localStorage` 键
-`toksight-locale`，默认中文）。
+会话排行榜已从界面移除（API 仍保留 `topSessions` 字段）。所有筛选参数（`--client`、
+`--since`、`--until`、`--today/--week/--month`）对 `web` 同样生效；页面支持手动刷新、
+30 秒自动刷新，以及顶栏 中文 / EN 切换（记在 `localStorage` 键 `toksight-locale`，默认中文）。
 
 ### 构建仪表盘
 
@@ -165,9 +163,11 @@ LiteLLM 价格拉取；`--offline` 可以连它也关掉。
 entries 构建，`--client` / `--since` / `--until` 对它与其余切片一样生效。
 
 网页仪表盘消费同一份载荷（外加 web 专属字段：`heatmap`、`trend`、`trend7`、`trend90`、
-`hourly`、`today`、`last7Days`、`last30Days`、`thisMonth`、`activeDays`、`streaks`、
-`peakDay`、`topSessions`、`longestSession`、`activityRange`、`timezone`），
-来自其同源的 `GET /api/data`。
+`trendByAgent`、`hourly`、`today`、`last7Days`、`last30Days`、`thisMonth`、`activeDays`、
+`streaks`、`peakDay`、`topSessions`、`longestSession`、`activityRange`、`timezone`），
+来自其同源的 `GET /api/data`。会话行同时携带 `durationMs`（原始壁钟跨度）与 `activeMs`
+（请求间隔按 5 分钟封口后的活跃时长）；`longestSession` 按 `activeMs` 排名，挂机过夜的
+会话不会再把空闲时间算成时长。
 
 ## 开发
 

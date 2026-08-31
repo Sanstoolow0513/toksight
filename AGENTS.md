@@ -10,7 +10,7 @@ local dashboard (still no TUI).
 
 ## Commands
 
-- `node --test` (or `npm test`) — run the node:test suite (34 tests); uses per-client fixtures, no
+- `node --test` (or `npm test`) — run the node:test suite (36 tests); uses per-client fixtures, no
   network needed. Note: `node --test test/` with a directory arg fails with MODULE_NOT_FOUND on
   Node v24/Windows (the directory is treated as a module to load) — that's why the script passes
   no path; explicit file paths or a glob like `node --test "test/*.test.js"` also work.
@@ -33,17 +33,20 @@ src/cli.js          arg parsing, commands, all rendering (text + --json); buildP
 src/clients/        one parser per agent, registered in src/clients/index.js
 src/pricing.js      3-layer pricing: builtin table → LiteLLM (1h disk cache) → user overrides
 src/aggregate.js    grouping/totals (summarize, byModel/Day/Month/Session, cacheHitRate)
-src/webdata.js      web-dashboard aggregations over entries (heatmap, trend, hourly,
-                    today/last7Days/thisMonth, topSessions, longestSession) — pure functions
+src/webdata.js      web-dashboard aggregations over entries (heatmap, trend, trendByAgent,
+                    hourly, today/last7Days/thisMonth, sessions w/ activeMs, longestSession)
+                    — pure functions
 src/webserver.js    zero-dep node:http server: static web/out + live /api/data
 src/format.js       ANSI tables & number formatting
 src/fsutils.js      walkFiles, streaming readJsonl, readJson, pathExists
 web/                Next.js (App Router, JS, no Tailwind) dashboard, statically exported to
                     web/out and served by the CLI; app/page.js + components/ (Heatmap,
-                    TrendChart, Donut, Bars, RangeTable, ModelBars, AgentHitRate) +
-                    lib/format.js + lib/i18n.js (zh-CN / en, localStorage `toksight-locale`);
-                    Vercel-style pure-black theme (design-spec.md v2), Geist fonts +
-                    lucide-react icons (build-time deps in web/package.json)
+                    TrendChart with mix/agent stack modes, AgentsPanel, ModelBars with
+                    cache-split bars, Bars) + lib/format.js + lib/i18n.js (zh-CN / en,
+                    localStorage `toksight-locale`) + lib/motion.js (count-up hook,
+                    reduced-motion); fluid card layout + motion system (design-spec.md v3),
+                    pure-black theme, Geist fonts + lucide-react icons (build-time deps in
+                    web/package.json)
 ```
 
 Each client parser exports `id`, `label`, `sourceRoots({ env, home })`, and
@@ -79,8 +82,9 @@ cost (only OpenCode does).
 - **`--json` output is a user-facing contract**: shape is `totals, cacheHitRate, clients, models,
   daily, monthly, sessions, pricing (incl. unpricedModels), warnings` — don't break it. The web
   API (`GET /api/data`) reuses this exact payload (via `buildPayload`) and layers the
-  `src/webdata.js` extras on top (`heatmap, trend, hourly, today, last7Days, thisMonth,
-  topSessions, longestSession, activityRange, timezone`); the extras are additive and must stay
+  `src/webdata.js` extras on top (`heatmap, trend, trendByAgent, hourly, today, last7Days,
+  thisMonth, topSessions, longestSession (ranked by activeMs — idle gaps capped at 5min),
+  activityRange, timezone`); the extras are additive and must stay
   backwards compatible too. Each `clients` entry is that agent's totals plus its own
   `cacheHitRate`, built via `agg.byClient` from the **filtered** entries, so `--client` /
   `--since` / `--until` apply to it like every other slice (pinned by `test/payload.test.js`).
