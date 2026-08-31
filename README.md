@@ -129,7 +129,8 @@ The dashboard includes:
 - **Top sessions table** — by tokens with duration, title, directory and cost
 
 All filters (`--client`, `--since`, `--until`, `--today/--week/--month`) work for `web` too, and
-the page offers a manual refresh plus a 30s auto-refresh toggle.
+the page offers a manual refresh, a 30s auto-refresh toggle, and a 中文 / EN language switch
+(stored in `localStorage` as `toksight-locale`, default Chinese).
 
 ### Building the dashboard
 

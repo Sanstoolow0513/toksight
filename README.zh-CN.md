@@ -124,7 +124,8 @@ OpenCode 自带的价格（`cost` 字段）会被直接采用。
 - **会话 Top 表** — 按 tokens 排序的 Top 会话（含时长、标题、目录、费用）
 
 所有筛选参数（`--client`、`--since`、`--until`、`--today/--week/--month`）对 `web` 同样生效；
-页面支持手动刷新和 30 秒自动刷新开关。
+页面支持手动刷新、30 秒自动刷新，以及顶栏 中文 / EN 切换（记在 `localStorage` 键
+`toksight-locale`，默认中文）。
 
 ### 构建仪表盘
 
