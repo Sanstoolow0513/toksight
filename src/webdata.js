@@ -98,6 +98,42 @@ export function buildTrend(entries, { days = 30, now = Date.now() } = {}) {
   return rows;
 }
 
+// Same daily zero-filled window, but split per agent so the trend chart can
+// cross time × agent. Each row is `{ date, tokens, costUsd, sessions,
+// clients: {id: tokens} }`; agents absent on a day are simply missing from
+// the map (treated as 0). cost/sessions are day totals shared with the
+// class-split trend rows.
+export function buildTrendByAgent(entries, { days = 30, now = Date.now() } = {}) {
+  const buckets = buildDayBuckets(entries);
+  const perClient = new Map();
+  for (const e of entries) {
+    if (!Number.isFinite(e.timestamp)) continue;
+    const key = localDate(e.timestamp);
+    let c = perClient.get(key);
+    if (!c) {
+      c = new Map();
+      perClient.set(key, c);
+    }
+    const t = e.inputTokens + e.outputTokens + e.cacheReadTokens + e.cacheWriteTokens;
+    c.set(e.client, (c.get(e.client) || 0) + t);
+  }
+  const todayStart = startOfDay(now);
+  const rows = [];
+  for (const ts of localMidnights(todayStart - (days - 1) * DAY_MS, todayStart)) {
+    const date = localDate(ts);
+    const b = buckets.get(date);
+    const c = perClient.get(date);
+    rows.push({
+      date,
+      tokens: b ? b.input + b.cacheRead + b.cacheWrite + b.output : 0,
+      costUsd: b ? roundUsd(b.costUsd) : 0,
+      sessions: b ? b.sessions.size : 0,
+      clients: c ? Object.fromEntries(c) : {},
+    });
+  }
+  return rows;
+}
+
 export function buildHourly(entries) {
   const hours = Array.from({ length: 24 }, (_, hour) => ({
     hour,
@@ -128,7 +164,21 @@ export function buildHourly(entries) {
   }));
 }
 
-function sessionRow(r) {
+// Idle gaps longer than this don't count toward a session's active time: a
+// wall-clock span (first→last entry) happily counts overnight/lunch breaks, so
+// a session resumed the next morning would look like a 12h+ run. The 5-minute
+// timeout is the usual coding-agent convention; single requests contribute no
+// measurable time.
+export const ACTIVE_GAP_CAP_MS = 5 * 60 * 1000;
+
+function activeMsOf(timestamps) {
+  const ts = timestamps.filter(Number.isFinite).sort((a, b) => a - b);
+  let active = 0;
+  for (let i = 1; i < ts.length; i++) active += Math.min(ts[i] - ts[i - 1], ACTIVE_GAP_CAP_MS);
+  return active;
+}
+
+function sessionRow(r, activeMs) {
   const startedAt = Number.isFinite(r.firstAt) ? r.firstAt : null;
   const endedAt = r.lastAt > 0 ? r.lastAt : null;
   return {
@@ -149,17 +199,31 @@ function sessionRow(r) {
     startedAt,
     endedAt,
     durationMs: startedAt != null && endedAt != null ? endedAt - startedAt : null,
+    activeMs,
   };
 }
 
 // Top sessions ranked by tokens (the CLI `sessions` command ranks by cost),
-// plus the single longest session by wall-clock duration.
+// plus the single longest session ranked by ACTIVE time (idle-capped), not by
+// wall-clock span. `durationMs` keeps the raw span for backwards compat.
 export function buildSessionRows(entries, { top = 20 } = {}) {
-  const rows = bySession(entries).map(sessionRow);
+  const stamps = new Map();
+  for (const e of entries) {
+    const key = `${e.client}/${e.sessionId}`;
+    if (!stamps.has(key)) stamps.set(key, []);
+    stamps.get(key).push(e.timestamp);
+  }
+  const rows = bySession(entries).map((r) => sessionRow(r, activeMsOf(stamps.get(`${r.client}/${r.sessionId}`) ?? [])));
   rows.sort((a, b) => b.totalTokens - a.totalTokens || (b.endedAt ?? 0) - (a.endedAt ?? 0));
   const longestSession = rows
     .filter((r) => r.durationMs != null)
-    .reduce((best, r) => (best == null || r.durationMs > best.durationMs ? r : best), null);
+    .reduce(
+      (best, r) =>
+        best == null || r.activeMs > best.activeMs || (r.activeMs === best.activeMs && r.durationMs > best.durationMs)
+          ? r
+          : best,
+      null,
+    );
   return { topSessions: rows.slice(0, top), longestSession };
 }
 
@@ -246,6 +310,11 @@ export function buildWebExtras(entries, { top = 20, weeks = 53, now = Date.now()
     trend: buildTrend(entries, { days: 30, now }),
     trend7: buildTrend(entries, { days: 7, now }),
     trend90: buildTrend(entries, { days: 90, now }),
+    trendByAgent: {
+      7: buildTrendByAgent(entries, { days: 7, now }),
+      30: buildTrendByAgent(entries, { days: 30, now }),
+      90: buildTrendByAgent(entries, { days: 90, now }),
+    },
     hourly: buildHourly(entries),
     today: rangeStats(entries, (e) => Number.isFinite(e.timestamp) && localDate(e.timestamp) === localDate(now)),
     last7Days: rangeStats(entries, (e) => Number.isFinite(e.timestamp) && e.timestamp >= startOfDay(now - 6 * DAY_MS)),

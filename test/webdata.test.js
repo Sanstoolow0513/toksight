@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import {
   buildHeatmap,
   buildTrend,
+  buildTrendByAgent,
   buildHourly,
   buildSessionRows,
   buildWebExtras,
@@ -89,7 +90,7 @@ test('hourly buckets use local hours and dedupe sessions per hour', () => {
 
 test('session rows group per client, compute duration, sort by tokens', () => {
   const entries = [
-    // claude s1: two entries one hour apart → duration 3600000ms
+    // claude s1: two entries one hour apart → span 3600000ms, active capped at 5min
     entry({ client: 'claude', sessionId: 's1', inputTokens: 10, timestamp: new Date(2026, 7, 10, 10).getTime() }),
     entry({ client: 'claude', sessionId: 's1', inputTokens: 20, timestamp: new Date(2026, 7, 10, 11).getTime(), title: 'Fix bug' }),
     // codex s1 (same id, different client → separate session), bigger tokens
@@ -102,10 +103,12 @@ test('session rows group per client, compute duration, sort by tokens', () => {
   assert.equal(topSessions.length, 3);
   assert.equal(topSessions[0].client, 'codex'); // 1400 tokens wins
   assert.equal(topSessions[0].cacheReadTokens, 900);
+  assert.equal(topSessions[0].activeMs, 0); // single request contributes no measurable time
   assert.equal(topSessions[1].client, 'claude');
   assert.equal(topSessions[1].sessionId, 's1');
   assert.equal(topSessions[1].title, 'Fix bug');
   assert.equal(topSessions[1].durationMs, 3600 * 1000);
+  assert.equal(topSessions[1].activeMs, 5 * 60_000); // 1h gap capped at 5min
   assert.equal(topSessions[2].sessionId, 's2');
   assert.equal(topSessions[2].durationMs, null);
   assert.equal(topSessions[2].startedAt, null);
@@ -126,9 +129,56 @@ test('top limit applies to the sessions table but not to longestSession', () => 
   const { topSessions, longestSession } = buildSessionRows(entries, { top: 2 });
   assert.equal(topSessions.length, 2);
   assert.equal(topSessions[0].sessionId, 's4');
-  // Longest by wall-clock duration, even though it is NOT the top by tokens.
+  // Longest by active time, even though it is NOT the top by tokens.
   assert.equal(longestSession.sessionId, 's4');
-  assert.equal(longestSession.durationMs, 5 * 60_000);
+  assert.equal(longestSession.activeMs, 5 * 60_000);
+});
+
+test('longest session ranks by active time: an idle-spanning session loses', () => {
+  const entries = [
+    // 9h wall-clock span, but really two 5-minute bursts around a long break
+    entry({ sessionId: 'idle', inputTokens: 10, timestamp: new Date(2026, 7, 10, 9).getTime() }),
+    entry({ sessionId: 'idle', inputTokens: 10, timestamp: new Date(2026, 7, 10, 18).getTime() }),
+    // 40 min of back-to-back requests (4 × 10min gaps → each capped at 5min)
+    entry({ sessionId: 'busy', inputTokens: 5, timestamp: new Date(2026, 7, 10, 10).getTime() }),
+    entry({ sessionId: 'busy', inputTokens: 5, timestamp: new Date(2026, 7, 10, 10, 10).getTime() }),
+    entry({ sessionId: 'busy', inputTokens: 5, timestamp: new Date(2026, 7, 10, 10, 20).getTime() }),
+    entry({ sessionId: 'busy', inputTokens: 5, timestamp: new Date(2026, 7, 10, 10, 30).getTime() }),
+  ];
+  const { longestSession, topSessions } = buildSessionRows(entries, { top: 10 });
+  assert.equal(longestSession.sessionId, 'busy');
+  assert.equal(longestSession.activeMs, 3 * 5 * 60_000);
+  assert.equal(longestSession.durationMs, 30 * 60_000);
+  const idleRow = topSessions.find((r) => r.sessionId === 'idle');
+  assert.equal(idleRow.activeMs, 5 * 60_000); // one capped gap, despite the 9h span
+  assert.equal(idleRow.durationMs, 9 * 3600 * 1000);
+});
+
+test('trendByAgent splits each day per client and zero-fills the window', () => {
+  const now = new Date(2026, 7, 12, 15).getTime();
+  const entries = [
+    entry({
+      client: 'zcode',
+      timestamp: new Date(2026, 7, 11, 10).getTime(),
+      inputTokens: 7,
+      cacheReadTokens: 3,
+      outputTokens: 2,
+    }),
+    entry({ client: 'kimi', timestamp: new Date(2026, 7, 11, 11).getTime(), inputTokens: 4 }),
+    entry({ client: 'kimi', timestamp: new Date(2026, 7, 11, 12).getTime(), inputTokens: 1 }),
+    entry({ client: 'claude', timestamp: null, inputTokens: 999 }), // never attributed
+  ];
+  const rows = buildTrendByAgent(entries, { days: 3, now });
+  assert.equal(rows.length, 3);
+  assert.equal(rows[0].tokens, 0);
+  assert.deepEqual(rows[0].clients, {});
+  assert.equal(rows[1].tokens, 12 + 15); // zcode 12, kimi 9+6 (both + default 5 output)
+  assert.deepEqual(rows[1].clients, { zcode: 12, kimi: 15 });
+  assert.ok(Math.abs(rows[1].costUsd - 0.03) < 1e-9); // three priced entries
+  assert.equal(rows[1].sessions, 1); // all three default to sessionId 's1'
+  assert.equal(rows[2].date, localDate(now));
+  // Untimestamped entries are excluded, not crash-worthy.
+  assert.ok(!('claude' in rows[1].clients));
 });
 
 test('range stats: today / last 7 days / this month use local boundaries', () => {
@@ -212,6 +262,7 @@ test('buildWebExtras exposes the dashboard payload shape', () => {
     'trend',
     'trend7',
     'trend90',
+    'trendByAgent',
     'hourly',
     'today',
     'last7Days',

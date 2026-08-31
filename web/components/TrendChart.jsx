@@ -1,14 +1,22 @@
 'use client';
 
 // Daily token trend as a smooth stacked area chart (mountain style): each
-// token class is drawn down to the baseline, top of stack first, so the
-// visible bands are the differences between cumulative curves. Curvature is
+// series is drawn down to the baseline, top of stack first, so the visible
+// bands are the differences between cumulative curves. Curvature is
 // monotone-cubic (Fritsch–Carlson), which never overshoots the data, so
-// stacked bands cannot cross between sample points. A segmented control
-// switches the window (7 / 30 / 90 days) across the API-provided ranges.
+// stacked bands cannot cross between sample points.
+//
+// Two cross-cutting views share the same engine:
+//   - "mix"   → stack the four token classes (fresh input / cache read /
+//               cache write / output) from the `trends` rows;
+//   - "agent" → stack per-agent token volume from the `trendsByAgent` rows,
+//               using the same palette order as the agent share card.
+// Legend chips toggle series visibility; range segmented control switches
+// 7 / 30 / 90 days. Switching remounts the band group, replaying the wipe-in.
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { fmtTokens, fmtCost } from '@/lib/format';
+import { colorAt } from '@/lib/palette';
 import { t as tr } from '@/lib/i18n';
 
 const CLASS_KEYS = ['input', 'cacheRead', 'cacheWrite', 'output'];
@@ -18,12 +26,18 @@ const CLASS_LABEL_KEYS = {
   cacheWrite: 'trendCacheWrite',
   output: 'trendOutput',
 };
+const CLASS_COLORS = {
+  input: 'var(--color-chart-input)',
+  cacheRead: 'var(--color-chart-cache-read)',
+  cacheWrite: 'var(--color-chart-cache-write)',
+  output: 'var(--color-chart-output)',
+};
 
 const PAD_L = 48;
 const PAD_R = 12;
 const PAD_T = 12;
 const PAD_B = 24;
-const HEIGHT = 256;
+const HEIGHT = 260;
 
 function useWidth() {
   const ref = useRef(null);
@@ -77,23 +91,46 @@ function niceStep(rough) {
 
 const shortDate = (date) => `${Number(date.slice(5, 7))}/${Number(date.slice(8, 10))}`;
 
-export default function TrendChart({ trends = {}, locale = 'zh-CN' }) {
+export default function TrendChart({ trends = {}, trendsByAgent = {}, agents = [], locale = 'zh-CN' }) {
   const options = [
     { days: 7, labelKey: 'trend7', rows: trends[7] },
     { days: 30, labelKey: 'trend30', rows: trends[30] },
     { days: 90, labelKey: 'trend90', rows: trends[90] },
   ].filter((o) => Array.isArray(o.rows) && o.rows.length > 0);
   const [days, setDays] = useState(null);
+  const [mode, setMode] = useState('mix');
+  const [hidden, setHidden] = useState({});
   const [ref, width] = useWidth();
   const [hover, setHover] = useState(null);
+  // React 19 useId yields ids like «r0» / :r0: — invalid inside url(#…) SVG
+  // references on some browsers, so strip to plain word characters.
+  const clipId = `twipe${useId().replace(/[^a-zA-Z0-9]/g, '')}`;
 
   if (!options.length) return <div className="muted">{tr(locale, 'trendEmpty')}</div>;
   const active = options.find((o) => o.days === days) || options.find((o) => o.days === 30) || options[0];
   const rows = active.rows;
   const n = rows.length;
+  const agentRows = trendsByAgent?.[active.days];
+  const agentMode = mode === 'agent' && Array.isArray(agentRows) && agentRows.length === n;
 
-  const totals = rows.map((d) => CLASS_KEYS.reduce((s, key) => s + (d[key] || 0), 0));
-  const maxVal = Math.max(...totals, 1);
+  // Series definitions for the active mode: stable key + label + color. Agent
+  // colors follow the shared palette order used by the agent share card.
+  const series = agentMode
+    ? agents.map((a, i) => ({ key: a.id, label: a.label || a.id, color: colorAt(i) }))
+    : CLASS_KEYS.map((key) => ({ key, label: tr(locale, CLASS_LABEL_KEYS[key]), color: CLASS_COLORS[key] }));
+
+  const toggle = (key) => {
+    const next = { ...hidden, [key]: !hidden[key] };
+    const visibleCount = series.filter((s) => !next[s.key]).length;
+    if (visibleCount === 0) return; // never blank out the whole chart
+    setHidden(next);
+  };
+
+  const visible = series.filter((s) => !hidden[s.key]);
+  const valueOf = (i, s) => (agentMode ? agentRows[i].clients?.[s.key] || 0 : rows[i][s.key] || 0);
+
+  const dayTotals = rows.map((d) => d.tokens || 0);
+  const maxVal = Math.max(...dayTotals, 1);
   const step = niceStep(maxVal / 3.5);
   const top = Math.max(Math.ceil(maxVal / step) * step, step);
   const ticks = [];
@@ -107,14 +144,14 @@ export default function TrendChart({ trends = {}, locale = 'zh-CN' }) {
 
   const cumulatives = [];
   let acc = rows.map(() => 0);
-  for (const key of CLASS_KEYS) {
-    acc = acc.map((v, i) => v + (rows[i][key] || 0));
+  for (const s of visible) {
+    acc = acc.map((v, i) => v + valueOf(i, s));
     cumulatives.push(acc.slice());
   }
 
   const xTickIdx = [...new Set(Array.from({ length: Math.min(5, n) }, (_, k) => Math.round((k * (n - 1)) / Math.max(Math.min(5, n) - 1, 1))))];
 
-  const windowTokens = totals.reduce((s, v) => s + v, 0);
+  const windowTokens = dayTotals.reduce((s, v) => s + v, 0);
   const windowCost = rows.reduce((s, d) => s + (d.costUsd || 0), 0);
 
   const pick = (e) => {
@@ -126,17 +163,35 @@ export default function TrendChart({ trends = {}, locale = 'zh-CN' }) {
     setHover({ i, x: e.clientX, y: e.clientY });
   };
 
-  const labelOf = (key) => tr(locale, CLASS_LABEL_KEYS[key]);
+  // Remount key: replay the wipe-in whenever the view actually changes.
+  const bandKey = `${agentMode ? 'agent' : 'mix'}-${active.days}-${visible.map((s) => s.key).join('.')}`;
 
   return (
     <div>
       <div className="trend-head">
-        <div className="seg" role="tablist" aria-label={tr(locale, 'trendRange')}>
-          {options.map((o) => (
-            <button key={o.days} type="button" role="tab" aria-selected={o.days === active.days} className={o.days === active.days ? 'on' : ''} onClick={() => setDays(o.days)}>
-              {tr(locale, o.labelKey)}
+        <div className="trend-controls">
+          <div className="seg" role="tablist" aria-label={tr(locale, 'trendRange')}>
+            {options.map((o) => (
+              <button key={o.days} type="button" role="tab" aria-selected={o.days === active.days} className={o.days === active.days ? 'on' : ''} onClick={() => setDays(o.days)}>
+                {tr(locale, o.labelKey)}
+              </button>
+            ))}
+          </div>
+          <div className="seg" role="tablist" aria-label={tr(locale, 'trendMode')}>
+            <button type="button" role="tab" aria-selected={mode === 'mix'} className={mode === 'mix' ? 'on' : ''} onClick={() => setMode('mix')}>
+              {tr(locale, 'modeMix')}
             </button>
-          ))}
+            <button
+              type="button"
+              role="tab"
+              aria-selected={agentMode}
+              className={agentMode ? 'on' : ''}
+              onClick={() => setMode('agent')}
+              disabled={!Array.isArray(trendsByAgent?.[active.days])}
+            >
+              {tr(locale, 'modeAgent')}
+            </button>
+          </div>
         </div>
         <span className="trend-sum">
           {tr(locale, 'trendTotal')} <b>{fmtTokens(windowTokens)}</b> tokens · {fmtCost(windowCost)}
@@ -145,6 +200,11 @@ export default function TrendChart({ trends = {}, locale = 'zh-CN' }) {
       <div ref={ref} className="trend-chart" onMouseLeave={() => setHover(null)}>
         {width > 0 && (
           <svg width={width} height={HEIGHT} role="img" aria-label={tr(locale, 'trendAria')}>
+            <defs>
+              <clipPath id={clipId}>
+                <rect x={PAD_L - 2} y={PAD_T - 2} width={innerW + 4} height={innerH + 4} className="trend-wipe" />
+              </clipPath>
+            </defs>
             {ticks.map((v) => (
               <g key={v}>
                 <line x1={PAD_L} x2={width - PAD_R} y1={y(v)} y2={y(v)} className="tc-grid" />
@@ -154,24 +214,32 @@ export default function TrendChart({ trends = {}, locale = 'zh-CN' }) {
               </g>
             ))}
             <line x1={PAD_L} x2={width - PAD_R} y1={baseY} y2={baseY} className="tc-axis" />
-            {[...cumulatives].reverse().map((cum, rev) => {
-              const k = cumulatives.length - 1 - rev;
-              const key = CLASS_KEYS[k];
-              const pts = cum.map((v, i) => [x(i), y(v)]);
-              const d = `${monotonePath(pts)}L${x(n - 1)},${baseY} L${x(0)},${baseY} Z`;
-              return <path key={key} d={d} className={`trend-band-${key}`} strokeWidth="1" strokeOpacity="0.9" />;
-            })}
+            <g key={bandKey} clipPath={`url(#${clipId})`}>
+              {[...cumulatives].reverse().map((cum, rev) => {
+                const k = cumulatives.length - 1 - rev;
+                const s = visible[k];
+                const pts = cum.map((v, i) => [x(i), y(v)]);
+                const d = `${monotonePath(pts)}L${x(n - 1)},${baseY} L${x(0)},${baseY} Z`;
+                return (
+                  <path
+                    key={s.key}
+                    d={d}
+                    className="trend-band"
+                    style={{ fill: s.color, stroke: s.color }}
+                    fillOpacity="0.45"
+                    strokeOpacity="0.9"
+                    strokeWidth="1"
+                  />
+                );
+              })}
+            </g>
             {xTickIdx.map((i) => (
               <text key={i} x={x(i)} y={HEIGHT - 8} textAnchor={i === 0 ? 'start' : i === n - 1 ? 'end' : 'middle'} className="tc-text">
                 {shortDate(rows[i].date)}
               </text>
             ))}
-            {hover && (
-              <line x1={x(hover.i)} x2={x(hover.i)} y1={PAD_T} y2={baseY} className="tc-guide" />
-            )}
-            {hover && (
-              <circle cx={x(hover.i)} cy={y(totals[hover.i])} r="3" className="trend-dot" strokeWidth="1.5" />
-            )}
+            {hover && <line x1={x(hover.i)} x2={x(hover.i)} y1={PAD_T} y2={baseY} className="tc-guide" />}
+            {hover && <circle cx={x(hover.i)} cy={y(dayTotals[hover.i])} r="3" className="trend-dot" strokeWidth="1.5" />}
             <rect
               x={PAD_L}
               y={PAD_T}
@@ -192,34 +260,41 @@ export default function TrendChart({ trends = {}, locale = 'zh-CN' }) {
             }}
           >
             <div className="tip-title">{rows[hover.i].date}</div>
-            {[...CLASS_KEYS].reverse().map((key) => (
-              <div key={key} className="tip-row">
+            {[...visible].reverse().map((s) => (
+              <div key={s.key} className="tip-row">
                 <span>
-                  <i className={`tip-dot tip-dot-${key}`} />
-                  {labelOf(key)}
+                  <i className="tip-dot" style={{ background: s.color }} />
+                  {s.label}
                 </span>
-                <b>{fmtTokens(rows[hover.i][key] || 0)}</b>
+                <b>{fmtTokens(valueOf(hover.i, s))}</b>
               </div>
             ))}
             <div className="tip-row tip-total">
               <span>{tr(locale, 'trendTotal')}</span>
-              <b>{fmtTokens(totals[hover.i])}</b>
+              <b>{fmtTokens(dayTotals[hover.i])}</b>
             </div>
             <div className="tip-row">
               <span>{tr(locale, 'trendCostSess')}</span>
               <b>
-                {fmtCost(rows[hover.i].costUsd)} · {rows[hover.i].sessions}
+                {fmtCost((agentMode ? agentRows[hover.i].costUsd : rows[hover.i].costUsd) || 0)} ·{' '}
+                {agentMode ? agentRows[hover.i].sessions : rows[hover.i].sessions}
               </b>
             </div>
           </div>
         )}
       </div>
       <div className="legend-row">
-        {CLASS_KEYS.map((key) => (
-          <span key={key}>
-            <i className={`tip-dot-${key}`} />
-            {labelOf(key)}
-          </span>
+        {series.map((s) => (
+          <button
+            key={s.key}
+            type="button"
+            className={`legend-chip${hidden[s.key] ? ' off' : ''}`}
+            onClick={() => toggle(s.key)}
+            aria-pressed={!hidden[s.key]}
+          >
+            <i style={{ background: s.color }} />
+            {s.label}
+          </button>
         ))}
       </div>
     </div>

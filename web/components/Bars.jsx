@@ -19,7 +19,7 @@ export function HourBars({ hourly, locale = 'zh-CN' }) {
             className="bar-col"
             title={`${pad(h.hour)}:00–${pad(h.hour)}:59\n${fmtTokens(h.tokens)} tokens · ${fmtCost(h.costUsd)}\n${h.requests} · ${h.sessions}`}
           >
-            <div className="bar-solid" style={{ height: `${(h.tokens / max) * 100}%` }} />
+            <div className="bar-solid grow-y" style={{ height: `${(h.tokens / max) * 100}%`, '--d': `${h.hour * 18}ms` }} />
           </div>
         ))}
       </div>
@@ -39,13 +39,13 @@ export function MonthlyBars({ monthly, locale = 'zh-CN' }) {
   return (
     <div>
       <div className="bars bars-short months">
-        {rows.map((m) => (
+        {rows.map((m, i) => (
           <div
             key={m.month}
             className="bar-col"
             title={`${m.month}\n${fmtTokens(m.tokens)} tokens · ${fmtCost(m.costUsd)}\n${m.requests} · ${m.sessions}`}
           >
-            <div className="bar-solid" style={{ height: `${(m.tokens / max) * 100}%` }} />
+            <div className="bar-solid grow-y" style={{ height: `${(m.tokens / max) * 100}%`, '--d': `${i * 40}ms` }} />
             <span className="bar-label">{m.month.slice(2)}</span>
           </div>
         ))}

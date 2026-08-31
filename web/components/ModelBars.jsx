@@ -1,8 +1,10 @@
 'use client';
 
-// Ranked model list: one row per model (aggregated across agents) with
-// tokens/cost/share and a comparable bar. The per-client×model detail lives
-// in the collapsible table below.
+// Ranked model list, aggregated across agents. The big change vs. a plain
+// token bar: each bar is split into a green "cache read" segment and a solid
+// "fresh traffic" segment (fresh input + cache write + output), so a model
+// dominated by cache reads no longer *looks* like raw spend. Bar length is
+// max-relative; the split inside is that model's cache share of its tokens.
 
 import { useMemo } from 'react';
 import { fmtTokens, fmtCost, fmtPct } from '@/lib/format';
@@ -13,8 +15,11 @@ export default function ModelBars({ models = [], totalTokens = 0, limit = 8, loc
   const { rows, rest } = useMemo(() => {
     const merged = new Map();
     for (const m of models) {
-      const row = merged.get(m.model) || { model: m.model, tokens: 0, costUsd: 0, requests: 0, clients: new Set() };
+      const row =
+        merged.get(m.model) ||
+        { model: m.model, tokens: 0, cacheRead: 0, costUsd: 0, requests: 0, clients: new Set() };
       row.tokens += m.totalTokens || 0;
+      row.cacheRead += m.cacheReadTokens || 0;
       row.costUsd += m.costUsd || 0;
       row.requests += m.requests || 0;
       row.clients.add(m.client);
@@ -32,6 +37,7 @@ export default function ModelBars({ models = [], totalTokens = 0, limit = 8, loc
     <div className="mlist">
       {rows.map((r, i) => {
         const share = totalTokens > 0 ? r.tokens / totalTokens : 0;
+        const cacheFrac = r.tokens > 0 ? Math.min(r.cacheRead / r.tokens, 1) : 0;
         return (
           <div className="mrow" key={r.model}>
             <div className="mrow-top">
@@ -41,13 +47,16 @@ export default function ModelBars({ models = [], totalTokens = 0, limit = 8, loc
                 <span className="mrow-clients">{[...r.clients].join(' / ')}</span>
               </span>
               <span className="mrow-meta">
-                <b>{fmtTokens(r.tokens)}</b> tokens · {fmtCost(r.costUsd)} · {fmtPct(share)}
+                <b>{fmtTokens(r.tokens)}</b> tokens · {fmtCost(r.costUsd)} · {fmtPct(share)}{' '}
+                <em className="cache-badge">{t(locale, 'modelCacheShare', { pct: fmtPct(cacheFrac, 0) })}</em>
               </span>
             </div>
-            <div className="mrow-bar">
+            <div className="mrow-bar mrow-bar-split">
               <i
+                className="grow-x"
                 style={{
                   width: `${Math.max((r.tokens / max) * 100, 1)}%`,
+                  '--cache-frac': `${(cacheFrac * 100).toFixed(2)}%`,
                   '--bar-color': colorAt(i),
                 }}
               />
@@ -65,6 +74,16 @@ export default function ModelBars({ models = [], totalTokens = 0, limit = 8, loc
           </div>
         </div>
       )}
+      <div className="legend-row model-legend">
+        <span>
+          <i className="seg-cache" />
+          {t(locale, 'modelLegendCache')}
+        </span>
+        <span>
+          <i className="seg-fresh" />
+          {t(locale, 'modelLegendFresh')}
+        </span>
+      </div>
     </div>
   );
 }
