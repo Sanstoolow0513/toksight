@@ -4,7 +4,7 @@
 
 toksight reads the local session files your AI coding agents already write and turns them into
 totals, per-model / per-day / per-session breakdowns and cost estimates. It is a Node.js CLI with
-zero runtime dependencies. Phase 1 is stats only — no TUI.
+zero runtime dependencies, plus a local web dashboard (`toksight web`) for visual exploration.
 
 Inspired by [tokscale](https://github.com/junhoyeo/tokscale) (and in the same spirit as
 [ccusage](https://github.com/ryoppippi/ccusage)); the implementation is original. 中文文档见
@@ -39,6 +39,7 @@ toksight daily        # grouped by local day
 toksight monthly      # grouped by month
 toksight models       # grouped by model
 toksight sessions     # top sessions by cost
+toksight web          # local web dashboard (heatmap, charts, session analytics)
 toksight env          # show detected data sources + pricing state
 ```
 
@@ -70,6 +71,10 @@ zcode   GLM-5.3          1  13.8K        0        0     126   0.0%  $0.0199
 --today --week --month   date shortcuts
 --top <n>        row limit for models/sessions tables (default 20)
 --json           machine-readable JSON on stdout
+--port <n>       web dashboard port (default 4729)
+--host <addr>    web dashboard bind address (default 127.0.0.1)
+--no-open        do not open the browser automatically (web only)
+--api-only       web: serve only the JSON API, no static dashboard
 --offline        skip the LiteLLM pricing fetch
 --no-color       disable ANSI colors
 ```
@@ -100,6 +105,44 @@ Costs are computed per request from token counts, with three layers (later wins)
 Models without a price are still counted; their cost shows as `—` and they are listed under
 `pricing.unpricedModels` in JSON output. OpenCode costs reported by OpenCode itself are used as-is.
 
+## Web dashboard
+
+`toksight web` starts a small local server (zero-dependency `node:http`) that serves a
+statically-exported [Next.js](https://nextjs.org) dashboard plus a live JSON API, then opens your
+browser (default `http://127.0.0.1:4729`). It binds to localhost only and re-aggregates your
+session files on every request — data never leaves your machine.
+
+The dashboard includes:
+
+- **KPI cards** — today / last 7 days / this month / all-time tokens & cost, cache hit rate,
+  the longest session by wall-clock duration, and your most active agent
+- **Activity heatmap** — GitHub-style grid of daily token volume for the last ~53 weeks, with
+  per-day tooltips (tokens, cost, sessions, requests)
+- **30-day stacked trend** — fresh input / cache reads / output per day
+- **Agent donut, hourly & monthly histograms** — where your tokens and money go, by client,
+  time of day and month
+- **Model & session tables** — per-model breakdown and top sessions by tokens with duration,
+  title, directory and cost
+
+All filters (`--client`, `--since`, `--until`, `--today/--week/--month`) work for `web` too, and
+the page offers a manual refresh plus a 30s auto-refresh toggle.
+
+### Building the dashboard
+
+The dashboard ships as prebuilt static files in `web/out/`:
+
+```bash
+npm run web:build        # once (cd web && npm install && npm run build)
+toksight web             # serve it
+```
+
+Until `web/out/` is built, `toksight web` serves a setup-instructions page at `/` while
+`/api/data` keeps working.
+
+Options: `--port <n>` (default 4729), `--host <addr>` (default 127.0.0.1, loopback only),
+`--no-open` (skip auto-opening the browser), `--api-only` (JSON API without the dashboard, used
+for UI development — run it alongside `npm run web:dev` in `web/`).
+
 ### Cache hit rate
 
 `cacheRead / (freshInput + cacheRead)` — the share of prompt tokens served from cache. Cache
@@ -116,11 +159,16 @@ disable even that.
 Every command accepts `--json` (e.g. `toksight daily --json`). Shape: `totals`, `cacheHitRate`,
 `clients`, `models`, `daily`, `monthly`, `sessions`, `pricing` (incl. `unpricedModels`), `warnings`.
 
+The web dashboard consumes the same payload (plus web-only extras such as `heatmap`, `trend`,
+`hourly`, `today`, `last7Days`, `thisMonth`, `topSessions`, `longestSession`, `activityRange`,
+`timezone`) from `GET /api/data` on its own origin.
+
 ## Development
 
 ```bash
 npm test        # node:test suite with per-client fixtures (no network needed)
 node bin/toksight.js   # run from source
+npm run web:dev # develop the dashboard UI (needs `toksight web --api-only` running)
 ```
 
 ```
@@ -129,12 +177,19 @@ src/cli.js             arg parsing, commands, rendering
 src/clients/           one parser per agent, normalized to a common entry shape
 src/pricing.js         built-in table + LiteLLM cache + user overrides
 src/aggregate.js       grouping/totals
+src/webdata.js         web-dashboard aggregations (heatmap, trend, sessions…)
+src/webserver.js       zero-dependency HTTP server for `toksight web`
 src/format.js          ANSI tables & number formatting
+web/                   Next.js dashboard (static export served by the CLI)
 ```
+
+The CLI itself keeps **zero runtime dependencies**; the dashboard's dependencies live only in
+`web/package.json` and are needed just to (re)build `web/out/`.
 
 ### Roadmap
 
-- [ ] TUI dashboard & watch mode (phase 2)
+- [x] Web dashboard (`toksight web`, phase 2)
+- [ ] TUI watch mode
 - [ ] More clients (Cursor, Windsurf, pi…)
 - [ ] `--export csv`, leaderboard-style sharing
 
