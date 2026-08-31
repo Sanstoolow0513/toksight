@@ -1,9 +1,14 @@
 import { createRequire } from 'node:module';
+import { spawn } from 'node:child_process';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { clients, resolveClientIds } from './clients/index.js';
 import { configDir, computeCost, getPricing } from './pricing.js';
 import * as agg from './aggregate.js';
 import { createFormatter, renderTable } from './format.js';
+import { pathExists } from './fsutils.js';
+import { createWebServer } from './webserver.js';
+import { buildWebExtras } from './webdata.js';
 
 const require = createRequire(import.meta.url);
 const pkg = require('../package.json');
@@ -19,6 +24,7 @@ Commands
   monthly       Usage grouped by month
   models        Usage grouped by model
   sessions      Top sessions by cost
+  web           Launch the local web dashboard (heatmap, sessions, charts)
   env           Show detected data sources and pricing state
   help          Show this help
 
@@ -31,6 +37,10 @@ Options
   --month          Shortcut for the current calendar month
   --top <n>        Row limit for models/sessions tables (default 20)
   --json           Output machine-readable JSON
+  --port <n>       Web dashboard port (default 4729)
+  --host <addr>    Web dashboard bind address (default 127.0.0.1)
+  --no-open        Do not open the browser automatically (web only)
+  --api-only       Web: serve only the JSON API, no static dashboard
   --offline        Skip the LiteLLM pricing fetch (use built-in/user prices)
   --no-color       Disable ANSI colors
   --version        Print version
@@ -70,6 +80,10 @@ function parseArgs(argv) {
     since: null,
     until: null,
     top: 20,
+    port: 4729,
+    host: '127.0.0.1',
+    open: true,
+    apiOnly: false,
   };
   const positional = [];
   const now = Date.now();
@@ -102,6 +116,15 @@ function parseArgs(argv) {
         opts.top = v;
         break;
       }
+      case '--port': {
+        const v = parseInt(next(), 10);
+        if (!Number.isFinite(v) || v < 1 || v > 65535) throw new Error('invalid --port value');
+        opts.port = v;
+        break;
+      }
+      case '--host': opts.host = String(next()); break;
+      case '--no-open': opts.open = false; break;
+      case '--api-only': opts.apiOnly = true; break;
       case '--version': case '-v': opts.version = true; break;
       case '--help': case '-h': opts.help = true; break;
       default:
@@ -112,7 +135,7 @@ function parseArgs(argv) {
   if (positional.length > 1) throw new Error(`unexpected extra arguments: ${positional.slice(1).join(' ')}`);
   if (positional.length === 1) {
     const cmd = positional[0];
-    if (!['overview', 'daily', 'monthly', 'models', 'sessions', 'env', 'help'].includes(cmd)) {
+    if (!['overview', 'daily', 'monthly', 'models', 'sessions', 'web', 'env', 'help'].includes(cmd)) {
       throw new Error(`unknown command "${cmd}" (see toksight --help)`);
     }
     opts.command = cmd;
@@ -269,10 +292,13 @@ function printWarnings(warnings, fmt) {
   for (const w of warnings) console.error(fmt.yellow(`! ${w}`));
 }
 
-function renderJson(ctx) {
+// The user-facing `--json` contract: totals, cacheHitRate, clients, models,
+// daily, monthly, sessions, pricing (incl. unpricedModels), warnings. The web
+// API reuses this shape and layers webdata.js extras on top.
+function buildPayload(ctx) {
   const { entries, warnings, pricing, perClient, opts } = ctx;
   const totals = agg.summarize(entries);
-  const payload = {
+  return {
     tool: 'toksight',
     version: pkg.version,
     generatedAt: new Date().toISOString(),
@@ -313,7 +339,10 @@ function renderJson(ctx) {
     },
     warnings,
   };
-  console.log(JSON.stringify(payload, null, 2));
+}
+
+function renderJson(ctx) {
+  console.log(JSON.stringify(buildPayload(ctx), null, 2));
 }
 
 function printEmpty({ fmt }) {
@@ -327,6 +356,46 @@ function printEmpty({ fmt }) {
   }
   console.log('');
   console.log('Run some agent sessions first, or set env vars like CLAUDE_CONFIG_DIR / CODEX_HOME / ZCODE_HOME to point at custom locations.');
+}
+
+function openBrowser(url) {
+  try {
+    if (process.platform === 'win32') {
+      spawn('cmd', ['/c', 'start', '', url], { detached: true, stdio: 'ignore' }).unref();
+    } else if (process.platform === 'darwin') {
+      spawn('open', [url], { detached: true, stdio: 'ignore' }).unref();
+    } else {
+      spawn('xdg-open', [url], { detached: true, stdio: 'ignore' }).unref();
+    }
+  } catch {
+    // best-effort only — the URL is printed above regardless
+  }
+}
+
+async function runWeb(opts) {
+  const outDir = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'web', 'out');
+  const built = await pathExists(path.join(outDir, 'index.html'));
+
+  const server = createWebServer({
+    host: opts.host,
+    port: opts.port,
+    outDir,
+    apiOnly: opts.apiOnly,
+    getData: async () => {
+      // Re-collect on every request so a browser refresh shows fresh data.
+      const ctx = { opts, ...(await collectAll(opts)) };
+      return { ...buildPayload(ctx), ...buildWebExtras(ctx.entries, { top: opts.top }) };
+    },
+  });
+
+  const { url } = await server.start();
+  console.log(`toksight web`);
+  console.log(`  ${url}${opts.apiOnly ? '  (api-only)' : ''}`);
+  if (!opts.apiOnly && !built) {
+    console.error('warn: dashboard assets not built yet — run `npm run web:build`, then restart toksight web (serving setup instructions at /)');
+  }
+  console.log('  Press Ctrl+C to stop.');
+  if (opts.open && !opts.apiOnly) openBrowser(url);
 }
 
 export async function main(argv = process.argv.slice(2)) {
@@ -352,6 +421,11 @@ export async function main(argv = process.argv.slice(2)) {
   });
 
   try {
+    if (opts.command === 'web') {
+      await runWeb(opts);
+      return 0;
+    }
+
     const ctx = { opts, ...(await collectAll(opts)) };
     const { entries, warnings } = ctx;
 
