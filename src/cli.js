@@ -295,8 +295,8 @@ function printWarnings(warnings, fmt) {
 // The user-facing `--json` contract: totals, cacheHitRate, clients, models,
 // daily, monthly, sessions, pricing (incl. unpricedModels), warnings. The web
 // API reuses this shape and layers webdata.js extras on top.
-function buildPayload(ctx) {
-  const { entries, warnings, pricing, perClient, opts } = ctx;
+export function buildPayload(ctx) {
+  const { entries, warnings, pricing, opts } = ctx;
   const totals = agg.summarize(entries);
   return {
     tool: 'toksight',
@@ -306,10 +306,10 @@ function buildPayload(ctx) {
     clientsFilter: opts.clients,
     totals: { ...totals, costUsd: totals.costUsd },
     cacheHitRate: agg.cacheHitRate(totals),
+    // Per-agent totals from the filtered entries, so --since/--until/--client
+    // apply here just like they do to every other slice of the payload.
     clients: Object.fromEntries(
-      perClient
-        .filter((c) => c.entries.length > 0)
-        .map((c) => [c.id, agg.summarize(c.entries)]),
+      agg.byClient(entries).map((r) => [r.client, { ...r.totals, cacheHitRate: agg.cacheHitRate(r.totals) }]),
     ),
     models: agg.byModel(entries).map((r) => ({
       client: r.client,

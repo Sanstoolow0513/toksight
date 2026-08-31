@@ -83,7 +83,12 @@ Token 四类：`input #3291ff` / `cache-read #45d483` / `cache-write #bc8cff` / 
    缓存命中率（Database，绿色强调）、活跃天数（CalendarDays）。30px 大数字 + 副文案。
 5. **次级指标条** `.substats`：单卡单行 —— 连续活跃（Flame）、峰值日（TrendingUp）、最长会话（Timer）。
 6. 区块顺序：热力图（Activity）→ 趋势（TrendingUp，7/30/90 seg）→ 时间范围（CalendarRange）| Agent donut（PieChart）→
-   小时（Clock）| 月份（BarChart3）→ 模型用量（Layers，含 Agent×模型 明细折叠表）→ 会话 Top（ListOrdered）→ 页脚。
+   小时（Clock）| 月份（BarChart3）→ 模型用量（Layers，含 Agent×模型 明细折叠表）→ Agent 命中率（Gauge）→
+   会话 Top（ListOrdered）→ 页脚。
+   Agent 命中率区：顶部 seg 切换（「全部」+ 各 Agent，Agent 标签带与其 donut 同色的 8px 色点）；
+   「全部」为绝对 0–100% 刻度的绿色对比条（`.mrow-bar` 复用，点击条目钻取）；单 Agent 视图
+   为 24px 绿色大数字 + 副文案（缓存读 / 新输入 / 请求），下方该 Agent 的分模型命中率条，
+   命中率 `—` 时条宽为 0。命中率统计按每次请求归因（session 切模型会被拆分归入各模型，不误计）。
 7. 双栏 `1.4fr / 1fr`，≤960px 单列；KPI ≤960px 两列、≤560px 单列。
 
 ## 7. States

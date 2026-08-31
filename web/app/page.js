@@ -11,6 +11,7 @@ import {
   Database,
   Filter,
   Flame,
+  Gauge,
   Inbox,
   Layers,
   ListOrdered,
@@ -27,6 +28,7 @@ import TrendChart from '@/components/TrendChart';
 import Donut from '@/components/Donut';
 import RangeTable from '@/components/RangeTable';
 import ModelBars from '@/components/ModelBars';
+import AgentHitRate from '@/components/AgentHitRate';
 import { HourBars, MonthlyBars } from '@/components/Bars';
 import { DEFAULT_LOCALE, readStoredLocale, t, writeStoredLocale } from '@/lib/i18n';
 
@@ -425,6 +427,14 @@ export default function Page() {
                   </table>
                 </div>
               </details>
+            </Section>
+
+            <Section icon={Gauge} title={tx('agentTitle')} desc={tx('agentDesc')}>
+              <AgentHitRate
+                agents={agents.map((a) => ({ ...a, label: clientLabel(a.id) }))}
+                models={data.models ?? []}
+                locale={locale}
+              />
             </Section>
 
             <Section icon={ListOrdered} title={tx('sessTitle')} desc={tx('sessDesc', { n: data.topSessions?.length ?? 0 })}>
