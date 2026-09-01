@@ -15,6 +15,9 @@ export function sourceRoots({ env = process.env, home = os.homedir() } = {}) {
 // database is the source of truth; ~/.zcode/cli/rollout/model-io-*.jsonl files
 // carry the same data and are only used when the database cannot be read
 // (e.g. Node without node:sqlite) so requests are never double counted.
+// input_tokens counts the whole prompt with cache reads included (rollout
+// totalTokens = input + output + cacheWrite), so cache reads are subtracted
+// to emit fresh input like every other client.
 export async function collect({ env, home, roots } = {}) {
   const scanRoots = roots ?? sourceRoots({ env, home });
   const base = scanRoots[0];
@@ -66,7 +69,7 @@ async function collectFromDb(base, warnings) {
         sessionId: r.session_id,
         model: r.model_id || 'unknown',
         timestamp: r.completed_at ?? r.started_at ?? null,
-        inputTokens: input,
+        inputTokens: Math.max(0, input - cacheRead),
         outputTokens: output,
         reasoningTokens: r.reasoning_tokens ?? 0,
         cacheReadTokens: cacheRead,
@@ -106,7 +109,7 @@ async function collectFromRollout(base) {
         sessionId: o.sessionId || path.basename(file, '.jsonl'),
         model: o.model?.modelId || 'unknown',
         timestamp: o.completedAt ? Date.parse(o.completedAt) : o.startedAt ? Date.parse(o.startedAt) : null,
-        inputTokens: input,
+        inputTokens: Math.max(0, input - cacheRead),
         outputTokens: output,
         reasoningTokens: 0,
         cacheReadTokens: cacheRead,

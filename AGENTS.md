@@ -67,7 +67,10 @@ cost (only OpenCode does).
 - **ZCode double-count guard**: the SQLite db (`~/.zcode/cli/db/db.sqlite`, `model_usage` table)
   is the source of truth; `~/.zcode/cli/rollout/*.jsonl` is a fallback used only when the db
   cannot be read. Never collect from both. `node:sqlite` needs Node >= 22.5; on older Node the
-  db test skips and parsing falls back to rollout.
+  db test skips and parsing falls back to rollout. ZCode's `input_tokens` counts the whole prompt
+  **with cache reads included** (rollout `totalTokens = input + output + cacheWrite` proves
+  writes stay separate), so both paths subtract `cacheRead` to emit fresh input — without this,
+  the hit-rate denominator and `computeCost` double-count cached tokens.
 - **Parsers must never throw** on bad data: tolerate malformed/unreadable files, push messages
   into `warnings`, skip empty-usage rows. `cli.js` collects clients via `Promise.allSettled` and
   prints warnings on stderr (they also appear under `warnings` in JSON output).

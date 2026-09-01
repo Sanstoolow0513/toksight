@@ -44,23 +44,27 @@ toksight web          # local web dashboard (heatmap, trend & model analytics)
 toksight env          # show detected data sources + pricing state
 ```
 
-Example (`toksight`):
+Example (`toksight --since 2026-08-30 --until 2026-08-31`):
 
 ```
-Tokens 3,668,215  Cost $0.378  36 requests · 1 sessions
-input 1.87M · cache read 1.74M (48.2% hit · write 0) · output 55.9K
-range: all time · clients: all
+Tokens 68,590,023  Cost $9.25  1081 requests · 33 sessions
+input 3.95M · cache read 63.79M (94.2% hit · write 0) · output 849K
+range: 2026-08-30 → 2026-08-31 · clients: all
 
 By client
-Client  Req  Sessions  Tokens    Cost
-──────  ───  ────────  ──────  ──────
-zcode    36         1   3.67M  $0.378
+Client  Req  Sessions  Tokens    Hit   Cost
+──────  ───  ────────  ──────  ─────  ─────
+zcode   533        18  33.68M  91.9%  $2.37
+kimi    486        13  32.91M  96.7%  $4.91
+codex    62         2   2.00M  90.8%  $1.96
 
 Top models (up to 20)
-Client  Model          Req  Input  Cache R  Cache W  Output    Hit     Cost
-──────  ─────────────  ───  ─────  ───────  ──────  ──────  ─────  ───────
-zcode   GLM-5.3-Flash   35  1.86M    1.74M        0   55.8K  48.4%   $0.359
-zcode   GLM-5.3          1  13.8K        0        0     126   0.0%  $0.0199
+Client  Model              Req  Input  Cache R  Cache W  Output    Hit     Cost
+──────  ─────────────────  ───  ─────  ───────  ───────  ──────  ─────  ───────
+kimi    kimi-code/k3       422   986K   29.01M        0    293K  96.7%    $4.51
+codex   gpt-5.6-sol         62   183K    1.79M        0   25.7K  90.8%    $1.96
+zcode   glm-5.3-flash      487  2.51M   28.45M        0    442K  91.9%    $1.45
+zcode   glm-5.3             41   116K    1.99M        0   43.3K  94.5%   $0.870
 ```
 
 ### Options
@@ -165,6 +169,8 @@ for UI development — run it alongside `npm run web:dev` in `web/`).
 *writes* are excluded (they are cold traffic being stored, not served). Stats are attributed per
 request, so a session that switched models splits cleanly across the per-agent / per-model views —
 a model's cache can only ever hit for that same model, so request-level attribution is exact.
+ZCode reports `input_tokens` as the whole prompt with cache reads included, so toksight subtracts
+them to expose fresh input and keep this formula meaningful across agents.
 
 ## Privacy
 
