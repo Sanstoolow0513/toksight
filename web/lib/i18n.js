@@ -18,7 +18,7 @@ const tables = {
     emptyTitle: '未找到会话数据',
     emptyBody:
       '先用你的 AI agent 跑几个会话，稍后刷新本页。也可以在终端运行 `toksight env` 查看各 agent 的扫描位置，或用 `--client` / `--since` 调整筛选。',
-    warnPrefix: '警告',
+    warnPrefix: '警告：',
     filterNote: '生效筛选：',
     filterClient: 'client = {clients}',
     filterSince: '自 {date}',
@@ -124,7 +124,7 @@ const tables = {
     emptyTitle: 'No session data found',
     emptyBody:
       'Run a few sessions with your AI agent, then refresh. Or run `toksight env` to see scan paths, and use `--client` / `--since` to filter.',
-    warnPrefix: 'Warning',
+    warnPrefix: 'Warning: ',
     filterNote: 'Active filters: ',
     filterClient: 'client = {clients}',
     filterSince: 'since {date}',

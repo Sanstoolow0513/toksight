@@ -111,7 +111,11 @@ export default function TrendChart({ trends = {}, trendsByAgent = {}, agents = [
   const rows = active.rows;
   const n = rows.length;
   const agentRows = trendsByAgent?.[active.days];
-  const agentMode = mode === 'agent' && Array.isArray(agentRows) && agentRows.length === n;
+  // Agent mode needs by-agent rows that line up with the window; anything else
+  // (only possible with a malformed API response) silently falls back to mix,
+  // so the tab highlight must follow the effective mode, not the state.
+  const agentDataOk = Array.isArray(agentRows) && agentRows.length === n;
+  const agentMode = mode === 'agent' && agentDataOk;
 
   // Series definitions for the active mode: stable key + label + color. Agent
   // colors follow the shared palette order used by the agent share card.
@@ -178,7 +182,7 @@ export default function TrendChart({ trends = {}, trendsByAgent = {}, agents = [
             ))}
           </div>
           <div className="seg" role="tablist" aria-label={tr(locale, 'trendMode')}>
-            <button type="button" role="tab" aria-selected={mode === 'mix'} className={mode === 'mix' ? 'on' : ''} onClick={() => setMode('mix')}>
+            <button type="button" role="tab" aria-selected={!agentMode} className={!agentMode ? 'on' : ''} onClick={() => setMode('mix')}>
               {tr(locale, 'modeMix')}
             </button>
             <button
@@ -187,7 +191,7 @@ export default function TrendChart({ trends = {}, trendsByAgent = {}, agents = [
               aria-selected={agentMode}
               className={agentMode ? 'on' : ''}
               onClick={() => setMode('agent')}
-              disabled={!Array.isArray(trendsByAgent?.[active.days])}
+              disabled={!agentDataOk}
             >
               {tr(locale, 'modeAgent')}
             </button>

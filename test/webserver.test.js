@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 
@@ -62,6 +63,31 @@ test('serves the prebuilt dashboard from outDir and 404s missing assets', async 
 
     const missing = await fetch(`${url}/nope.css`);
     assert.equal(missing.status, 404);
+  });
+});
+
+test('HEAD requests get headers only, without a response body', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'toksight-web-'));
+  fs.writeFileSync(path.join(dir, 'index.html'), '<html>head-body-marker</html>');
+
+  // Raw socket, not fetch: fetch always reports an empty body for HEAD, so it
+  // can't tell whether bytes actually went over the wire.
+  await withServer({ outDir: dir }, async (url) => {
+    const { port } = new URL(url);
+    await new Promise((resolve, reject) => {
+      const sock = net.connect(Number(port), '127.0.0.1');
+      let raw = '';
+      sock.on('error', reject);
+      sock.on('connect', () => sock.write('HEAD / HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n'));
+      sock.on('data', (d) => {
+        raw += d.toString('latin1');
+      });
+      sock.on('close', () => {
+        assert.ok(raw.startsWith('HTTP/1.1 200'), `unexpected status line: ${raw.split('\r\n')[0]}`);
+        assert.ok(!raw.includes('head-body-marker'), 'HEAD response must not carry a body');
+        resolve();
+      });
+    });
   });
 });
 
