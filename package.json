@@ -1,7 +1,7 @@
 {
   "name": "toksight",
   "version": "0.2.0",
-  "description": "Track token usage, cost and cache hit rate of AI coding agents (ZCode, Claude Code, Codex, OpenCode, Gemini CLI, Kimi Code) from your terminal.",
+  "description": "Track token usage, cost and cache hit rate of AI coding agents (ZCode, Claude Code, Codex, OpenCode, Kimi Code) from your terminal.",
   "type": "module",
   "license": "MIT",
   "engines": {
@@ -35,7 +35,6 @@
     "claude-code",
     "codex",
     "opencode",
-    "gemini",
     "zcode",
     "cli",
     "analytics"

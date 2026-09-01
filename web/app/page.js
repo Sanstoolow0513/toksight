@@ -43,7 +43,6 @@ const CLIENT_LABELS = {
   claude: 'Claude Code',
   codex: 'Codex CLI',
   opencode: 'OpenCode',
-  gemini: 'Gemini CLI',
   kimi: 'Kimi Code',
 };
 
