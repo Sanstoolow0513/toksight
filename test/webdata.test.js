@@ -290,3 +290,80 @@ test('buildWebExtras exposes the dashboard payload shape', () => {
   assert.equal(extras.activeDays, 1);
   assert.equal(extras.peakDay.date, localDate(new Date(2026, 7, 10, 12).getTime()));
 });
+
+// The windows must step local CALENDAR days (stepDay), not N * 24h: crossing a
+// DST transition with 24h hops drifts the window off its day, which used to
+// drop "today" from the trend/heatmap and misalign the grid's weekday. These
+// tests force a DST timezone; on machines without it they degrade to plain
+// calendar assertions and still pass.
+function withTz(tz, fn) {
+  const prev = process.env.TZ;
+  process.env.TZ = tz;
+  try {
+    fn();
+  } finally {
+    if (prev === undefined) delete process.env.TZ;
+    else process.env.TZ = prev;
+  }
+}
+
+test('DST fall-back: trend and heatmap keep today and full row count', () => {
+  withTz('America/Los_Angeles', () => {
+    const now = new Date(2026, 10, 16, 12).getTime(); // 2026-11-16 Mon, window crosses Nov 1 fall-back
+    const entries = [entry({ timestamp: new Date(2026, 10, 16, 10).getTime(), inputTokens: 100 })];
+
+    const trend = buildTrend(entries, { days: 30, now });
+    assert.equal(trend.length, 30); // 24h hops yielded only 29 rows
+    assert.equal(trend[0].date, '2026-10-18');
+    assert.equal(trend[trend.length - 1].date, '2026-11-16');
+    assert.equal(trend[trend.length - 1].tokens, 105); // today's entry is visible
+
+    const tba = buildTrendByAgent(entries, { days: 30, now });
+    assert.equal(tba.length, 30);
+    assert.equal(tba[tba.length - 1].date, '2026-11-16');
+    assert.equal(tba[tba.length - 1].clients.claude, 105);
+
+    const heat = buildHeatmap(entries, { weeks: 3, now });
+    assert.equal(heat.start, '2026-11-01'); // a Sunday
+    assert.equal(new Date(Date.parse(`${heat.start}T00:00:00`)).getDay(), 0);
+    assert.equal(heat.days.length, (3 - 1) * 7 + new Date(now).getDay() + 1); // 16
+    assert.equal(heat.days[heat.days.length - 1].date, '2026-11-16');
+    assert.equal(heat.days[heat.days.length - 1].tokens, 105);
+  });
+});
+
+test('DST spring-forward: heatmap stays Sunday-aligned and includes today', () => {
+  withTz('America/Los_Angeles', () => {
+    const now = new Date(2026, 2, 16, 12).getTime(); // 2026-03-16 Mon, window crosses Mar 8 spring-forward
+    const entries = [entry({ timestamp: new Date(2026, 2, 16, 9).getTime(), inputTokens: 100 })];
+
+    const trend = buildTrend(entries, { days: 30, now });
+    assert.equal(trend.length, 30);
+    assert.equal(trend[0].date, '2026-02-15');
+    assert.equal(trend[trend.length - 1].date, '2026-03-16');
+    assert.equal(trend[trend.length - 1].tokens, 105);
+
+    const heat = buildHeatmap(entries, { weeks: 3, now });
+    assert.equal(heat.start, '2026-03-01');
+    assert.equal(new Date(Date.parse(`${heat.start}T00:00:00`)).getDay(), 0); // not Saturday
+    assert.equal(heat.days.length, (3 - 1) * 7 + new Date(now).getDay() + 1); // 16
+    assert.equal(heat.days[heat.days.length - 1].date, '2026-03-16');
+    assert.equal(heat.days[heat.days.length - 1].tokens, 105);
+  });
+});
+
+test('last7Days window is calendar-aligned right after a DST transition', () => {
+  withTz('America/Los_Angeles', () => {
+    // now just after midnight; a 6*24h lookback lands 30min before Mar 5 00:00
+    // and used to pull Mar 4 activity into "last 7 days".
+    const now = new Date(2026, 2, 11, 0, 30).getTime();
+    const entries = [
+      entry({ timestamp: new Date(2026, 2, 4, 23, 45).getTime(), inputTokens: 75 }), // must be excluded
+      entry({ timestamp: new Date(2026, 2, 10, 12).getTime(), inputTokens: 200 }),
+      entry({ timestamp: new Date(2026, 2, 11, 0, 10).getTime(), inputTokens: 50 }),
+    ];
+    const extras = buildWebExtras(entries, { now, weeks: 2 });
+    assert.equal(extras.last7Days.tokens, 200 + 5 + 50 + 5); // 260, not 340
+    assert.equal(extras.today.tokens, 50 + 5);
+  });
+});

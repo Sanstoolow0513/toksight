@@ -5,10 +5,17 @@
 
 import { summarize, cacheHitRate, localDate, localMonth, bySession } from './aggregate.js';
 
-const DAY_MS = 24 * 3600 * 1000;
-
 function startOfDay(ts) {
   const d = new Date(ts);
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+}
+
+// DST-safe day step on local midnights (never a blind `ts + n * 24h`): the
+// latter drifts one hour per transition inside the span, which shifts window
+// starts off their calendar day.
+function stepDay(ts, n) {
+  const d = new Date(ts);
+  d.setDate(d.getDate() + n);
   return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
 }
 
@@ -58,9 +65,11 @@ function bucketRow(b, date) {
 }
 
 // Steps local midnights (not +24h hops) so DST transitions can't skip or
-// duplicate a day key.
+// duplicate a day key. The start is snapped to local midnight first: a caller
+// start that landed off-midnight would shift the whole series by that offset.
 function* localMidnights(startTs, endTs) {
   const d = new Date(startTs);
+  d.setHours(0, 0, 0, 0);
   while (d.getTime() <= endTs) {
     yield d.getTime();
     d.setDate(d.getDate() + 1);
@@ -73,7 +82,7 @@ function* localMidnights(startTs, endTs) {
 export function buildHeatmap(entries, { weeks = 53, now = Date.now() } = {}) {
   const buckets = buildDayBuckets(entries);
   const todayStart = startOfDay(now);
-  const gridStart = todayStart - ((weeks - 1) * 7 + new Date(now).getDay()) * DAY_MS;
+  const gridStart = stepDay(todayStart, -((weeks - 1) * 7 + new Date(now).getDay()));
   const days = [];
   let maxTokens = 0;
   for (const ts of localMidnights(gridStart, todayStart)) {
@@ -91,7 +100,7 @@ export function buildTrend(entries, { days = 30, now = Date.now() } = {}) {
   const buckets = buildDayBuckets(entries);
   const todayStart = startOfDay(now);
   const rows = [];
-  for (const ts of localMidnights(todayStart - (days - 1) * DAY_MS, todayStart)) {
+  for (const ts of localMidnights(stepDay(todayStart, -(days - 1)), todayStart)) {
     const date = localDate(ts);
     rows.push(buckets.has(date) ? bucketRow(buckets.get(date), date) : zeroDay(date));
   }
@@ -119,7 +128,7 @@ export function buildTrendByAgent(entries, { days = 30, now = Date.now() } = {})
   }
   const todayStart = startOfDay(now);
   const rows = [];
-  for (const ts of localMidnights(todayStart - (days - 1) * DAY_MS, todayStart)) {
+  for (const ts of localMidnights(stepDay(todayStart, -(days - 1)), todayStart)) {
     const date = localDate(ts);
     const b = buckets.get(date);
     const c = perClient.get(date);
@@ -257,13 +266,6 @@ function localTimezone() {
   }
 }
 
-// DST-safe day step on local midnights (never a blind +24h hop).
-function stepDay(ts, n) {
-  const d = new Date(ts);
-  d.setDate(d.getDate() + n);
-  return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
-}
-
 // Consecutive active-day runs over ALL history (not just the heatmap window).
 // `current` may end yesterday: a day still in progress shouldn't reset it.
 function computeStreaks(activeDates, now) {
@@ -298,6 +300,7 @@ function allDayRows(entries) {
 // CLI --top limit for the sessions table.
 export function buildWebExtras(entries, { top = 20, weeks = 53, now = Date.now() } = {}) {
   const { topSessions, longestSession } = buildSessionRows(entries, { top });
+  const todayStart = startOfDay(now);
   const activeDays = allDayRows(entries).filter((d) => d.tokens > 0);
   const peakDay = activeDays.reduce(
     (best, d) => (best == null || d.tokens > best.tokens ? { date: d.date, tokens: d.tokens, costUsd: d.costUsd } : best),
@@ -317,8 +320,8 @@ export function buildWebExtras(entries, { top = 20, weeks = 53, now = Date.now()
     },
     hourly: buildHourly(entries),
     today: rangeStats(entries, (e) => Number.isFinite(e.timestamp) && localDate(e.timestamp) === localDate(now)),
-    last7Days: rangeStats(entries, (e) => Number.isFinite(e.timestamp) && e.timestamp >= startOfDay(now - 6 * DAY_MS)),
-    last30Days: rangeStats(entries, (e) => Number.isFinite(e.timestamp) && e.timestamp >= startOfDay(now - 29 * DAY_MS)),
+    last7Days: rangeStats(entries, (e) => Number.isFinite(e.timestamp) && e.timestamp >= stepDay(todayStart, -6)),
+    last30Days: rangeStats(entries, (e) => Number.isFinite(e.timestamp) && e.timestamp >= stepDay(todayStart, -29)),
     thisMonth: rangeStats(entries, (e) => Number.isFinite(e.timestamp) && localMonth(e.timestamp) === localMonth(now)),
     activeDays: activeDays.length,
     streaks: computeStreaks(
