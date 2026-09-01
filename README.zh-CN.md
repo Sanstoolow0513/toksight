@@ -44,23 +44,27 @@ toksight web          # 本地网页仪表盘（热力图、趋势与模型分�
 toksight env          # 查看检测到的数据源与定价状态
 ```
 
-示例输出（`toksight`）：
+示例输出（`toksight --since 2026-08-30 --until 2026-08-31`）：
 
 ```
-Tokens 3,668,215  Cost $0.378  36 requests · 1 sessions
-input 1.87M · cache read 1.74M (48.2% hit · write 0) · output 55.9K
-range: all time · clients: all
+Tokens 68,590,023  Cost $9.25  1081 requests · 33 sessions
+input 3.95M · cache read 63.79M (94.2% hit · write 0) · output 849K
+range: 2026-08-30 → 2026-08-31 · clients: all
 
 By client
-Client  Req  Sessions  Tokens    Cost
-──────  ───  ────────  ──────  ──────
-zcode    36         1   3.67M  $0.378
+Client  Req  Sessions  Tokens    Hit   Cost
+──────  ───  ────────  ──────  ─────  ─────
+zcode   533        18  33.68M  91.9%  $2.37
+kimi    486        13  32.91M  96.7%  $4.91
+codex    62         2   2.00M  90.8%  $1.96
 
 Top models (up to 20)
-Client  Model          Req  Input  Cache R  Cache W  Output    Hit     Cost
-──────  ─────────────  ───  ─────  ───────  ──────  ──────  ─────  ───────
-zcode   GLM-5.3-Flash   35  1.86M    1.74M        0   55.8K  48.4%   $0.359
-zcode   GLM-5.3          1  13.8K        0        0     126   0.0%  $0.0199
+Client  Model              Req  Input  Cache R  Cache W  Output    Hit     Cost
+──────  ─────────────────  ───  ─────  ───────  ───────  ──────  ─────  ───────
+kimi    kimi-code/k3       422   986K   29.01M        0    293K  96.7%    $4.51
+codex   gpt-5.6-sol         62   183K    1.79M        0   25.7K  90.8%    $1.96
+zcode   glm-5.3-flash      487  2.51M   28.45M        0    442K  91.9%    $1.45
+zcode   glm-5.3             41   116K    1.99M        0   43.3K  94.5%   $0.870
 ```
 
 ### 参数
@@ -155,7 +159,8 @@ npm run web:build
 `cacheRead / (新鲜输入 + cacheRead)` — 即提示词 token 中由缓存服务的比例。缓存**写入**不计入
 分母（那是被存储的冷数据，不是被服务的流量）。统计按**每次请求**归因：一个会话中途切换模型，
 会被干净地拆分到分 Agent / 分模型视图里——缓存本来就绑定模型，A 模型的缓存不可能对 B 模型
-命中，因此按请求归属是精确的。
+命中，因此按请求归属是精确的。ZCode 上报的 `input_tokens` 是含缓存读取的完整提示词，toksight
+会先扣除缓存部分得到新鲜输入，让该公式在各 Agent 间口径一致。
 
 ## 隐私
 

@@ -222,18 +222,17 @@ function pricingModelsTable(entries, opts, fmt) {
   });
 }
 
-function clientsTable(perClient, opts, fmt) {
-  const rows = perClient
-    .filter((c) => !opts.clients || opts.clients.includes(c.id))
-    .map((c) => ({ client: c.id, totals: agg.summarize(c.entries) }))
-    .filter((r) => r.totals.requests > 0)
-    .sort((a, b) => b.totals.totalTokens - a.totals.totalTokens);
+// Same filtered entries as the JSON payload's `clients`, so --since/--until
+// apply here like they do to the header totals.
+function clientsTable(entries, fmt) {
+  const rows = agg.byClient(entries);
   return renderTable({
     columns: [
       { header: 'Client', value: (r) => r.client },
       { header: 'Req', align: 'right', value: (r) => fmt.int(r.totals.requests) },
       { header: 'Sessions', align: 'right', value: (r) => fmt.int(r.totals.sessions) },
       { header: 'Tokens', align: 'right', value: (r) => fmt.tokens(r.totals.totalTokens) },
+      { header: 'Hit', align: 'right', value: (r) => fmt.pct(agg.cacheHitRate(r.totals)) },
       { header: 'Cost', align: 'right', value: (r) => fmt.cost(r.totals.costUsd) },
     ],
     rows,
@@ -446,7 +445,7 @@ export async function main(argv = process.argv.slice(2)) {
         for (const line of lines) console.log(line);
         console.log('');
         console.log(fmt.bold('By client'));
-        console.log(fmt.dim(clientsTable(ctx.perClient, opts, fmt)));
+        console.log(fmt.dim(clientsTable(entries, fmt)));
         console.log('');
         console.log(fmt.bold(`Top models (up to ${opts.top})`));
         console.log(fmt.dim(pricingModelsTable(entries, opts, fmt)));

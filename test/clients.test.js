@@ -121,7 +121,7 @@ test('kimi parser reads wire.jsonl usage records and state metadata', async () =
   assert.equal(orphan.title, null);
 });
 
-test('zcode rollout parser reads model_io usage and skips empty', async () => {
+test('zcode rollout parser splits cache reads from total prompt and skips empty', async () => {
   const { entries, warnings } = await zcode.collect({
     env: { ZCODE_HOME: path.join(fixtures, 'zcode') },
     home: os.homedir(),
@@ -132,7 +132,7 @@ test('zcode rollout parser reads model_io usage and skips empty', async () => {
   const e = entries[0];
   assert.equal(e.client, 'zcode');
   assert.equal(e.model, 'GLM-5.3');
-  assert.equal(e.inputTokens, 1000);
+  assert.equal(e.inputTokens, 500); // 1000 total prompt - 500 cached (writes excluded from input)
   assert.equal(e.outputTokens, 100);
   assert.equal(e.cacheReadTokens, 500);
   assert.equal(e.cacheWriteTokens, 50);
@@ -172,4 +172,5 @@ test('zcode db parser reads model_usage when sqlite is available', async (t) => 
   assert.equal(entries[0].timestamp, 2000);
   assert.equal(entries[0].cacheReadTokens, 50);
   assert.equal(entries[0].cacheWriteTokens, 5);
+  assert.equal(entries[0].inputTokens, 50); // 100 total prompt - 50 cached
 });
