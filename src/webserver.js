@@ -24,10 +24,13 @@ const MIME = {
   '.webmanifest': 'application/manifest+json',
 };
 
+// No CORS headers: the API is same-origin with the served dashboard, and the
+// dev setup proxies through Next rewrites (server-side, no browser CORS). An
+// `Access-Control-Allow-Origin: *` here would let any website read local
+// session data from browsers that allow simple cross-origin GETs.
 const JSON_HEADERS = {
   'content-type': 'application/json; charset=utf-8',
   'cache-control': 'no-store',
-  'access-control-allow-origin': '*',
 };
 
 // Shown at / when web/out has not been built yet; the API keeps working so the
