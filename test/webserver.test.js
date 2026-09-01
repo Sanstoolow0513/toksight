@@ -20,7 +20,7 @@ async function withServer(opts, fn) {
   }
 }
 
-test('/api/data serves fresh JSON with no-store and CORS', async () => {
+test('/api/data serves fresh JSON with no-store and no CORS', async () => {
   let calls = 0;
   await withServer(
     {
@@ -34,7 +34,9 @@ test('/api/data serves fresh JSON with no-store and CORS', async () => {
       assert.equal(res.status, 200);
       assert.match(res.headers.get('content-type'), /application\/json/);
       assert.equal(res.headers.get('cache-control'), 'no-store');
-      assert.equal(res.headers.get('access-control-allow-origin'), '*');
+      // Same-origin API: no wildcard CORS, so other websites can't read local
+      // session data from the browser.
+      assert.equal(res.headers.get('access-control-allow-origin'), null);
       assert.deepEqual(await res.json(), { ...payload, calls: 1 });
       const second = await fetch(`${url}/api/data`);
       assert.deepEqual(await second.json(), { ...payload, calls: 2 }); // re-collected per request
