@@ -79,7 +79,10 @@ cost (only OpenCode does).
 - **Parsers must never throw** on bad data: tolerate malformed/unreadable files, push messages
   into `warnings`, skip empty-usage rows. `cli.js` collects clients via `Promise.allSettled` and
   prints warnings on stderr (they also appear under `warnings` in JSON output).
-- **Dedup/diff semantics per client**: Claude dedupes message ids; Codex
+- **Claude dedup is max-wins**: assistant lines can repeat a message id with a *growing* usage
+  snapshot (streaming partial → final). Keep the snapshot with the largest token total, not the
+  first line (first-wins undercounts).
+- **Dedup/diff semantics per client**: Claude dedupes message ids (max-wins, see above); Codex
   prefers `last_token_usage`
   and diffs cumulative totals;
   Kimi counts every `usage.record` as-is (per-request, never cumulative; both `turn` and

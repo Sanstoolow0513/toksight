@@ -12,12 +12,13 @@ import * as zcode from '../src/clients/zcode.js';
 
 const fixtures = path.join(path.dirname(fileURLToPath(import.meta.url)), 'fixtures');
 
-test('claude parser dedupes message ids and skips empty usage', async () => {
+test('claude parser dedupes message ids, keeping the largest usage snapshot', async () => {
   const { entries } = await claude.collect({
     env: { CLAUDE_CONFIG_DIR: path.join(fixtures, 'claude') },
     home: os.homedir(),
   });
-  assert.equal(entries.length, 2);
+  // msg_1 (duplicate lines), msg_2, msg_4, msg_5 kept; msg_3 zero-usage skipped
+  assert.equal(entries.length, 4);
   const first = entries[0];
   assert.equal(first.client, 'claude');
   assert.equal(first.sessionId, 'sess-a');
@@ -28,6 +29,15 @@ test('claude parser dedupes message ids and skips empty usage', async () => {
   assert.equal(first.outputTokens, 200);
   assert.equal(first.timestamp, Date.parse('2026-08-29T10:00:00.000Z'));
   assert.equal(first.directory, 'C--Users-test-proj');
+
+  // msg_4: same id re-emitted with growing usage (streaming partial -> final)
+  const grown = entries.find((e) => e.inputTokens === 30);
+  assert.equal(grown.outputTokens, 250);
+
+  // msg_5: a later, smaller snapshot must not shrink the kept entry
+  const shrunk = entries.find((e) => e.inputTokens === 70);
+  assert.equal(shrunk.outputTokens, 40);
+  assert.equal(shrunk.cacheReadTokens, 100);
 });
 
 test('codex parser prefers last_token_usage and diffs cumulative totals', async () => {

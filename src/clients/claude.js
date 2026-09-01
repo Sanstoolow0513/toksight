@@ -13,12 +13,14 @@ export function sourceRoots({ env = process.env, home = os.homedir() } = {}) {
 // Claude Code writes one JSONL transcript per session under
 // ~/.claude/projects/<encoded-cwd>/<sessionId>.jsonl. Assistant lines carry a
 // `message.usage` object with Anthropic-style token fields. Assistant lines can
-// repeat per message id (one line per content block), so dedupe by message id.
+// repeat per message id (one line per content block, or a streaming partial
+// followed by the final snapshot) — dedupe by message id, keeping the snapshot
+// with the largest usage so partials never undercount.
 export async function collect({ env, home, roots } = {}) {
   const scanRoots = roots ?? sourceRoots({ env, home });
   const warnings = [];
   const entries = [];
-  const seen = new Set();
+  const seen = new Map(); // dedupe key -> index of the kept entry
 
   const files = [];
   for (const root of scanRoots) {
@@ -37,14 +39,7 @@ export async function collect({ env, home, roots } = {}) {
       const output = usage.output_tokens ?? 0;
       if (!input && !cacheRead && !cacheWrite && !output) return;
 
-      const messageId = msg.id || '';
-      const key = `${o.sessionId || file}/${messageId}`;
-      if (messageId) {
-        if (seen.has(key)) return;
-        seen.add(key);
-      }
-
-      entries.push({
+      const entry = {
         client: id,
         sessionId: o.sessionId || path.basename(file, '.jsonl'),
         model: msg.model || 'unknown',
@@ -57,7 +52,23 @@ export async function collect({ env, home, roots } = {}) {
         costUsd: null,
         directory: path.basename(path.dirname(file)),
         title: null,
-      });
+      };
+
+      const messageId = msg.id || '';
+      const key = `${o.sessionId || file}/${messageId}`;
+      if (messageId) {
+        const idx = seen.get(key);
+        if (idx !== undefined) {
+          const kept = entries[idx];
+          const keptTotal =
+            kept.inputTokens + kept.cacheReadTokens + kept.cacheWriteTokens + kept.outputTokens;
+          const total = input + cacheRead + cacheWrite + output;
+          if (total > keptTotal) entries[idx] = entry;
+          return;
+        }
+        seen.set(key, entries.length);
+      }
+      entries.push(entry);
     });
   }
 
