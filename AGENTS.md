@@ -64,6 +64,11 @@ cost (only OpenCode does).
 
 ## Gotchas & rules
 
+- **OpenCode db-first guard**: v1.2+ `~/.local/share/opencode/opencode.db` (`message` table, JSON
+  `data` column, LEFT JOIN `session` for directory/title) is the source of truth;
+  `<base>/storage/message/*.json` (v1.1.x layout) is a fallback used only when the db cannot be
+  read. Never collect from both. SQLite-era rows hardcode `cost: 0` as a placeholder — only
+  non-zero self-reported costs are honored there (legacy JSON costs are honored as-is).
 - **ZCode double-count guard**: the SQLite db (`~/.zcode/cli/db/db.sqlite`, `model_usage` table)
   is the source of truth; `~/.zcode/cli/rollout/*.jsonl` is a fallback used only when the db
   cannot be read. Never collect from both. `node:sqlite` needs Node >= 22.5; on older Node the
@@ -74,7 +79,8 @@ cost (only OpenCode does).
 - **Parsers must never throw** on bad data: tolerate malformed/unreadable files, push messages
   into `warnings`, skip empty-usage rows. `cli.js` collects clients via `Promise.allSettled` and
   prints warnings on stderr (they also appear under `warnings` in JSON output).
-- **Dedup/diff semantics per client**: Claude dedupes message ids; Codex prefers `last_token_usage`
+- **Dedup/diff semantics per client**: Claude dedupes message ids; Codex
+  prefers `last_token_usage`
   and diffs cumulative totals;
   Kimi counts every `usage.record` as-is (per-request, never cumulative; both `turn` and
   `session` usageScope records are real spend).

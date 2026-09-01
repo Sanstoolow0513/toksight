@@ -17,7 +17,7 @@ Inspired by [tokscale](https://github.com/junhoyeo/tokscale) (and in the same sp
 | ZCode | `~/.zcode/cli/db/db.sqlite`, fallback `~/.zcode/cli/rollout/*.jsonl` | `ZCODE_HOME` |
 | Claude Code | `~/.claude/projects/**/*.jsonl` | `CLAUDE_CONFIG_DIR` |
 | Codex CLI | `~/.codex/sessions/**/*.jsonl` | `CODEX_HOME` |
-| OpenCode | `~/.local/share/opencode/storage/message/**/*.json` | `OPENCODE_PATH` |
+| OpenCode | `~/.local/share/opencode/opencode.db`, fallback `~/.local/share/opencode/storage/message/**/*.json` | `OPENCODE_PATH` |
 | Kimi Code | `~/.kimi-code/sessions/**/agents/*/wire.jsonl` | `KIMI_CODE_HOME` |
 
 ## Install
@@ -28,8 +28,9 @@ npm install -g toksight
 npx toksight
 ```
 
-Requires Node.js >= 20. On Node >= 22.5 the ZCode SQLite database is read with the built-in
-`node:sqlite`; older versions automatically fall back to ZCode rollout logs.
+Requires Node.js >= 20. On Node >= 22.5 the ZCode and OpenCode SQLite databases are read with the
+built-in `node:sqlite`; older versions automatically fall back to ZCode rollout logs and OpenCode's
+legacy JSON storage.
 
 ## Usage
 
