@@ -66,12 +66,14 @@ test('codex parser prefers last_token_usage and diffs cumulative totals', async 
 });
 
 test('opencode parser keeps assistant messages and source cost', async () => {
-  const { entries } = await opencode.collect({
+  const { entries, warnings } = await opencode.collect({
     env: { OPENCODE_PATH: path.join(fixtures, 'opencode') },
     home: os.homedir(),
   });
   // No opencode.db in this fixture, so it falls back to the legacy JSON
-  // storage layout (with a warning).
+  // storage layout — silently, since a missing db just means the agent
+  // never wrote one.
+  assert.equal(warnings.length, 0);
   assert.equal(entries.length, 2);
   const first = entries.find((e) => e.sessionId === 'sess1');
   assert.equal(first.model, 'claude-sonnet-4-5');
@@ -127,6 +129,17 @@ test('opencode db parser reads message rows when sqlite is available', async (t)
   assert.equal(warnings.length, 0);
 });
 
+test('opencode parser warns when the db exists but cannot be read', async () => {
+  const tmp = path.join(os.tmpdir(), `toksight-test-${Date.now()}-oc-dir`);
+  const { mkdirSync } = await import('node:fs');
+  // A directory where opencode.db should be: it exists, but SQLite cannot open it.
+  mkdirSync(path.join(tmp, 'opencode.db'), { recursive: true });
+  const { entries, warnings } = await opencode.collect({ env: { OPENCODE_PATH: tmp }, home: os.homedir() });
+  assert.equal(entries.length, 0); // no legacy JSON storage either
+  assert.equal(warnings.length, 1);
+  assert.match(warnings[0], /^opencode: database unreadable/);
+});
+
 test('kimi parser reads wire.jsonl usage records and state metadata', async () => {
   const { entries, warnings } = await kimi.collect({
     env: { KIMI_CODE_HOME: path.join(fixtures, 'kimi') },
@@ -167,8 +180,9 @@ test('zcode rollout parser splits cache reads from total prompt and skips empty'
     env: { ZCODE_HOME: path.join(fixtures, 'zcode') },
     home: os.homedir(),
   });
-  // The db is absent in this fixture, so it falls back to rollout (with a warning).
-  assert.ok(warnings.length >= 1);
+  // The db is absent in this fixture, so it falls back to rollout — silently,
+  // since a missing db just means the agent never wrote one.
+  assert.equal(warnings.length, 0);
   assert.equal(entries.length, 1);
   const e = entries[0];
   assert.equal(e.client, 'zcode');
@@ -178,6 +192,16 @@ test('zcode rollout parser splits cache reads from total prompt and skips empty'
   assert.equal(e.cacheReadTokens, 500);
   assert.equal(e.cacheWriteTokens, 50);
   assert.equal(e.timestamp, Date.parse('2026-08-29T10:00:05.000Z'));
+});
+
+test('zcode parser warns when the db exists but cannot be read', async () => {
+  const tmp = path.join(os.tmpdir(), `toksight-test-${Date.now()}-zc-dir`);
+  const { mkdirSync } = await import('node:fs');
+  mkdirSync(path.join(tmp, 'cli', 'db', 'db.sqlite'), { recursive: true });
+  const { entries, warnings } = await zcode.collect({ env: { ZCODE_HOME: tmp }, home: os.homedir() });
+  assert.equal(entries.length, 0); // no rollout logs either
+  assert.equal(warnings.length, 1);
+  assert.match(warnings[0], /^zcode: database unreadable/);
 });
 
 test('zcode db parser reads model_usage when sqlite is available', async (t) => {

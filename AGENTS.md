@@ -66,12 +66,14 @@ cost (only OpenCode does).
 
 - **OpenCode db-first guard**: v1.2+ `~/.local/share/opencode/opencode.db` (`message` table, JSON
   `data` column, LEFT JOIN `session` for directory/title) is the source of truth;
-  `<base>/storage/message/*.json` (v1.1.x layout) is a fallback used only when the db cannot be
-  read. Never collect from both. SQLite-era rows hardcode `cost: 0` as a placeholder — only
+  `<base>/storage/message/*.json` (v1.1.x layout) is a fallback used only when the db is absent
+  (silently — the agent never wrote one) or cannot be read (warning). Never collect from both.
+  SQLite-era rows hardcode `cost: 0` as a placeholder — only
   non-zero self-reported costs are honored there (legacy JSON costs are honored as-is).
 - **ZCode double-count guard**: the SQLite db (`~/.zcode/cli/db/db.sqlite`, `model_usage` table)
-  is the source of truth; `~/.zcode/cli/rollout/*.jsonl` is a fallback used only when the db
-  cannot be read. Never collect from both. `node:sqlite` needs Node >= 22.5; on older Node the
+  is the source of truth; `~/.zcode/cli/rollout/*.jsonl` is a fallback used only when the db is
+  absent (silently) or cannot be read (warning). Never collect from both. `node:sqlite` needs
+  Node >= 22.5; on older Node the
   db test skips and parsing falls back to rollout. ZCode's `input_tokens` counts the whole prompt
   **with cache reads included** (rollout `totalTokens = input + output + cacheWrite` proves
   writes stay separate), so both paths subtract `cacheRead` to emit fresh input — without this,

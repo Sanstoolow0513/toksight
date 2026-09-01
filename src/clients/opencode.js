@@ -1,6 +1,6 @@
 import os from 'node:os';
 import path from 'node:path';
-import { walkFiles, readJson } from '../fsutils.js';
+import { walkFiles, readJson, pathExists } from '../fsutils.js';
 
 export const id = 'opencode';
 export const label = 'OpenCode';
@@ -15,9 +15,9 @@ export function sourceRoots({ env = process.env, home = os.homedir() } = {}) {
 // OpenCode v1.2+ keeps sessions and messages in <base>/opencode.db (SQLite:
 // `message` rows hold a JSON `data` column, joined with `session` for
 // directory/title). v1.1.x wrote one JSON file per message under
-// <base>/storage/message/ — still supported as a fallback for when the db
-// cannot be read (e.g. Node without node:sqlite), never both, so messages are
-// never double counted. SQLite-era rows hardcode `cost: 0` as a placeholder,
+// <base>/storage/message/ — still supported as a fallback for when the db is
+// absent or cannot be read (e.g. Node without node:sqlite), never both, so
+// messages are never double counted. SQLite-era rows hardcode `cost: 0` as a placeholder,
 // so only non-zero self-reported costs are honored there.
 export async function collect({ env, home, roots } = {}) {
   const scanRoots = roots ?? sourceRoots({ env, home });
@@ -32,10 +32,16 @@ export async function collect({ env, home, roots } = {}) {
 }
 
 async function collectFromDb(base, warnings) {
+  const dbPath = path.join(base, 'opencode.db');
+  // A missing db just means OpenCode's v1.2+ layout was never used — fall back
+  // to legacy storage silently; the warning fires only when the db exists but
+  // cannot be read (locked, or Node without node:sqlite).
+  if (!(await pathExists(dbPath))) return null;
+
   let db;
   try {
     const { DatabaseSync } = await import('node:sqlite');
-    db = new DatabaseSync(path.join(base, 'opencode.db'), { readOnly: true });
+    db = new DatabaseSync(dbPath, { readOnly: true });
   } catch (err) {
     warnings.push(`opencode: database unreadable (${err.message}), falling back to legacy JSON storage`);
     return null;
