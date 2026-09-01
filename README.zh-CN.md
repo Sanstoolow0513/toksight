@@ -17,7 +17,7 @@ toksight 读取各 AI 编程智能体已经写在本地磁盘的会话文件，�
 | ZCode | `~/.zcode/cli/db/db.sqlite`，数据库不可读时回退 `~/.zcode/cli/rollout/*.jsonl` | `ZCODE_HOME` |
 | Claude Code | `~/.claude/projects/**/*.jsonl` | `CLAUDE_CONFIG_DIR` |
 | Codex CLI | `~/.codex/sessions/**/*.jsonl` | `CODEX_HOME` |
-| OpenCode | `~/.local/share/opencode/storage/message/**/*.json` | `OPENCODE_PATH` |
+| OpenCode | `~/.local/share/opencode/opencode.db`，数据库不可读时回退 `~/.local/share/opencode/storage/message/**/*.json` | `OPENCODE_PATH` |
 | Kimi Code | `~/.kimi-code/sessions/**/agents/*/wire.jsonl` | `KIMI_CODE_HOME` |
 
 ## 安装
@@ -28,8 +28,8 @@ npm install -g toksight
 npx toksight
 ```
 
-需要 Node.js >= 20。Node >= 22.5 时用内置 `node:sqlite` 直接读取 ZCode 的 SQLite 数据库，
-旧版本会自动回退到 rollout 日志。
+需要 Node.js >= 20。Node >= 22.5 时用内置 `node:sqlite` 直接读取 ZCode 与 OpenCode 的
+SQLite 数据库，旧版本会自动回退到各自的日志/JSON 存储。
 
 ## 使用
 

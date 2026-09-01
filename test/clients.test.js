@@ -60,6 +60,8 @@ test('opencode parser keeps assistant messages and source cost', async () => {
     env: { OPENCODE_PATH: path.join(fixtures, 'opencode') },
     home: os.homedir(),
   });
+  // No opencode.db in this fixture, so it falls back to the legacy JSON
+  // storage layout (with a warning).
   assert.equal(entries.length, 2);
   const first = entries.find((e) => e.sessionId === 'sess1');
   assert.equal(first.model, 'claude-sonnet-4-5');
@@ -69,6 +71,50 @@ test('opencode parser keeps assistant messages and source cost', async () => {
   assert.equal(first.timestamp, 1788000000000);
   const second = entries.find((e) => e.sessionId === 'sess2');
   assert.equal(second.costUsd, null);
+});
+
+test('opencode db parser reads message rows when sqlite is available', async (t) => {
+  let DatabaseSync;
+  try {
+    ({ DatabaseSync } = await import('node:sqlite'));
+  } catch {
+    t.skip('node:sqlite unavailable on this Node version');
+    return;
+  }
+  const tmp = path.join(os.tmpdir(), `toksight-test-${Date.now()}-oc`);
+  const { mkdirSync } = await import('node:fs');
+  mkdirSync(tmp, { recursive: true });
+  const db = new DatabaseSync(path.join(tmp, 'opencode.db'));
+  db.exec(`
+    CREATE TABLE session (id TEXT PRIMARY KEY, directory TEXT, title TEXT);
+    CREATE TABLE message (id TEXT PRIMARY KEY, session_id TEXT, data TEXT);
+    INSERT INTO session VALUES ('ses_db1', 'C:\\work\\oc', 'oc title');
+    INSERT INTO message VALUES ('msg_1', 'ses_db1', '{"role":"assistant","modelID":"glm-5.3","tokens":{"input":1000,"output":40,"reasoning":5,"cache":{"read":300,"write":0}},"cost":0,"time":{"created":1000,"completed":2000}}');
+    INSERT INTO message VALUES ('msg_2', 'ses_db1', '{"role":"user","modelID":"glm-5.3","tokens":{"input":10,"output":0}}');
+    INSERT INTO message VALUES ('msg_3', 'ses_db1', '{"role":"assistant","modelID":"glm-5.3","tokens":{"input":0,"output":0},"time":{"created":3000}}');
+    INSERT INTO message VALUES ('msg_4', 'ses_db1', '{"role":"assistant","modelID":"glm-5.3","tokens":{"input":50,"output":10},"cost":0.02,"time":{"created":4000,"completed":5000}}');
+    INSERT INTO message VALUES ('msg_5', 'ses_db1', 'not json');
+  `);
+  db.close();
+
+  const { entries, warnings } = await opencode.collect({ env: { OPENCODE_PATH: tmp }, home: os.homedir() });
+  assert.equal(entries.length, 2); // user row, zero-usage row and malformed row skipped
+  const first = entries[0];
+  assert.equal(first.client, 'opencode');
+  assert.equal(first.sessionId, 'ses_db1');
+  assert.equal(first.model, 'glm-5.3');
+  assert.equal(first.directory, 'C:\\work\\oc');
+  assert.equal(first.title, 'oc title');
+  assert.equal(first.timestamp, 2000); // time.completed preferred
+  assert.equal(first.inputTokens, 1000);
+  assert.equal(first.outputTokens, 40);
+  assert.equal(first.reasoningTokens, 5);
+  assert.equal(first.cacheReadTokens, 300);
+  assert.equal(first.cacheWriteTokens, 0);
+  assert.equal(first.costUsd, null); // cost:0 is a placeholder in db-era rows
+  assert.equal(entries[1].costUsd, 0.02);
+  assert.equal(entries[1].timestamp, 5000);
+  assert.equal(warnings.length, 0);
 });
 
 test('kimi parser reads wire.jsonl usage records and state metadata', async () => {
