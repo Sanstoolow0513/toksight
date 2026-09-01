@@ -1,6 +1,6 @@
 import os from 'node:os';
 import path from 'node:path';
-import { walkFiles, readJsonl } from '../fsutils.js';
+import { walkFiles, readJsonl, pathExists } from '../fsutils.js';
 
 export const id = 'zcode';
 export const label = 'ZCode';
@@ -13,8 +13,8 @@ export function sourceRoots({ env = process.env, home = os.homedir() } = {}) {
 // ZCode v2 keeps per-request usage in ~/.zcode/cli/db/db.sqlite
 // (model_usage table, joined with `session` for directory/title). The SQLite
 // database is the source of truth; ~/.zcode/cli/rollout/model-io-*.jsonl files
-// carry the same data and are only used when the database cannot be read
-// (e.g. Node without node:sqlite) so requests are never double counted.
+// carry the same data and are only used when the database is absent or cannot
+// be read (e.g. Node without node:sqlite) so requests are never double counted.
 // input_tokens counts the whole prompt with cache reads included (rollout
 // totalTokens = input + output + cacheWrite), so cache reads are subtracted
 // to emit fresh input like every other client.
@@ -31,10 +31,16 @@ export async function collect({ env, home, roots } = {}) {
 }
 
 async function collectFromDb(base, warnings) {
+  const dbPath = path.join(base, 'cli', 'db', 'db.sqlite');
+  // A missing db just means ZCode never wrote one — fall back to rollout
+  // silently; the warning fires only when the db exists but cannot be read
+  // (locked, or Node without node:sqlite).
+  if (!(await pathExists(dbPath))) return null;
+
   let db;
   try {
     const { DatabaseSync } = await import('node:sqlite');
-    db = new DatabaseSync(path.join(base, 'cli', 'db', 'db.sqlite'), { readOnly: true });
+    db = new DatabaseSync(dbPath, { readOnly: true });
   } catch (err) {
     warnings.push(`zcode: database unreadable (${err.message}), falling back to rollout logs`);
     return null;
