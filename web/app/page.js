@@ -269,7 +269,7 @@ export default function Page() {
             <div>
               {data.warnings.map((w, i) => (
                 <div key={i}>
-                  {tx('warnPrefix')}：{w}
+                  {tx('warnPrefix')}{w}
                 </div>
               ))}
             </div>
