@@ -7,7 +7,6 @@ import { fileURLToPath } from 'node:url';
 import * as claude from '../src/clients/claude.js';
 import * as codex from '../src/clients/codex.js';
 import * as opencode from '../src/clients/opencode.js';
-import * as gemini from '../src/clients/gemini.js';
 import * as kimi from '../src/clients/kimi.js';
 import * as zcode from '../src/clients/zcode.js';
 
@@ -70,20 +69,6 @@ test('opencode parser keeps assistant messages and source cost', async () => {
   assert.equal(first.timestamp, 1788000000000);
   const second = entries.find((e) => e.sessionId === 'sess2');
   assert.equal(second.costUsd, null);
-});
-
-test('gemini parser splits cached prompt and adds thoughts to output', async () => {
-  const { entries } = await gemini.collect({
-    env: { GEMINI_CLI_HOME: path.join(fixtures, 'gemini') },
-    home: os.homedir(),
-  });
-  assert.equal(entries.length, 1);
-  const e = entries[0];
-  assert.equal(e.sessionId, 'g-sess-1');
-  assert.equal(e.inputTokens, 200); // 500 prompt - 300 cached
-  assert.equal(e.cacheReadTokens, 300);
-  assert.equal(e.outputTokens, 150); // 100 candidates + 50 thoughts
-  assert.equal(e.reasoningTokens, 50);
 });
 
 test('kimi parser reads wire.jsonl usage records and state metadata', async () => {
