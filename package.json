@@ -1,7 +1,7 @@
 {
   "name": "toksight",
   "version": "0.2.0",
-  "description": "Track token usage, cost and cache hit rate of AI coding agents (ZCode, Claude Code, Codex, OpenCode, Gemini CLI) from your terminal.",
+  "description": "Track token usage, cost and cache hit rate of AI coding agents (ZCode, Claude Code, Codex, OpenCode, Gemini CLI, Kimi Code) from your terminal.",
   "type": "module",
   "license": "MIT",
   "engines": {
@@ -22,8 +22,11 @@
     "test": "node --test",
     "smoke": "node bin/toksight.js",
     "web:install": "npm install --prefix web",
+    "web:ci": "npm ci --prefix web",
     "web:dev": "npm run dev --prefix web",
-    "web:build": "npm run build --prefix web"
+    "web:build": "npm run build --prefix web",
+    "prepack": "npm run web:ci && npm run web:build",
+    "prepublishOnly": "npm test"
   },
   "keywords": [
     "token",
@@ -40,5 +43,12 @@
   "repository": {
     "type": "git",
     "url": "git+https://github.com/Sanstoolow0513/toksight.git"
+  },
+  "homepage": "https://github.com/Sanstoolow0513/toksight#readme",
+  "bugs": {
+    "url": "https://github.com/Sanstoolow0513/toksight/issues"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }
