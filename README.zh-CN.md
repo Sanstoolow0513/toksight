@@ -128,16 +128,23 @@ OpenCode 自带的价格（`cost` 字段）会被直接采用。
 `--since`、`--until`、`--today/--week/--month`）对 `web` 同样生效；页面支持手动刷新、
 30 秒自动刷新，以及顶栏 中文 / EN 切换（记在 `localStorage` 键 `toksight-locale`，默认中文）。
 
-### 构建仪表盘
+### 仪表盘构建产物
 
-仪表盘以预构建静态文件的形式放在 `web/out/`：
+npm 包已包含 `web/out/` 中预构建好的静态文件，安装后的用户可以直接启动：
 
 ```bash
-npm run web:build        # 首次构建一次（等价于 cd web && npm install && npm run build）
-toksight web             # 启动服务
+toksight web
 ```
 
-`web/out/` 尚未构建时，`toksight web` 会在 `/` 显示构建指引页，`/api/data` 仍可正常使用。
+从源码开发时，先安装仪表盘的构建期依赖，再构建一次：
+
+```bash
+npm run web:install
+npm run web:build
+```
+
+执行 `npm pack` 或 `npm publish` 时会自动重新构建仪表盘。从源码运行且 `web/out/` 尚未构建
+时，`toksight web` 会在 `/` 显示构建指引页，`/api/data` 仍可正常使用。
 
 参数：`--port <n>`（默认 4729）、`--host <addr>`（默认 127.0.0.1，仅回环）、`--no-open`
 （不自动开浏览器）、`--api-only`（只开 JSON API，供 UI 开发——配合 `web/` 下的
@@ -174,6 +181,7 @@ entries 构建，`--client` / `--since` / `--until` 对它与其余切片一样�
 ```bash
 npm test              # node:test 套件 + 各客户端 fixture（无需联网）
 node bin/toksight.js  # 从源码直接运行
+npm run web:install   # 安装仪表盘构建期依赖
 npm run web:dev       # 开发仪表盘 UI（需先跑着 `toksight web --api-only`）
 ```
 

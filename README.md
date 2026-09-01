@@ -134,17 +134,26 @@ Session leaderboards were dropped from the UI (the API still exposes `topSession
 offers a manual refresh, a 30s auto-refresh toggle, and a 中文 / EN language switch (stored in
 `localStorage` as `toksight-locale`, default Chinese).
 
-### Building the dashboard
+### Dashboard bundle
 
-The dashboard ships as prebuilt static files in `web/out/`:
+The npm package ships with the prebuilt static files in `web/out/`, so installed users can start
+it directly:
 
 ```bash
-npm run web:build        # once (cd web && npm install && npm run build)
-toksight web             # serve it
+toksight web
 ```
 
-Until `web/out/` is built, `toksight web` serves a setup-instructions page at `/` while
-`/api/data` keeps working.
+When working from a source checkout, install the dashboard's build-only dependencies and build it
+once:
+
+```bash
+npm run web:install
+npm run web:build
+```
+
+`npm pack` and `npm publish` rebuild the dashboard automatically. Until `web/out/` is built in a
+source checkout, `toksight web` serves a setup-instructions page at `/` while `/api/data` keeps
+working.
 
 Options: `--port <n>` (default 4729), `--host <addr>` (default 127.0.0.1, loopback only),
 `--no-open` (skip auto-opening the browser), `--api-only` (JSON API without the dashboard, used
@@ -182,6 +191,7 @@ a session left open overnight no longer counts its idle hours.
 ```bash
 npm test        # node:test suite with per-client fixtures (no network needed)
 node bin/toksight.js   # run from source
+npm run web:install # install dashboard build dependencies
 npm run web:dev # develop the dashboard UI (needs `toksight web --api-only` running)
 ```
 
