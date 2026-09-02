@@ -111,11 +111,14 @@ async function collectFromRollout(base, warnings) {
       const cacheRead = usage.cacheReadTokens ?? 0;
       const cacheWrite = usage.cacheWriteTokens ?? 0;
       if (!input && !output && !cacheRead && !cacheWrite) return;
+      // Contract: ms epoch or null; NaN from a malformed timestamp must not
+      // leak past the date filters (see claude.js).
+      const ts = o.completedAt ? Date.parse(o.completedAt) : o.startedAt ? Date.parse(o.startedAt) : null;
       entries.push({
         client: id,
         sessionId: o.sessionId || path.basename(file, '.jsonl'),
         model: o.model?.modelId || 'unknown',
-        timestamp: o.completedAt ? Date.parse(o.completedAt) : o.startedAt ? Date.parse(o.startedAt) : null,
+        timestamp: Number.isFinite(ts) ? ts : null,
         inputTokens: Math.max(0, input - cacheRead),
         outputTokens: output,
         reasoningTokens: 0,

@@ -109,7 +109,7 @@ export function sessionsTable(entries, opts, fmt) {
       { header: 'Req', align: 'right', value: (r) => fmt.int(r.totals.requests) },
       { header: 'Tokens', align: 'right', value: (r) => fmt.tokens(r.totals.totalTokens) },
       { header: 'Cost', align: 'right', value: (r) => fmt.cost(r.totals.costUsd) },
-      { header: 'Last active', value: (r) => fmt.datetime(r.lastAt === Infinity ? null : r.lastAt) },
+      { header: 'Last active', value: (r) => fmt.datetime(r.lastAt) },
       { header: 'Directory', value: (r) => (r.directory ? String(r.directory).slice(-40) : '—') },
     ],
     rows,

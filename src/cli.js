@@ -101,7 +101,9 @@ export async function collectAll(opts, { env = process.env, home = os.homedir() 
   if (opts.since != null || opts.until != null) {
     let noTimestamp = 0;
     filtered = filtered.filter((e) => {
-      if (e.timestamp == null) {
+      // NaN counts as "no timestamp": `NaN < since` is false, so a numeric
+      // null-check would let malformed timestamps through every window.
+      if (!Number.isFinite(e.timestamp)) {
         noTimestamp += 1;
         return false;
       }

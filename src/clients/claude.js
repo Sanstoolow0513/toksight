@@ -43,11 +43,16 @@ export async function collect({ env, home, roots } = {}) {
       const output = usage.output_tokens ?? 0;
       if (!input && !cacheRead && !cacheWrite && !output) return;
 
+      // Contract: ms epoch or null. Date.parse yields NaN on a malformed
+      // timestamp string — normalize to null so date filters (and JSON
+      // output) treat it as "no timestamp" instead of a valid value.
+      const ts = o.timestamp ? Date.parse(o.timestamp) : null;
+
       const entry = {
         client: id,
         sessionId: o.sessionId || path.basename(file, '.jsonl'),
         model: msg.model || 'unknown',
-        timestamp: o.timestamp ? Date.parse(o.timestamp) : null,
+        timestamp: Number.isFinite(ts) ? ts : null,
         inputTokens: input,
         outputTokens: output,
         reasoningTokens: 0,

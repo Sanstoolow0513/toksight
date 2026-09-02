@@ -38,6 +38,18 @@ function makeFixture({ opencodeDbIsDir = false } = {}) {
           usage: { input_tokens: 70, cache_read_input_tokens: 100, output_tokens: 40 },
         },
       }),
+      // Malformed timestamp string: Date.parse yields NaN — the parser must
+      // emit null, and the date filter must exclude it with the same warning.
+      JSON.stringify({
+        type: 'assistant',
+        sessionId: 'sess-x',
+        message: {
+          id: 'msg_c',
+          model: 'claude-sonnet-4-5',
+          usage: { input_tokens: 30, output_tokens: 10 },
+        },
+        timestamp: 'not-a-date',
+      }),
     ].join('\n'),
   );
   if (opencodeDbIsDir) {
@@ -68,9 +80,14 @@ test('collectAll collects fixtures, prices entries without mutating them', async
   const { tmp, env, home } = makeFixture();
   try {
     const ctx = await collectAll(BASE_OPTS, { env, home });
-    assert.equal(ctx.entries.length, 2);
+    assert.equal(ctx.entries.length, 3);
     assert.ok(ctx.entries.every((e) => e.client === 'claude'));
     assert.deepEqual(ctx.warnings, []);
+
+    // A malformed timestamp string normalizes to null (never NaN).
+    assert.ok(ctx.entries.every((e) => e.timestamp == null || Number.isFinite(e.timestamp)));
+    const malformed = ctx.entries.find((e) => e.inputTokens === 30);
+    assert.equal(malformed.timestamp, null);
 
     // Cost comes from the builtin table (offline, no user pricing.json).
     const priced = ctx.entries.find((e) => e.inputTokens === 100);
@@ -94,13 +111,13 @@ test('date filters exclude timestamp-less entries with a warning', async () => {
   const { tmp, env, home } = makeFixture();
   const ts = Date.parse('2026-08-29T10:00:00.000Z');
   try {
-    // until just after the timestamped entry: only the null-timestamp entry
-    // is dropped, and it is counted in the warnings.
+    // until just after the timestamped entry: the null- and NaN-timestamp
+    // entries are dropped, and both are counted in the warnings.
     const kept = await collectAll({ ...BASE_OPTS, until: ts + 1000 }, { env, home });
     assert.equal(kept.entries.length, 1);
     assert.equal(kept.entries[0].inputTokens, 100);
     assert.equal(kept.warnings.length, 1);
-    assert.match(kept.warnings[0], /1 entries without a timestamp were excluded/);
+    assert.match(kept.warnings[0], /2 entries without a timestamp were excluded/);
 
     // since after everything: everything is filtered, warning still fires.
     const none = await collectAll({ ...BASE_OPTS, since: ts + 1000 }, { env, home });
@@ -119,7 +136,7 @@ test('client filters restrict entries and perClient stays complete', async () =>
     // perClient reports every client regardless of the filter.
     assert.equal(ctx.perClient.length, 5);
     const claude = ctx.perClient.find((c) => c.id === 'claude');
-    assert.equal(claude.entries.length, 2);
+    assert.equal(claude.entries.length, 3);
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true });
   }
@@ -129,7 +146,7 @@ test('client warnings (unreadable db) aggregate into collectAll warnings', async
   const { tmp, env, home } = makeFixture({ opencodeDbIsDir: true });
   try {
     const ctx = await collectAll(BASE_OPTS, { env, home });
-    assert.equal(ctx.entries.length, 2); // claude entries unaffected
+    assert.equal(ctx.entries.length, 3); // claude entries unaffected
     assert.equal(ctx.warnings.length, 1);
     assert.match(ctx.warnings[0], /^opencode: database unreadable/);
   } finally {

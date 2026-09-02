@@ -175,8 +175,10 @@ function activeMsOf(timestamps) {
 }
 
 function sessionRow(r, activeMs) {
-  const startedAt = Number.isFinite(r.firstAt) ? r.firstAt : null;
-  const endedAt = r.lastAt > 0 ? r.lastAt : null;
+  // firstAt/lastAt are null when the session has no finite timestamps
+  // (aggregate emits null, not sentinels).
+  const startedAt = r.firstAt;
+  const endedAt = r.lastAt;
   return {
     client: r.client,
     sessionId: r.sessionId,

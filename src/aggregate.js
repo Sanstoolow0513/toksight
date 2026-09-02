@@ -37,6 +37,8 @@ export function cacheHitRate(totals) {
   return denom > 0 ? totals.cacheReadTokens / denom : null;
 }
 
+const isFiniteTs = (ts) => ts != null && Number.isFinite(ts);
+
 function group(entries, keyFn, decorate) {
   const groups = new Map();
   for (const e of entries) {
@@ -48,12 +50,15 @@ function group(entries, keyFn, decorate) {
   for (const [key, groupEntries] of groups) {
     // Loop, not Math.min(...entries): the spread form hits the ~65k argument
     // limit once one group grows large enough (e.g. a dominant model).
-    let firstAt = Infinity;
-    let lastAt = 0;
+    // Missing timestamps are `null` — never Infinity/0 sentinels — so
+    // downstream consumers (payload, render, webdata) pass them through
+    // instead of each decoding its own sentinel.
+    let firstAt = null;
+    let lastAt = null;
     for (const e of groupEntries) {
-      if (e.timestamp != null && Number.isFinite(e.timestamp)) {
-        if (e.timestamp < firstAt) firstAt = e.timestamp;
-        if (e.timestamp > lastAt) lastAt = e.timestamp;
+      if (isFiniteTs(e.timestamp)) {
+        if (firstAt == null || e.timestamp < firstAt) firstAt = e.timestamp;
+        if (lastAt == null || e.timestamp > lastAt) lastAt = e.timestamp;
       }
     }
     rows.push({
@@ -66,8 +71,6 @@ function group(entries, keyFn, decorate) {
   }
   return rows;
 }
-
-const isFiniteTs = (ts) => ts != null && Number.isFinite(ts);
 
 export function localDate(ts) {
   if (!isFiniteTs(ts)) return 'unknown';
@@ -133,7 +136,7 @@ export function bySession(entries) {
       models: [...new Set(g.map((e) => e.model))],
     }),
   );
-  return rows.sort((a, b) => (b.totals.costUsd - a.totals.costUsd) || (b.lastAt - a.lastAt));
+  return rows.sort((a, b) => (b.totals.costUsd - a.totals.costUsd) || (b.lastAt ?? 0) - (a.lastAt ?? 0));
 }
 
 export function unpricedModels(entries) {
