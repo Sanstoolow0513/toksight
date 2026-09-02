@@ -155,7 +155,14 @@ export function createWebServer({ host = '127.0.0.1', port = 4729, outDir, getDa
 
   const server = http.createServer((req, res) => {
     handle(req, res).catch((err) => {
-      if (!res.headersSent) res.writeHead(500, JSON_HEADERS);
+      // If the response already started (partial body on the wire), we can
+      // only terminate it — writing a JSON error body would corrupt whatever
+      // content-type was already sent.
+      if (res.headersSent) {
+        res.end();
+        return;
+      }
+      res.writeHead(500, JSON_HEADERS);
       res.end(JSON.stringify({ error: String(err?.message || err) }));
     });
   });

@@ -3,14 +3,22 @@ import { opendir, readFile } from 'node:fs/promises';
 import { createInterface } from 'node:readline';
 import path from 'node:path';
 
+// Returns { files, warnings }. A root that simply does not exist (ENOENT) is
+// silent — the user may not have every agent installed. Anything else
+// (EACCES/EPERM, a root that is not a directory, an unreadable subtree)
+// yields a warning so "no data" and "cannot read" stay distinguishable.
 export async function walkFiles(dir, { maxDepth = 12, filter = () => true } = {}) {
   const out = [];
+  const warnings = [];
   async function walk(d, depth) {
     if (depth > maxDepth) return;
     let handle;
     try {
       handle = await opendir(d);
-    } catch {
+    } catch (err) {
+      if (err?.code !== 'ENOENT') {
+        warnings.push(`cannot read directory ${d} (${err?.code || err?.message || err})`);
+      }
       return;
     }
     try {
@@ -22,12 +30,13 @@ export async function walkFiles(dir, { maxDepth = 12, filter = () => true } = {}
           out.push(full);
         }
       }
-    } catch {
-      // unreadable subtree: skip it
+    } catch (err) {
+      warnings.push(`cannot list directory ${d} (${err?.code || err?.message || err})`);
     }
   }
   await walk(dir, 0);
-  return out.sort();
+  out.sort();
+  return { files: out, warnings };
 }
 
 // Streams a JSONL file line by line; malformed lines yield `null` objects.

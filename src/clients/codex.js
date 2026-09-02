@@ -22,7 +22,10 @@ export async function collect({ env, home, roots } = {}) {
 
   const files = [];
   for (const root of scanRoots) {
-    files.push(...(await walkFiles(root, { filter: (name) => name.endsWith('.jsonl') })));
+    // Loop, not spread: see claude.js — large histories break `push(...)`.
+    const { files: found, warnings: rootWarnings } = await walkFiles(root, { filter: (name) => name.endsWith('.jsonl') });
+    for (const f of found) files.push(f);
+    warnings.push(...rootWarnings);
   }
 
   for (const file of files) {
@@ -76,11 +79,14 @@ export async function collect({ env, home, roots } = {}) {
       const { input, cached, output, reasoning } = delta;
       if (input <= 0 && output <= 0 && cached <= 0) return;
 
+      // Contract: ms epoch or null; NaN from a malformed timestamp must not
+      // leak past the date filters (see claude.js).
+      const ts = o.timestamp ? Date.parse(o.timestamp) : null;
       entries.push({
         client: id,
         sessionId,
         model: model || 'unknown',
-        timestamp: o.timestamp ? Date.parse(o.timestamp) : null,
+        timestamp: Number.isFinite(ts) ? ts : null,
         inputTokens: Math.max(0, input - cached),
         outputTokens: Math.max(0, output),
         reasoningTokens: Math.max(0, reasoning || 0),

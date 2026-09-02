@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { buildPayload } from '../src/cli.js';
+import { buildPayload } from '../src/payload.js';
 
 // Base entry: 2026-08-10 12:00 local time — same shape the parsers emit.
 function entry(over = {}) {
@@ -92,4 +92,22 @@ test('payload models rows keep per-(client, model) cache hit rate', () => {
   assert.equal(p.models[0].client, 'claude');
   assert.equal(p.models[0].model, 'm1');
   assert.equal(p.models[0].cacheHitRate, 400 / 600);
+});
+
+test('missing timestamps surface as null firstAt/lastAt, not sentinels', () => {
+  const entries = [
+    entry({ sessionId: 's-nots', timestamp: null }),
+    entry({ model: 'm1', sessionId: 's-tsd' }),
+  ];
+  const p = payload(entries);
+
+  const sess = p.sessions.find((r) => r.sessionId === 's-nots');
+  assert.equal(sess.firstAt, null);
+  assert.equal(sess.lastAt, null);
+
+  // The m1 group mixes a timestamped and a timestamp-less request; group
+  // bounds come from the timestamped one only.
+  const model = p.models.find((r) => r.model === 'm1');
+  assert.equal(model.firstAt, entries[1].timestamp);
+  assert.equal(model.lastAt, entries[1].timestamp);
 });

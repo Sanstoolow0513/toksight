@@ -2,6 +2,7 @@ node_modules/
 /zcode
 /.zcode/
 .cursor/
+.tmp-cursor/
 *.log
 .DS_Store
 dist/

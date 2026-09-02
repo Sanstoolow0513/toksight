@@ -84,6 +84,8 @@ zcode   glm-5.3             41   116K    1.99M        0   43.3K  94.5%   $0.870
 --no-color       disable ANSI colors
 ```
 
+Value options accept both forms: `--since 2026-08-01` and `--since=2026-08-01`.
+
 Day grouping and date filters use your **local** timezone.
 
 ## Pricing
@@ -109,6 +111,10 @@ Costs are computed per request from token counts, with three layers (later wins)
 `<config>` is `%XDG_CONFIG_HOME% || ~/.config` (override with `TOKSIGHT_CONFIG_DIR`).
 Models without a price are still counted; their cost shows as `—` and they are listed under
 `pricing.unpricedModels` in JSON output. OpenCode costs reported by OpenCode itself are used as-is.
+
+When a LiteLLM entry has no separate cache prices, cached tokens are billed at that model's input
+price — a deliberately conservative overestimate (real cache reads are usually ~10% of the input
+price) so costs are never silently undercounted. Models with proper cache prices price normally.
 
 ## Web dashboard
 
@@ -194,6 +200,10 @@ Every command accepts `--json` (e.g. `toksight daily --json`). Shape: `totals`, 
 Each `clients` entry is that agent's totals plus its own `cacheHitRate`; the map is built from the
 filtered entries, so `--client` / `--since` / `--until` apply to it like every other slice.
 
+`warnings` surfaces collection problems (a directory that cannot be read, a SQLite database that
+exists but cannot be opened) and data caveats — notably, entries without a timestamp that were
+excluded by `--since` / `--until` are reported there instead of disappearing silently.
+
 The web dashboard consumes the same payload (plus web-only extras such as `heatmap`, `trend`,
 `trend7`, `trend90`, `trendByAgent`, `hourly`, `today`, `last7Days`, `last30Days`, `thisMonth`,
 `activeDays`, `streaks`, `peakDay`, `topSessions`, `longestSession`, `activityRange`, `timezone`)
@@ -212,13 +222,19 @@ npm run web:dev # develop the dashboard UI (needs `toksight web --api-only` runn
 
 ```
 bin/toksight.js        executable entry
-src/cli.js             arg parsing, commands, rendering
-src/clients/           one parser per agent, normalized to a common entry shape
+src/cli.js             command dispatch + collection pipeline (collectAll)
+src/args.js            CLI argument parsing (--flag value / --flag=value)
+src/render.js          text rendering (tables, sections, warnings)
+src/payload.js         the --json / web API payload contract
+src/dates.js           shared local-time date helpers (DST-safe)
 src/pricing.js         built-in table + LiteLLM cache + user overrides
 src/aggregate.js       grouping/totals
 src/webdata.js         web-dashboard aggregations (heatmap, trend, sessions…)
 src/webserver.js       zero-dependency HTTP server for `toksight web`
 src/format.js          ANSI tables & number formatting
+src/fsutils.js         walkFiles, readJsonl, readJson, pathExists
+src/clients/           one parser per agent, normalized to a common entry shape
+                       (+ shared src/clients/sqlite.js read-only opener)
 web/                   Next.js dashboard (static export served by the CLI)
 ```
 

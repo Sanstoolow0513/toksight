@@ -1,6 +1,7 @@
 import os from 'node:os';
 import path from 'node:path';
 import { walkFiles, readJsonl, pathExists } from '../fsutils.js';
+import { openSqliteReadOnly } from './sqlite.js';
 
 export const id = 'zcode';
 export const label = 'ZCode';
@@ -26,7 +27,7 @@ export async function collect({ env, home, roots } = {}) {
   const dbEntries = await collectFromDb(base, warnings);
   if (dbEntries) return { entries: dbEntries, warnings };
 
-  const entries = await collectFromRollout(base);
+  const entries = await collectFromRollout(base, warnings);
   return { entries, warnings };
 }
 
@@ -39,8 +40,7 @@ async function collectFromDb(base, warnings) {
 
   let db;
   try {
-    const { DatabaseSync } = await import('node:sqlite');
-    db = new DatabaseSync(dbPath, { readOnly: true });
+    db = await openSqliteReadOnly(dbPath);
   } catch (err) {
     warnings.push(`zcode: database unreadable (${err.message}), falling back to rollout logs`);
     return null;
@@ -95,9 +95,10 @@ async function collectFromDb(base, warnings) {
   }
 }
 
-async function collectFromRollout(base) {
+async function collectFromRollout(base, warnings) {
   const dir = path.join(base, 'cli', 'rollout');
-  const files = await walkFiles(dir, { filter: (name) => name.endsWith('.jsonl') });
+  const { files, warnings: walkWarnings } = await walkFiles(dir, { filter: (name) => name.endsWith('.jsonl') });
+  warnings.push(...walkWarnings);
   const entries = [];
 
   for (const file of files) {
@@ -110,11 +111,14 @@ async function collectFromRollout(base) {
       const cacheRead = usage.cacheReadTokens ?? 0;
       const cacheWrite = usage.cacheWriteTokens ?? 0;
       if (!input && !output && !cacheRead && !cacheWrite) return;
+      // Contract: ms epoch or null; NaN from a malformed timestamp must not
+      // leak past the date filters (see claude.js).
+      const ts = o.completedAt ? Date.parse(o.completedAt) : o.startedAt ? Date.parse(o.startedAt) : null;
       entries.push({
         client: id,
         sessionId: o.sessionId || path.basename(file, '.jsonl'),
         model: o.model?.modelId || 'unknown',
-        timestamp: o.completedAt ? Date.parse(o.completedAt) : o.startedAt ? Date.parse(o.startedAt) : null,
+        timestamp: Number.isFinite(ts) ? ts : null,
         inputTokens: Math.max(0, input - cacheRead),
         outputTokens: output,
         reasoningTokens: 0,

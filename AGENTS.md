@@ -10,7 +10,7 @@ local dashboard (still no TUI).
 
 ## Commands
 
-- `node --test` (or `npm test`) — run the node:test suite (36 tests); uses per-client fixtures, no
+- `node --test` (or `npm test`) — run the node:test suite (78 tests); uses per-client fixtures, no
   network needed. Note: `node --test test/` with a directory arg fails with MODULE_NOT_FOUND on
   Node v24/Windows (the directory is treated as a module to load) — that's why the script passes
   no path; explicit file paths or a glob like `node --test "test/*.test.js"` also work.
@@ -28,17 +28,37 @@ local dashboard (still no TUI).
 
 ```
 bin/toksight.js     executable entry, calls src/cli.js main()
-src/cli.js          arg parsing, commands, all rendering (text + --json); buildPayload feeds
-                    both --json and the web API
-src/clients/        one parser per agent, registered in src/clients/index.js
-src/pricing.js      3-layer pricing: builtin table → LiteLLM (1h disk cache) → user overrides
+src/cli.js          command dispatch only: parse → help/version → web (runWeb single-flight
+                    getData) → collect → render; no collection or rendering lives here
+src/args.js         parseArgs (value options accept `--flag value` AND `--flag=value`;
+                    `now` injectable for deterministic window tests)
+src/collect.js      collectAll — the collection pipeline shared by the CLI, --json and the
+                    web API (pricing + clients + filters, env/home threaded for tests);
+                    perClient rows carry { id, label, roots, entries } so renderers never
+                    re-ask the client registry or use process defaults
+src/render.js       all text rendering: renderCommand (per-command pages incl. env),
+                    renderJson, tables, totals section, warnings, empty-state page
+                    (prints the perClient roots actually scanned)
+src/payload.js      buildPayload — the user-facing --json contract (feeds both --json and the
+                    web API); presentation-free data layer
+src/dates.js        the ONLY home for local-time date arithmetic (startOfDay/endOfDay/stepDay/
+                    startOfMonth/eachDay/dayKeyToTs/parseDateArg). endOfDay/--week/every day
+                    loop step local midnights — DST-safe, never blind `+24h`; do not
+                    re-implement these elsewhere
+src/clients/        one parser per agent, registered in src/clients/index.js; shared
+                    src/clients/sqlite.js openSqliteReadOnly() centralizes the
+                    dynamic node:sqlite import + readOnly open for the db-first guards
+src/pricing.js      3-layer pricing: builtin table → LiteLLM (1h disk cache) → user overrides;
+                    lookup maps are { exact, suffix } — suffix pre-indexes provider-prefixed
+                    keys by bare name (O(1), not a per-miss scan of the LiteLLM table)
 src/aggregate.js    grouping/totals (summarize, byModel/Day/Month/Session, cacheHitRate)
 src/webdata.js      web-dashboard aggregations over entries (heatmap, trend, trendByAgent,
                     hourly, today/last7Days/thisMonth, sessions w/ activeMs, longestSession)
-                    — pure functions
+                    — pure functions; day math imported from src/dates.js
 src/webserver.js    zero-dep node:http server: static web/out + live /api/data
 src/format.js       ANSI tables & number formatting
-src/fsutils.js      walkFiles, streaming readJsonl, readJson, pathExists
+src/fsutils.js      walkFiles (returns { files, warnings }: root ENOENT is silent, other read
+                    failures warn), streaming readJsonl, readJson, pathExists
 web/                Next.js (App Router, JS, no Tailwind) dashboard, statically exported to
                     web/out and served by the CLI; app/page.js + components/ (Heatmap,
                     TrendChart with mix/agent step-after stacks, AgentsPanel, ModelBars with
@@ -68,7 +88,7 @@ the `clients` map and `clientAliases` in `src/clients/index.js`, get a fixture u
 
 Every parser emits records with exactly: `client, sessionId, model, timestamp` (ms epoch or
 `null`), `inputTokens, outputTokens, reasoningTokens, cacheReadTokens, cacheWriteTokens`,
-`costUsd` (see below), `directory, title`. Cost is computed centrally in `cli.js`
+`costUsd` (see below), `directory, title`. Cost is computed centrally in `src/collect.js`
 (`collectAll` → `computeCost`) — parsers leave `costUsd: null` unless the agent itself reports
 cost (only OpenCode does).
 
@@ -89,8 +109,14 @@ cost (only OpenCode does).
   writes stay separate), so both paths subtract `cacheRead` to emit fresh input — without this,
   the hit-rate denominator and `computeCost` double-count cached tokens.
 - **Parsers must never throw** on bad data: tolerate malformed/unreadable files, push messages
-  into `warnings`, skip empty-usage rows. `cli.js` collects clients via `Promise.allSettled` and
-  prints warnings on stderr (they also appear under `warnings` in JSON output).
+  into `warnings`, skip empty-usage rows. `src/collect.js` collects clients via
+  `Promise.allSettled` and
+  prints warnings on stderr (they also appear under `warnings` in JSON output). Warnings also
+  cover read failures that are NOT a plain missing root (`walkFiles` ENOENT on a root is silent —
+  not every agent is installed; EACCES/ENOTDIR etc. warn), kimi `state.json` that exists but
+  cannot be read/parsed, and entries without a timestamp (null OR non-finite — parsers
+  normalize NaN to null) excluded by `--since`/`--until`
+  (reported instead of silently vanishing).
 - **Claude dedup is max-wins**: assistant lines can repeat a message id with a *growing* usage
   snapshot (streaming partial → final). Keep the snapshot with the largest token total, not the
   first line (first-wins undercounts).
@@ -102,9 +128,12 @@ cost (only OpenCode does).
   Preserve these when editing parsers — tests pin them.
 - **Env injection**: parsers take `{ env, home }` params instead of reading `process.env`
   directly, so tests can point them at fixtures (e.g. `ZCODE_HOME`, `CLAUDE_CONFIG_DIR`,
-  `CODEX_HOME`, `OPENCODE_PATH`, `KIMI_CODE_HOME`).
+  `CODEX_HOME`, `OPENCODE_PATH`, `KIMI_CODE_HOME`). `collectAll(opts, { env, home })` threads
+  the same injection through the whole pipeline (pricing config included), pinned by
+  `test/cli.test.js`.
 - **`--json` output is a user-facing contract**: shape is `totals, cacheHitRate, clients, models,
-  daily, monthly, sessions, pricing (incl. unpricedModels), warnings` — don't break it. The web
+  daily, monthly, sessions, pricing (incl. unpricedModels), warnings` — don't break it.
+  `buildPayload` lives in `src/payload.js`. The web
   API (`GET /api/data`) reuses this exact payload (via `buildPayload`) and layers the
   `src/webdata.js` extras on top (`heatmap, trend, trendByAgent, hourly, today, last7Days,
   thisMonth, topSessions, longestSession (ranked by activeMs — idle gaps capped at 5min),
@@ -119,8 +148,9 @@ cost (only OpenCode does).
   per-agent / per-model views (a model's cache can only hit for that same model).
 - **Zero runtime dependencies**: do not add packages to the root CLI; use `node:` builtins.
   `web/` is the only place allowed to have dependencies (Next/React, build-time only).
-- **Web serving rules**: `toksight web` re-collects on every request (fresh data, no caching);
-  binds 127.0.0.1 by default (never 0.0.0.0 by default); static assets under `web/out/_next/`
+- **Web serving rules**: `toksight web` re-collects on every request (fresh data, no caching —
+  the single-flight in `runWeb` only dedupes CONCURRENT requests onto one collection run, no
+  TTL); binds 127.0.0.1 by default (never 0.0.0.0 by default); static assets under `web/out/_next/`
   are immutable-cached, everything else `no-cache`; path traversal is rejected (403); if
   `web/out/index.html` is missing, `/` serves the built-in setup page instead of failing.
 - Windows compatibility matters (paths, fixtures use `C:\\...` directories); `pathExists`
@@ -136,6 +166,17 @@ overrides match model names exactly or by `provider/`-suffix (e.g. `zhipuai/glm-
 
 ## Researched but not implemented
 
+- **Second pricing source for cache prices (2026-09, TODO)**: LiteLLM entries often lack
+  `cache_read_input_token_cost` / `cache_creation_input_token_cost`, and toksight currently
+  falls back to the input price — a deliberate conservative overestimate (documented in both
+  READMEs). Best candidate to fill the gap: **models.dev** (`https://models.dev/api.json`;
+  open-source, community-maintained by the SST/opencode folks, TOML in-repo so gaps can be
+  PR'd). Its schema has optional `cost.cache_read` / `cost.cache_write` in USD/MTok — same unit
+  as toksight's builtin table — so it could slot in as a cross-check source beside LiteLLM.
+  Runner-up: OpenRouter `/api/v1/models` (has cache pricing) — but its numbers are router prices
+  including margin, so only a fallback. Users can already maintain their own prices via
+  `pricing.json` (exact names or `provider/`-suffix matching). Decision at the time: keep the
+  input-price fallback, do the research, revisit later.
 - **Cursor (2026-08, decided against for now)**: sessions/models/timestamps ARE readable, token
   usage is NOT reliably written locally. Sources inspected on a real machine: per-chat
   `~/.cursor/chats/<workspaceHash>/<sessionId>/meta.json` (title, `createdAtMs`, `updatedAtMs`,
@@ -150,3 +191,27 @@ overrides match model names exactly or by `provider/`-suffix (e.g. `zhipuai/glm-
   local-first). A future parser could emit sessions/models/message counts and use `tokenCount`
   when non-zero, but cost/token stats would be mostly empty — revisit if Cursor starts writing
   token counts again.
+- **Cursor re-check (2026-09-02, BYOK question — still no)**: re-verified on the new agent storage
+  architecture and probed the server APIs live. New layout: per-session
+  `~/.cursor/chats/<hash>/<sessionId>/store.db` (tables `blobs(id, data)` = decimal-CSV byte
+  strings holding `{role, content[], id, providerOptions.cursor.modelProviderMessageId}` — no
+  usage/token fields on assistant messages) + `meta` (hex JSON: agentId, name, createdAt,
+  subagentInfo); state.vscdb grew a `composerHeaders` table (78 rows, migration flag
+  `composer.composerHeaders.migratedToTable`) and 9648 `agentKv:blob:<sha>` content-addressed
+  entries; bubbles moved there but `tokenCount` is still all-zero (4597/4597); `composerData`
+  now also has `contextTokensUsed`/`promptTokenBreakdown` (last-prompt size only, not billing).
+  BYOK: official docs confirm every BYOK request routes through Cursor's backend (key sent
+  per-request, never stored server-side) and BYOK usage is "unlimited, at your own cost" — it
+  does not count against plan quotas and is not itemized in the dashboard's Spending/Usage
+  (plan spend only). Server-side probes: `GET api2.cursor.sh/auth/usage` works with the
+  plaintext JWT from ItemTable `cursorAuth/accessToken` but returns quota request counts only
+  (all zeros on an Ultra account, no BYOK, no token detail); `cursor.com/api/usage` requires
+  the browser `WorkosCursorSessionToken` cookie (401 with JWT); the official Analytics API
+  (`api.cursor.com/analytics/*`, API-key auth) is Enterprise-teams-only. The authoritative
+  BYOK token/cost data lives at the provider (OpenAI admin Usage API
+  `/v1/organization/usage/completions` / Anthropic equivalents): day×model aggregates with
+  cached-token detail, but no session/project attribution — a poor fit for the per-request
+  entries contract and a local-first violation (network + provider admin keys). Machine
+  details noted: BYOK OpenAI key present as encrypted ItemTable `secret://cursorAuth/openAIKey`;
+  hash-like model names in `modelConfig.modelName` (e.g. `9d20c7907fd2663c`) are Cursor's
+  anonymized model IDs, not necessarily BYOK markers.

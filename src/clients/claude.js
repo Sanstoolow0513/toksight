@@ -24,7 +24,11 @@ export async function collect({ env, home, roots } = {}) {
 
   const files = [];
   for (const root of scanRoots) {
-    files.push(...(await walkFiles(root, { filter: (name) => name.endsWith('.jsonl') })));
+    // Loop, not spread: walkFiles on a huge history can exceed the ~65k
+    // argument limit of `files.push(...)`.
+    const { files: found, warnings: rootWarnings } = await walkFiles(root, { filter: (name) => name.endsWith('.jsonl') });
+    for (const f of found) files.push(f);
+    warnings.push(...rootWarnings);
   }
 
   for (const file of files) {
@@ -39,11 +43,16 @@ export async function collect({ env, home, roots } = {}) {
       const output = usage.output_tokens ?? 0;
       if (!input && !cacheRead && !cacheWrite && !output) return;
 
+      // Contract: ms epoch or null. Date.parse yields NaN on a malformed
+      // timestamp string — normalize to null so date filters (and JSON
+      // output) treat it as "no timestamp" instead of a valid value.
+      const ts = o.timestamp ? Date.parse(o.timestamp) : null;
+
       const entry = {
         client: id,
         sessionId: o.sessionId || path.basename(file, '.jsonl'),
         model: msg.model || 'unknown',
-        timestamp: o.timestamp ? Date.parse(o.timestamp) : null,
+        timestamp: Number.isFinite(ts) ? ts : null,
         inputTokens: input,
         outputTokens: output,
         reasoningTokens: 0,
