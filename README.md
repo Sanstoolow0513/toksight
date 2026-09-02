@@ -117,29 +117,35 @@ statically-exported [Next.js](https://nextjs.org) dashboard plus a live JSON API
 browser (default `http://127.0.0.1:4729`). It binds to localhost only and re-aggregates your
 session files on every request — data never leaves your machine.
 
-The dashboard is a fluid, two-tier layout: activity and trend lead as cards, everything after
-them (agent mix, model usage, hourly/monthly histograms) is a borderless block. Motion is
-interaction feedback only (hover, row expand, a chart-reveal replay when *you* switch range or
-mode) and is fully disabled under `prefers-reduced-motion` — there are no entrance animations.
-It includes:
+The dashboard is a Brutalism phosphor worksheet (v6): a 2px-framed mosaic on a near-black
+page, cells split by hard `--color-border-strong` grid lines, square corners, Geist Mono for
+data. Construction spec is `design-spec.md`; `design-system/toksight/MASTER.md` is a
+projection of that spec (not a raw skill dump). A sticky masthead (lime logo chip +
+last-fetch time) leads a 4-cell KPI strip, then a 12-column sheet — trend first (direction
+before detail), activity heatmap, agent/model split, hourly/monthly/pace, and a sessions
+table. Hover is instant invert; the few remaining motions (row expand, chart replay when
+*you* switch range or mode) are disabled under `prefers-reduced-motion`. It includes:
 
-- **Activity card** — a compact stat strip (all-time tokens & cost, cache hit rate, active days,
-  streak, peak day, longest session by *active* time) above a GitHub-style heatmap of daily token
-  volume for the last ~53 weeks, with per-day tooltips
-- **Trend card** — 7 / 30 / 90-day windows crossed with two stack modes: by token class (fresh
-  input / cache reads / cache writes / output) or by agent; legend chips toggle series, and
-  today / 7d / 30d / this-month summary chips replace the old ranges table
-- **Agent mix block** — per-agent share bars (tokens, cost, share) with cache hit rate; click a
+- **KPI strip** — total tokens (lime, with requests · sessions), total cost, cache hit rate
+  (green), active days as 34px mono numbers
+- **Trend cell** — 7 / 30 / 90-day windows crossed with two stack modes: by token class (fresh
+  input / cache reads / cache writes / output) or by agent; bands are per-day step-after
+  solids (not a smooth mountain); legend chips toggle series; today / 7d / 30d / this-month
+  square summary chips sit in the header
+- **Activity cell** — a GitHub-style heatmap of daily token volume for the last ~53 weeks, with
+  per-day tooltips and a lime intensity ramp
+- **Agent mix cell** — per-agent share bars (tokens, cost, share) with cache hit rate; click a
   row to expand that agent's per-model hit rates
-- **Model usage block** — models aggregated across agents; every bar splits cache reads (green)
-  from fresh traffic, so cache-heavy models no longer look like raw spend; the per-agent×model
-  table remains as a collapsible detail
-- **Hourly & monthly histograms** — when your tokens and money move, by time of day and month
+- **Model usage cell** — models aggregated across agents; every bar splits cache reads (green)
+  from fresh traffic; the per-agent×model table remains as a collapsible detail
+- **Hourly, monthly, pace** — when tokens move by hour and month, plus current streak, peak day,
+  and longest session by *active* time
+- **Sessions table** — top 10 sessions by tokens (title, tokens, requests, hit rate, cost,
+  start, active duration)
 
-Session leaderboards were dropped from the UI (the API still exposes `topSessions`). All filters
-(`--client`, `--since`, `--until`, `--today/--week/--month`) work for `web` too, and the page
-offers a manual refresh, a 30s auto-refresh toggle, and a 中文 / EN language switch (stored in
-`localStorage` as `toksight-locale`, default Chinese).
+All filters (`--client`, `--since`, `--until`, `--today/--week/--month`) work for `web` too, and
+the page offers a manual refresh, a 30s auto-refresh toggle, and a 中文 / EN language switch
+(stored in `localStorage` as `toksight-locale`, default Chinese).
 
 ### Dashboard bundle
 

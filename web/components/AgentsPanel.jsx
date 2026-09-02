@@ -27,7 +27,7 @@ function AgentRow({ agent, index, models, locale }) {
   return (
     <div className={`arow${open ? ' open' : ''}`}>
       <button type="button" className="arow-head" onClick={() => setOpen((v) => !v)} aria-expanded={open}>
-        <span className="arow-caret">
+        <span className="arow-caret" aria-hidden="true">
           <ChevronDown size={14} strokeWidth={2} />
         </span>
         <span className="arow-name">

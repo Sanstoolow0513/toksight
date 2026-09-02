@@ -2,15 +2,16 @@
 
 // GitHub-style activity heatmap: whole weeks as columns starting on Sunday,
 // one row per weekday, ending today (partial last column). Tokens per local
-// day drive a 5-step color scale; a tooltip carries cost/sessions/requests.
+// day drive a 5-step lime ramp. Cells are squares with a 2px gutter (worksheet
+// grid, not GitHub's rounded 4px pitch).
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { fmtTokens, fmtCost } from '@/lib/format';
 import { HEAT_MONTHS, HEAT_WEEKDAYS, t } from '@/lib/i18n';
 import Tip from '@/components/Tip';
 
 const CELL = 12;
-const GAP = 4;
+const GAP = 2;
 const PITCH = CELL + GAP;
 const LABEL_X = 48;
 const TOP = 16;
@@ -30,7 +31,12 @@ function weekdayOf(date) {
 
 export default function Heatmap({ heatmap, locale = 'zh-CN' }) {
   const [tip, setTip] = useState(null);
+  const scrollRef = useRef(null);
   const tr = (key, vars) => t(locale, key, vars);
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (el) el.scrollLeft = el.scrollWidth;
+  }, [heatmap]);
   if (!heatmap?.days?.length) return <div className="muted">{tr('heatEmpty')}</div>;
 
   const months = HEAT_MONTHS[locale] ?? HEAT_MONTHS['zh-CN'];
@@ -52,7 +58,7 @@ export default function Heatmap({ heatmap, locale = 'zh-CN' }) {
 
   return (
     <div className="hm" onMouseLeave={() => setTip(null)}>
-      <div className="hm-scroll">
+      <div className="hm-scroll" ref={scrollRef}>
         <svg width={width} height={height} role="img" aria-label={tr('heatAria')}>
           {monthLabels.map((m) => (
             <text key={m.label + m.x} x={m.x} y="12" className="hm-text">
@@ -76,7 +82,7 @@ export default function Heatmap({ heatmap, locale = 'zh-CN' }) {
                   y={TOP + ri * PITCH}
                   width={CELL}
                   height={CELL}
-                  rx="4"
+                  shapeRendering="crispEdges"
                   className={`heat-${level}${d.tokens > 0 ? '' : ' heat-empty'}`}
                   onMouseEnter={(e) => setTip({ d, x: e.clientX, y: e.clientY })}
                   onMouseMove={(e) => setTip((cur) => (cur && cur.d === d ? cur : { d, x: e.clientX, y: e.clientY }))}

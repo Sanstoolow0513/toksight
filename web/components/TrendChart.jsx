@@ -1,10 +1,10 @@
 'use client';
 
-// Daily token trend as a smooth stacked area chart (mountain style): each
-// series is drawn down to the baseline, top of stack first, so the visible
-// bands are the differences between cumulative curves. Curvature is
-// monotone-cubic (Fritsch–Carlson), which never overshoots the data, so
-// stacked bands cannot cross between sample points.
+// Daily token trend as a step-after stacked worksheet (Brutalism, spec v6):
+// each day is a rectangular band, not a smooth mountain. Series are drawn
+// down to the baseline, top of stack first, so the visible bands are the
+// differences between cumulative steps. No Bézier / monotone-cubic, no
+// translucent fill — those read as SaaS gradients.
 //
 // Two cross-cutting views share the same engine:
 //   - "mix"   → stack the four token classes (fresh input / cache read /
@@ -23,8 +23,6 @@ import { colorAt } from '@/lib/palette';
 import { t as tr } from '@/lib/i18n';
 import Tip from '@/components/Tip';
 
-// The chart's own animation start gate: never animates the first render,
-// always animates afterwards. Flip it as soon as the user touches a control.
 function useUserInteraction() {
   const ref = useRef(false);
   const touch = () => {
@@ -51,7 +49,7 @@ const PAD_L = 48;
 const PAD_R = 12;
 const PAD_T = 12;
 const PAD_B = 24;
-const HEIGHT = 260;
+const HEIGHT = 300;
 
 function useWidth() {
   const ref = useRef(null);
@@ -68,33 +66,20 @@ function useWidth() {
   return [ref, width];
 }
 
-function monotonePath(pts) {
+// Step-after silhouette: hold each day's y across its slot, then jump.
+function stepArea(pts, slotW, baseY) {
   const n = pts.length;
   if (n === 0) return '';
-  if (n === 1) return `M${pts[0][0]},${pts[0][1]}`;
-  const dx = [];
-  const slope = [];
-  for (let i = 0; i < n - 1; i++) {
-    dx.push(pts[i + 1][0] - pts[i][0]);
-    slope.push((pts[i + 1][1] - pts[i][1]) / Math.max(dx[i], 1e-9));
+  const x0 = pts[0][0];
+  const xN = pts[n - 1][0] + slotW;
+  let d = `M${x0},${baseY}L${x0},${pts[0][1]}`;
+  for (let i = 0; i < n; i++) {
+    const xRight = pts[i][0] + slotW;
+    d += `L${xRight},${pts[i][1]}`;
+    if (i < n - 1) d += `L${xRight},${pts[i + 1][1]}`;
   }
-  const t = [slope[0]];
-  for (let i = 1; i < n - 1; i++) {
-    if (slope[i - 1] * slope[i] <= 0) {
-      t.push(0);
-    } else {
-      const w1 = 2 * dx[i] + dx[i - 1];
-      const w2 = dx[i] + 2 * dx[i - 1];
-      t.push((w1 + w2) / (w1 / slope[i - 1] + w2 / slope[i]));
-    }
-  }
-  t.push(slope[n - 2]);
-  let path = `M${pts[0][0]},${pts[0][1]}`;
-  for (let i = 0; i < n - 1; i++) {
-    const h = dx[i] / 3;
-    path += `C${pts[i][0] + h},${pts[i][1] + t[i] * h} ${pts[i + 1][0] - h},${pts[i + 1][1] - t[i + 1] * h} ${pts[i + 1][0]},${pts[i + 1][1]}`;
-  }
-  return path;
+  d += `L${xN},${baseY}Z`;
+  return d;
 }
 
 function niceStep(rough) {
@@ -117,8 +102,6 @@ export default function TrendChart({ trends = {}, trendsByAgent = {}, agents = [
   const [ref, width] = useWidth();
   const [hover, setHover] = useState(null);
   const [userTouched, touch] = useUserInteraction();
-  // React 19 useId yields ids like «r0» / :r0: — invalid inside url(#…) SVG
-  // references on some browsers, so strip to plain word characters.
   const clipId = `twipe${useId().replace(/[^a-zA-Z0-9]/g, '')}`;
 
   if (!options.length) return <div className="muted">{tr(locale, 'trendEmpty')}</div>;
@@ -126,14 +109,9 @@ export default function TrendChart({ trends = {}, trendsByAgent = {}, agents = [
   const rows = active.rows;
   const n = rows.length;
   const agentRows = trendsByAgent?.[active.days];
-  // Agent mode needs by-agent rows that line up with the window; anything else
-  // (only possible with a malformed API response) silently falls back to mix,
-  // so the tab highlight must follow the effective mode, not the state.
   const agentDataOk = Array.isArray(agentRows) && agentRows.length === n;
   const agentMode = mode === 'agent' && agentDataOk;
 
-  // Series definitions for the active mode: stable key + label + color. Agent
-  // colors follow the shared rank palette used by the agent share card.
   const series = agentMode
     ? agents.map((a, i) => ({ key: a.id, label: a.label || a.id, color: colorAt(i) }))
     : CLASS_KEYS.map((key) => ({ key, label: tr(locale, CLASS_LABEL_KEYS[key]), color: CLASS_COLORS[key] }));
@@ -141,7 +119,7 @@ export default function TrendChart({ trends = {}, trendsByAgent = {}, agents = [
   const toggle = (key) => {
     const next = { ...hidden, [key]: !hidden[key] };
     const visibleCount = series.filter((s) => !next[s.key]).length;
-    if (visibleCount === 0) return; // never blank out the whole chart
+    if (visibleCount === 0) return;
     touch();
     setHidden(next);
   };
@@ -158,7 +136,9 @@ export default function TrendChart({ trends = {}, trendsByAgent = {}, agents = [
 
   const innerW = Math.max(width - PAD_L - PAD_R, 10);
   const innerH = HEIGHT - PAD_T - PAD_B;
-  const x = (i) => PAD_L + (n <= 1 ? innerW / 2 : (i / (n - 1)) * innerW);
+  const slotW = innerW / n;
+  const xLeft = (i) => PAD_L + i * slotW;
+  const xMid = (i) => PAD_L + (i + 0.5) * slotW;
   const y = (v) => PAD_T + innerH * (1 - v / top);
   const baseY = y(0);
 
@@ -168,9 +148,6 @@ export default function TrendChart({ trends = {}, trendsByAgent = {}, agents = [
     acc = acc.map((v, i) => v + valueOf(i, s));
     cumulatives.push(acc.slice());
   }
-  // Top of the *visible* stack (last cumulative). The hover dot rides this
-  // instead of the all-series total so it never floats above the bands when
-  // series are toggled off.
   const visibleTop = (i) => (cumulatives.length ? cumulatives[cumulatives.length - 1][i] : dayTotals[i]);
 
   const xTickIdx = [...new Set(Array.from({ length: Math.min(5, n) }, (_, k) => Math.round((k * (n - 1)) / Math.max(Math.min(5, n) - 1, 1))))];
@@ -179,18 +156,11 @@ export default function TrendChart({ trends = {}, trendsByAgent = {}, agents = [
   const windowCost = rows.reduce((s, d) => s + (d.costUsd || 0), 0);
 
   const pick = (e) => {
-    // The overlay rect already starts at PAD_L, so rect.left includes the
-    // left padding — do not subtract it again.
     const rect = e.currentTarget.getBoundingClientRect();
-    const rel = (e.clientX - rect.left) / rect.width;
-    const i = Math.max(0, Math.min(n - 1, Math.round(rel * (n - 1))));
+    const i = Math.max(0, Math.min(n - 1, Math.floor(((e.clientX - rect.left) / rect.width) * n)));
     setHover({ i, x: e.clientX, y: e.clientY });
   };
 
-  // Remount key shared by the clip rect and the band group: remounting both
-  // replays the wipe as one unit. `animated` stays false until the user
-  // touches a control, so the first paint renders the bands statically.
-  // Fires on range / mode / series-toggle changes.
   const animated = userTouched.current;
   const bandKey = `${animated ? 1 : 0}-${agentMode ? 'agent' : 'mix'}-${active.days}-${visible.map((s) => s.key).join('.')}`;
 
@@ -246,28 +216,33 @@ export default function TrendChart({ trends = {}, trendsByAgent = {}, agents = [
               {[...cumulatives].reverse().map((cum, rev) => {
                 const k = cumulatives.length - 1 - rev;
                 const s = visible[k];
-                const pts = cum.map((v, i) => [x(i), y(v)]);
-                const d = `${monotonePath(pts)}L${x(n - 1)},${baseY} L${x(0)},${baseY} Z`;
+                const pts = cum.map((v, i) => [xLeft(i), y(v)]);
                 return (
                   <path
                     key={s.key}
-                    d={d}
+                    d={stepArea(pts, slotW, baseY)}
                     className="trend-band"
-                    style={{ fill: s.color, stroke: s.color }}
-                    fillOpacity="0.45"
-                    strokeOpacity="0.9"
-                    strokeWidth="1"
+                    style={{ fill: s.color }}
+                    shapeRendering="crispEdges"
                   />
                 );
               })}
             </g>
             {xTickIdx.map((i) => (
-              <text key={i} x={x(i)} y={HEIGHT - 8} textAnchor={i === 0 ? 'start' : i === n - 1 ? 'end' : 'middle'} className="tc-text">
+              <text key={i} x={xMid(i)} y={HEIGHT - 8} textAnchor={i === 0 ? 'start' : i === n - 1 ? 'end' : 'middle'} className="tc-text">
                 {shortDate(rows[i].date)}
               </text>
             ))}
-            {hover && <line x1={x(hover.i)} x2={x(hover.i)} y1={PAD_T} y2={baseY} className="tc-guide" />}
-            {hover && <circle cx={x(hover.i)} cy={y(visibleTop(hover.i))} r="3" className="trend-dot" strokeWidth="1.5" />}
+            {hover && <line x1={xMid(hover.i)} x2={xMid(hover.i)} y1={PAD_T} y2={baseY} className="tc-guide" />}
+            {hover && (
+              <rect
+                x={xMid(hover.i) - 3}
+                y={y(visibleTop(hover.i)) - 3}
+                width="6"
+                height="6"
+                className="trend-mark"
+              />
+            )}
             <rect
               x={PAD_L}
               y={PAD_T}
@@ -285,7 +260,7 @@ export default function TrendChart({ trends = {}, trendsByAgent = {}, agents = [
             {[...visible].reverse().map((s) => (
               <div key={s.key} className="tip-row">
                 <span>
-                  <i className="tip-dot" style={{ background: s.color }} />
+                  <i className="tip-swatch" style={{ background: s.color }} />
                   {s.label}
                 </span>
                 <b>{fmtTokens(valueOf(hover.i, s))}</b>

@@ -3,6 +3,9 @@
 `toksight web` 的前端：一个 Next.js（App Router）静态导出应用，由 CLI 内置的零依赖
 HTTP 服务器（`src/webserver.js`）托管，数据来自同源的 `/api/data` 实时 JSON API。
 
+视觉规范见仓库根目录 `design-spec.md`（v6 Brutalism 磷光工作表）。
+`design-system/toksight/MASTER.md` 是该规范的投影，实现以 spec 为准。
+
 ## 使用
 
 正常使用不需要进入本目录 —— 在仓库根目录：
@@ -29,13 +32,13 @@ npm run dev
 
 ## 结构
 
-- `app/page.js` — 仪表盘页面（客户端组件：KPI、热力图、趋势、Agent 分布、小时/月度分布、模型与会话表格；中英切换）
-- `components/` — `Heatmap`、`TrendChart`、`Donut`、`Bars`、`RangeTable`、`ModelBars`
+- `app/page.js` — 仪表盘页面（客户端组件：KPI 条、12 列工作表、热力图、趋势、Agent 分布、小时/月/节奏、模型与会话表格；中英切换）
+- `components/` — `Heatmap`、`TrendChart`、`AgentsPanel`、`ModelBars`、`Bars`、`Tip`
 - `lib/format.js` — 数字/时间格式化（与 CLI `src/format.js` 口径一致）
 - `lib/i18n.js` — 界面文案（`zh-CN` / `en`）
 - `lib/palette.js` — 分类色（与 `design-spec.md` / `globals.css` 的 `--color-cat-*` 对齐）
 - `next.config.mjs` — 静态导出 / dev 代理配置
 
 API 返回 `--json` 载荷外加 web 专属字段（`heatmap`、`trend`、`hourly`、`today`、
-`last7Days`、`thisMonth`、`topSessions`、`longestSession`、`activityRange`、`timezone`），
-由 `src/webdata.js` 计算，本地时区分组。
+`last7Days`、`last30Days`、`thisMonth`、`topSessions`、`longestSession`、`streaks`、
+`peakDay`、`activityRange`、`timezone`），由 `src/webdata.js` 计算，本地时区分组。
