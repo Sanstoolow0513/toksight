@@ -72,7 +72,15 @@ export function parseArgs(argv, { now = Date.now() } = {}) {
         opts.port = v;
         break;
       }
-      case '--host': opts.host = String(next()); break;
+      case '--host': {
+        const v = String(next());
+        // Fail closed on an empty value: `--host=` (typically an unset env
+        // var expansion) would otherwise pass `''` to listen() and bind ALL
+        // interfaces while the startup URL still shows 127.0.0.1.
+        if (!v.trim()) throw new Error('invalid --host value');
+        opts.host = v;
+        break;
+      }
       case '--no-open': opts.open = false; break;
       case '--api-only': opts.apiOnly = true; break;
       case '--version': case '-v': opts.version = true; break;

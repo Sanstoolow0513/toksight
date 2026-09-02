@@ -108,6 +108,15 @@ test('equals form with an empty value behaves like an empty value', () => {
   assert.throws(() => parse(['--since=']), /invalid date ""/);
 });
 
+test('--host validates its value (empty means fail-closed)', () => {
+  // `--host=` is typically an unset env var expansion; binding would listen
+  // on all interfaces while the URL claims 127.0.0.1.
+  assert.throws(() => parse(['--host=']), /invalid --host value/);
+  assert.throws(() => parse(['web', '--host', '']), /invalid --host value/);
+  assert.throws(() => parse(['web', '--host', '   ']), /invalid --host value/);
+  assert.equal(parse(['web', '--host', 'localhost']).host, 'localhost');
+});
+
 test('unknown options and missing values fail loudly', () => {
   assert.throws(() => parse(['--bogus']), /unknown option "--bogus" \(see toksight --help\)/);
   // The flag name is reported without the attached value.
