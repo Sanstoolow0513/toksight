@@ -1,10 +1,12 @@
 'use client';
 
-// Ranked model list, aggregated across agents. The big change vs. a plain
-// token bar: each bar is split into a green "cache read" segment and a solid
-// "fresh traffic" segment (fresh input + cache write + output), so a model
-// dominated by cache reads no longer *looks* like raw spend. Bar length is
-// max-relative; the split inside is that model's cache share of its tokens.
+// Ranked model list, aggregated across agents. Each bar is split into a
+// green "cache read" segment and a solid "fresh traffic" segment (fresh
+// input + cache write + output), so a model dominated by cache reads no
+// longer *looks* like raw spend. Bar length is max-relative; the split
+// inside is that model's cache share of its tokens. The neutral color of
+// each bar encodes its rank (leader is brand blue), matching the agent
+// share block.
 
 import { useMemo } from 'react';
 import { fmtTokens, fmtCost, fmtPct } from '@/lib/format';
@@ -53,7 +55,6 @@ export default function ModelBars({ models = [], totalTokens = 0, limit = 8, loc
             </div>
             <div className="mrow-bar mrow-bar-split">
               <i
-                className="grow-x"
                 style={{
                   width: `${Math.max((r.tokens / max) * 100, 1)}%`,
                   '--cache-frac': `${(cacheFrac * 100).toFixed(2)}%`,
@@ -83,6 +84,7 @@ export default function ModelBars({ models = [], totalTokens = 0, limit = 8, loc
           <i className="seg-fresh" />
           {t(locale, 'modelLegendFresh')}
         </span>
+        <span className="legend-note">{t(locale, 'rankNote')}</span>
       </div>
     </div>
   );

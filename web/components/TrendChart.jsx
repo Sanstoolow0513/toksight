@@ -10,14 +10,28 @@
 //   - "mix"   → stack the four token classes (fresh input / cache read /
 //               cache write / output) from the `trends` rows;
 //   - "agent" → stack per-agent token volume from the `trendsByAgent` rows,
-//               using the same palette order as the agent share card.
+//               using the same rank palette order as the agent share card
+//               (agents arrive sorted by volume; colors encode rank, not id).
 // Legend chips toggle series visibility; range segmented control switches
-// 7 / 30 / 90 days. Switching remounts the band group, replaying the wipe-in.
+// 7 / 30 / 90 days. The wipe reveal plays only when the *user* changes
+// range / mode / series — the first paint is static — so it reads as
+// feedback instead of an entrance performance.
 
 import { useEffect, useId, useRef, useState } from 'react';
 import { fmtTokens, fmtCost } from '@/lib/format';
 import { colorAt } from '@/lib/palette';
 import { t as tr } from '@/lib/i18n';
+import Tip from '@/components/Tip';
+
+// The chart's own animation start gate: never animates the first render,
+// always animates afterwards. Flip it as soon as the user touches a control.
+function useUserInteraction() {
+  const ref = useRef(false);
+  const touch = () => {
+    ref.current = true;
+  };
+  return [ref, touch];
+}
 
 const CLASS_KEYS = ['input', 'cacheRead', 'cacheWrite', 'output'];
 const CLASS_LABEL_KEYS = {
@@ -102,6 +116,7 @@ export default function TrendChart({ trends = {}, trendsByAgent = {}, agents = [
   const [hidden, setHidden] = useState({});
   const [ref, width] = useWidth();
   const [hover, setHover] = useState(null);
+  const [userTouched, touch] = useUserInteraction();
   // React 19 useId yields ids like «r0» / :r0: — invalid inside url(#…) SVG
   // references on some browsers, so strip to plain word characters.
   const clipId = `twipe${useId().replace(/[^a-zA-Z0-9]/g, '')}`;
@@ -118,7 +133,7 @@ export default function TrendChart({ trends = {}, trendsByAgent = {}, agents = [
   const agentMode = mode === 'agent' && agentDataOk;
 
   // Series definitions for the active mode: stable key + label + color. Agent
-  // colors follow the shared palette order used by the agent share card.
+  // colors follow the shared rank palette used by the agent share card.
   const series = agentMode
     ? agents.map((a, i) => ({ key: a.id, label: a.label || a.id, color: colorAt(i) }))
     : CLASS_KEYS.map((key) => ({ key, label: tr(locale, CLASS_LABEL_KEYS[key]), color: CLASS_COLORS[key] }));
@@ -127,6 +142,7 @@ export default function TrendChart({ trends = {}, trendsByAgent = {}, agents = [
     const next = { ...hidden, [key]: !hidden[key] };
     const visibleCount = series.filter((s) => !next[s.key]).length;
     if (visibleCount === 0) return; // never blank out the whole chart
+    touch();
     setHidden(next);
   };
 
@@ -152,6 +168,10 @@ export default function TrendChart({ trends = {}, trendsByAgent = {}, agents = [
     acc = acc.map((v, i) => v + valueOf(i, s));
     cumulatives.push(acc.slice());
   }
+  // Top of the *visible* stack (last cumulative). The hover dot rides this
+  // instead of the all-series total so it never floats above the bands when
+  // series are toggled off.
+  const visibleTop = (i) => (cumulatives.length ? cumulatives[cumulatives.length - 1][i] : dayTotals[i]);
 
   const xTickIdx = [...new Set(Array.from({ length: Math.min(5, n) }, (_, k) => Math.round((k * (n - 1)) / Math.max(Math.min(5, n) - 1, 1))))];
 
@@ -167,8 +187,12 @@ export default function TrendChart({ trends = {}, trendsByAgent = {}, agents = [
     setHover({ i, x: e.clientX, y: e.clientY });
   };
 
-  // Remount key: replay the wipe-in whenever the view actually changes.
-  const bandKey = `${agentMode ? 'agent' : 'mix'}-${active.days}-${visible.map((s) => s.key).join('.')}`;
+  // Remount key shared by the clip rect and the band group: remounting both
+  // replays the wipe as one unit. `animated` stays false until the user
+  // touches a control, so the first paint renders the bands statically.
+  // Fires on range / mode / series-toggle changes.
+  const animated = userTouched.current;
+  const bandKey = `${animated ? 1 : 0}-${agentMode ? 'agent' : 'mix'}-${active.days}-${visible.map((s) => s.key).join('.')}`;
 
   return (
     <div>
@@ -176,13 +200,13 @@ export default function TrendChart({ trends = {}, trendsByAgent = {}, agents = [
         <div className="trend-controls">
           <div className="seg" role="tablist" aria-label={tr(locale, 'trendRange')}>
             {options.map((o) => (
-              <button key={o.days} type="button" role="tab" aria-selected={o.days === active.days} className={o.days === active.days ? 'on' : ''} onClick={() => setDays(o.days)}>
+              <button key={o.days} type="button" role="tab" aria-selected={o.days === active.days} className={o.days === active.days ? 'on' : ''} onClick={() => { touch(); setDays(o.days); }}>
                 {tr(locale, o.labelKey)}
               </button>
             ))}
           </div>
           <div className="seg" role="tablist" aria-label={tr(locale, 'trendMode')}>
-            <button type="button" role="tab" aria-selected={!agentMode} className={!agentMode ? 'on' : ''} onClick={() => setMode('mix')}>
+            <button type="button" role="tab" aria-selected={!agentMode} className={!agentMode ? 'on' : ''} onClick={() => { touch(); setMode('mix'); }}>
               {tr(locale, 'modeMix')}
             </button>
             <button
@@ -190,7 +214,7 @@ export default function TrendChart({ trends = {}, trendsByAgent = {}, agents = [
               role="tab"
               aria-selected={agentMode}
               className={agentMode ? 'on' : ''}
-              onClick={() => setMode('agent')}
+              onClick={() => { touch(); setMode('agent'); }}
               disabled={!agentDataOk}
             >
               {tr(locale, 'modeAgent')}
@@ -206,7 +230,7 @@ export default function TrendChart({ trends = {}, trendsByAgent = {}, agents = [
           <svg width={width} height={HEIGHT} role="img" aria-label={tr(locale, 'trendAria')}>
             <defs>
               <clipPath id={clipId}>
-                <rect x={PAD_L - 2} y={PAD_T - 2} width={innerW + 4} height={innerH + 4} className="trend-wipe" />
+                <rect key={bandKey} x={PAD_L - 2} y={PAD_T - 2} width={innerW + 4} height={innerH + 4} className={animated ? 'trend-wipe' : undefined} />
               </clipPath>
             </defs>
             {ticks.map((v) => (
@@ -243,7 +267,7 @@ export default function TrendChart({ trends = {}, trendsByAgent = {}, agents = [
               </text>
             ))}
             {hover && <line x1={x(hover.i)} x2={x(hover.i)} y1={PAD_T} y2={baseY} className="tc-guide" />}
-            {hover && <circle cx={x(hover.i)} cy={y(dayTotals[hover.i])} r="3" className="trend-dot" strokeWidth="1.5" />}
+            {hover && <circle cx={x(hover.i)} cy={y(visibleTop(hover.i))} r="3" className="trend-dot" strokeWidth="1.5" />}
             <rect
               x={PAD_L}
               y={PAD_T}
@@ -256,13 +280,7 @@ export default function TrendChart({ trends = {}, trendsByAgent = {}, agents = [
           </svg>
         )}
         {hover && (
-          <div
-            className="tip"
-            style={{
-              left: Math.min(hover.x + 12, (typeof window !== 'undefined' ? window.innerWidth : 1200) - 240),
-              top: hover.y + 14,
-            }}
-          >
+          <Tip x={hover.x} y={hover.y} width={240}>
             <div className="tip-title">{rows[hover.i].date}</div>
             {[...visible].reverse().map((s) => (
               <div key={s.key} className="tip-row">
@@ -284,7 +302,7 @@ export default function TrendChart({ trends = {}, trendsByAgent = {}, agents = [
                 {agentMode ? agentRows[hover.i].sessions : rows[hover.i].sessions}
               </b>
             </div>
-          </div>
+          </Tip>
         )}
       </div>
       <div className="legend-row">

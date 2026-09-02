@@ -7,6 +7,7 @@
 import { useState } from 'react';
 import { fmtTokens, fmtCost } from '@/lib/format';
 import { HEAT_MONTHS, HEAT_WEEKDAYS, t } from '@/lib/i18n';
+import Tip from '@/components/Tip';
 
 const CELL = 12;
 const GAP = 4;
@@ -77,7 +78,6 @@ export default function Heatmap({ heatmap, locale = 'zh-CN' }) {
                   height={CELL}
                   rx="4"
                   className={`heat-${level}${d.tokens > 0 ? '' : ' heat-empty'}`}
-                  style={{ '--d': `${ci * 9 + ri * 3}ms` }}
                   onMouseEnter={(e) => setTip({ d, x: e.clientX, y: e.clientY })}
                   onMouseMove={(e) => setTip((cur) => (cur && cur.d === d ? cur : { d, x: e.clientX, y: e.clientY }))}
                 />
@@ -94,13 +94,7 @@ export default function Heatmap({ heatmap, locale = 'zh-CN' }) {
         <span>{tr('heatMore')}</span>
       </div>
       {tip && (
-        <div
-          className="tip"
-          style={{
-            left: Math.min(tip.x + 12, (typeof window !== 'undefined' ? window.innerWidth : 1200) - 230),
-            top: tip.y + 14,
-          }}
-        >
+        <Tip x={tip.x} y={tip.y}>
           <div className="tip-title">
             {tip.d.date} · {tr('heatWeekday', { day: weekdays[weekdayOf(tip.d.date)] })}
           </div>
@@ -118,7 +112,7 @@ export default function Heatmap({ heatmap, locale = 'zh-CN' }) {
               {tip.d.sessions} / {tip.d.requests}
             </b>
           </div>
-        </div>
+        </Tip>
       )}
     </div>
   );

@@ -42,11 +42,19 @@ src/fsutils.js      walkFiles, streaming readJsonl, readJson, pathExists
 web/                Next.js (App Router, JS, no Tailwind) dashboard, statically exported to
                     web/out and served by the CLI; app/page.js + components/ (Heatmap,
                     TrendChart with mix/agent stack modes, AgentsPanel, ModelBars with
-                    cache-split bars, Bars) + lib/format.js + lib/i18n.js (zh-CN / en,
-                    localStorage `toksight-locale`) + lib/motion.js (count-up hook,
-                    reduced-motion); fluid card layout + motion system (design-spec.md v3),
-                    pure-black theme, Geist fonts + lucide-react icons (build-time deps in
-                    web/package.json)
+                    cache-split bars, Bars; every chart tooltip is the shared components/Tip)
+                    + lib/format.js + lib/i18n.js (zh-CN / en,
+                    localStorage `toksight-locale`) + lib/palette.js; fluid layout + motion
+                    rules (design-spec.md v4), pure-black theme, Geist fonts + lucide-react
+                    icons (build-time deps in web/package.json). v4 de-template pass:
+                    decorative icons banned (icons only for actions/states — RefreshCw,
+                    ChevronDown, warn/empty/error), no entrance animations (no card
+                    stagger / count-up / heat-in / bar grow — lib/motion.js was removed),
+                    no ambient glow, no "live" badge (nav shows last-fetch time from
+                    generatedAt), categorical palette is brand-blue + gray rank ramp
+                    (colorAt encodes rank, not identity), and everything after the two
+                    primary cards (activity + trend) is a borderless .block with an h3 +
+                    hairline, not a fourth/sixth card.
 ```
 
 Each client parser exports `id`, `label`, `sourceRoots({ env, home })`, and

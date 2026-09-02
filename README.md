@@ -117,8 +117,11 @@ statically-exported [Next.js](https://nextjs.org) dashboard plus a live JSON API
 browser (default `http://127.0.0.1:4729`). It binds to localhost only and re-aggregates your
 session files on every request — data never leaves your machine.
 
-The dashboard is a fluid, card-based layout with entrance/count-up/wipe animations (disabled
-under `prefers-reduced-motion`). It includes:
+The dashboard is a fluid, two-tier layout: activity and trend lead as cards, everything after
+them (agent mix, model usage, hourly/monthly histograms) is a borderless block. Motion is
+interaction feedback only (hover, row expand, a chart-reveal replay when *you* switch range or
+mode) and is fully disabled under `prefers-reduced-motion` — there are no entrance animations.
+It includes:
 
 - **Activity card** — a compact stat strip (all-time tokens & cost, cache hit rate, active days,
   streak, peak day, longest session by *active* time) above a GitHub-style heatmap of daily token
@@ -126,9 +129,9 @@ under `prefers-reduced-motion`). It includes:
 - **Trend card** — 7 / 30 / 90-day windows crossed with two stack modes: by token class (fresh
   input / cache reads / cache writes / output) or by agent; legend chips toggle series, and
   today / 7d / 30d / this-month summary chips replace the old ranges table
-- **Agent mix card** — per-agent share bars (tokens, cost, share) with cache hit rate; click a
+- **Agent mix block** — per-agent share bars (tokens, cost, share) with cache hit rate; click a
   row to expand that agent's per-model hit rates
-- **Model usage card** — models aggregated across agents; every bar splits cache reads (green)
+- **Model usage block** — models aggregated across agents; every bar splits cache reads (green)
   from fresh traffic, so cache-heavy models no longer look like raw spend; the per-agent×model
   table remains as a collapsible detail
 - **Hourly & monthly histograms** — when your tokens and money move, by time of day and month

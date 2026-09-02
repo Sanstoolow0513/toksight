@@ -1,10 +1,11 @@
 'use client';
 
-// Agent share card: one row per agent with a max-relative share bar (palette
-// color, consistent with the trend "agent" mode), tokens/cost/share, and a
-// thin green cache-hit-rate bar. Clicking a row expands that agent's
-// per-model hit-rate breakdown. Hit rate is request-attributed: a session
-// that switched models splits cleanly across model rows.
+// Agent share block: one row per agent with a max-relative share bar (rank
+// palette color, consistent with the trend "agent" mode — agents arrive
+// sorted by volume), tokens/cost/share, and a thin green cache-hit-rate
+// bar. Clicking a row expands that agent's per-model hit-rate breakdown.
+// Hit rate is request-attributed: a session that switched models splits
+// cleanly across model rows.
 
 import { useMemo, useState } from 'react';
 import { ChevronDown } from 'lucide-react';
@@ -34,7 +35,8 @@ function AgentRow({ agent, index, models, locale }) {
           {agent.label || agent.id}
         </span>
         <span className="arow-meta">
-          <b>{fmtTokens(agent.totalTokens)}</b> · {fmtCost(agent.costUsd)} · {fmtPct(share, 0)}
+          <b>{fmtTokens(agent.totalTokens)}</b>
+          <span className="arow-meta-extra"> · {fmtCost(agent.costUsd)} · {fmtPct(share, 0)}</span>
         </span>
         <span className="arow-hit">
           <span className="arow-hit-num" title={t(locale, 'agentHit')}>
@@ -47,7 +49,6 @@ function AgentRow({ agent, index, models, locale }) {
       </button>
       <div className="arow-bar" aria-hidden="true">
         <i
-          className="grow-x"
           style={{
             width: `${Math.max((agent.totalTokens / maxTokens) * 100, 1)}%`,
             '--bar-color': colorAt(index),
@@ -98,7 +99,8 @@ export default function AgentsPanel({ agents = [], models = [], totals = {}, loc
         <span aria-hidden="true" />
         <span>{t(locale, 'agentsTotal')}</span>
         <span className="arow-meta">
-          <b>{fmtTokens(totals.totalTokens)}</b> · {fmtCost(totals.costUsd)}
+          <b>{fmtTokens(totals.totalTokens)}</b>
+          <span className="arow-meta-extra"> · {fmtCost(totals.costUsd)}</span>
         </span>
         <span className="arow-hit">
           <span className="arow-hit-num" title={t(locale, 'agentHit')}>

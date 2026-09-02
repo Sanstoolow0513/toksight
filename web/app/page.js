@@ -1,36 +1,21 @@
 'use client';
 
-// toksight dashboard — fluid card layout (design-spec v3):
-//   1. Activity card: compact stat strip + GitHub-style heatmap. The old
-//      four-KPI grid and substat strip folded into the strip.
+// toksight dashboard — fluid layout (design-spec v4): two primary cards
+// (activity + trend) set the visual weight, everything after them is a
+// borderless block. Decorative icons are gone (icons only mark actions and
+// states), numbers render instantly, and the nav badge states the last fetch
+// time instead of claiming a live stream.
+//   1. Activity card: compact stat strip + GitHub-style heatmap.
 //   2. Trend card: range × mode (composition / agents) cross stats, with the
 //      old ranges table folded in as summary chips.
-//   3. Agent share + hit rate (merged donut & hit-rate cards) beside model
-//      usage with cache-read share segmented into every bar.
-//   4. Hourly / monthly histograms.
+//   3. Agent share + hit rate beside model usage with cache-read share
+//      segmented into every bar — borderless blocks.
+//   4. Hourly / monthly histograms — borderless blocks.
 // The top-sessions table was dropped (API keeps `topSessions` for compat).
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import {
-  Activity,
-  BarChart3,
-  CalendarDays,
-  CircleDollarSign,
-  Clock,
-  Database,
-  Flame,
-  Inbox,
-  Layers,
-  PieChart,
-  RefreshCw,
-  Timer,
-  TrendingUp,
-  TriangleAlert,
-  Zap,
-  Filter,
-} from 'lucide-react';
+import { Inbox, RefreshCw, TriangleAlert, Filter } from 'lucide-react';
 import { fmtTokens, fmtCost, fmtPct, fmtDateTime, fmtDuration } from '@/lib/format';
-import { useCountUp } from '@/lib/motion';
 import Heatmap from '@/components/Heatmap';
 import TrendChart from '@/components/TrendChart';
 import AgentsPanel from '@/components/AgentsPanel';
@@ -51,14 +36,11 @@ function coded(text) {
   return parts.map((p, i) => (i % 2 ? <code key={i}>{p}</code> : p));
 }
 
-function Section({ icon: Icon, title, desc, extra, children, index = 0 }) {
+function Card({ title, desc, extra, children }) {
   return (
-    <section className="card section" style={{ '--i': index }}>
+    <section className="card section">
       <div className="section-head">
-        <h2>
-          <Icon size={16} strokeWidth={2} />
-          {title}
-        </h2>
+        <h2>{title}</h2>
         {desc ? <span className="section-desc">{desc}</span> : null}
         {extra ? <div className="section-extra">{extra}</div> : null}
       </div>
@@ -67,27 +49,27 @@ function Section({ icon: Icon, title, desc, extra, children, index = 0 }) {
   );
 }
 
-// Hero stat chip: animated number + label + optional sub line. `animate`
-// enables the count-up (skipped for textual values like dates/durations).
-function StatChip({ icon: Icon, label, value, sub, accent, animate }) {
-  const target = useMemo(() => (animate?.type === 'number' ? Number(animate.value) || 0 : 0), [animate]);
-  const shown = useCountUp(target);
-  const display =
-    animate?.type === 'number'
-      ? animate.format === 'cost'
-        ? fmtCost(shown)
-        : animate.format === 'pct'
-          ? fmtPct(shown)
-          : fmtTokens(shown)
-      : value;
+function Block({ title, desc, extra, children }) {
+  return (
+    <section className="block">
+      <div className="block-head">
+        <h3>{title}</h3>
+        {desc ? <span className="block-desc">{desc}</span> : null}
+        {extra ? <div className="block-extra">{extra}</div> : null}
+      </div>
+      {children}
+    </section>
+  );
+}
+
+// Hero stat chip: label + value (+ optional sub line). Values render
+// instantly — no count-up.
+function StatChip({ label, value, sub, accent }) {
   return (
     <div className={accent ? 'chip accent' : 'chip'}>
-      <span className="chip-icon">
-        <Icon size={14} strokeWidth={2} />
-      </span>
       <div className="chip-body">
         <span className="chip-label">{label}</span>
-        <span className="chip-value">{display}</span>
+        <span className="chip-value">{value}</span>
         {sub ? <span className="chip-sub">{sub}</span> : null}
       </div>
     </div>
@@ -111,15 +93,17 @@ function LangSwitch({ locale, onChange, label }) {
 }
 
 function Skeleton() {
+  // Heights approximate the real cards so the swap to data doesn't jump.
   return (
     <>
-      <div className="skel-block" style={{ height: 300 }}>
-        <div className="skel" style={{ height: 52, marginBottom: 20 }} />
-        <div className="skel" style={{ height: 170 }} />
+      <div className="skel-block" style={{ height: 560 }}>
+        <div className="skel" style={{ height: 16, width: 140, marginBottom: 24 }} />
+        <div className="skel" style={{ height: 84, marginBottom: 24 }} />
+        <div className="skel" style={{ height: 400 }} />
       </div>
-      <div className="skel-block" style={{ height: 340 }}>
-        <div className="skel" style={{ height: 16, width: 140, marginBottom: 20 }} />
-        <div className="skel" style={{ height: 240 }} />
+      <div className="skel-block" style={{ height: 420 }}>
+        <div className="skel" style={{ height: 16, width: 140, marginBottom: 24 }} />
+        <div className="skel" style={{ height: 340 }} />
       </div>
     </>
   );
@@ -186,10 +170,7 @@ export default function Page() {
           <h1 className="logo">
             toksight<span className="logo-dot">.</span>
           </h1>
-          <span className="live-badge">
-            <i className="live-dot" />
-            {tx('live')}
-          </span>
+          {data && <span className="live-badge">{tx('live', { time: fmtDateTime(data.generatedAt) })}</span>}
         </div>
         <div className="head-actions">
           <LangSwitch locale={locale} onChange={setLocale} label={tx('langGroup')} />
@@ -301,51 +282,40 @@ export default function Page() {
           </div>
         ) : (
           <>
-            <Section icon={Activity} title={tx('heatTitle')} desc={heatDesc} index={0}>
+            <Card title={tx('heatTitle')} desc={heatDesc}>
               <div className="statstrip">
                 <StatChip
-                  icon={Zap}
                   label={tx('statTokens')}
                   value={fmtTokens(totals.totalTokens)}
-                  animate={{ type: 'number', value: totals.totalTokens, format: 'tokens' }}
                   sub={tx('statTokensSub', { requests: totals.requests ?? 0, sessions: totals.sessions ?? 0 })}
                 />
                 <StatChip
-                  icon={CircleDollarSign}
                   label={tx('statCost')}
                   value={fmtCost(totals.costUsd)}
-                  animate={{ type: 'number', value: totals.costUsd, format: 'cost' }}
                   sub={unpriced.length ? tx('statCostUnpriced', { n: unpriced.length }) : tx('statCostPriced')}
                 />
                 <StatChip
-                  icon={Database}
                   label={tx('statCache')}
                   accent
                   value={fmtPct(data.cacheHitRate)}
-                  animate={{ type: 'number', value: data.cacheHitRate ?? 0, format: 'pct' }}
                   sub={tx('statCacheSub', { tokens: fmtTokens(totals.cacheReadTokens) })}
                 />
                 <StatChip
-                  icon={CalendarDays}
                   label={tx('statActiveDays')}
                   value={data.activeDays ?? activeWindowDays}
-                  animate={{ type: 'number', value: data.activeDays ?? activeWindowDays, format: 'tokens' }}
                   sub={data.activityRange?.firstAt ? tx('statActiveSince', { date: dateOnly(data.activityRange.firstAt) }) : '—'}
                 />
                 <StatChip
-                  icon={Flame}
                   label={tx('statStreak')}
                   value={Number.isFinite(streaks.current) ? tx('statStreakValue', { n: streaks.current }) : '—'}
                   sub={Number.isFinite(streaks.longest) ? tx('statStreakLongest', { n: streaks.longest }) : null}
                 />
                 <StatChip
-                  icon={TrendingUp}
                   label={tx('statPeak')}
                   value={peakDay ? fmtTokens(peakDay.tokens) : '—'}
                   sub={peakDay?.date ?? null}
                 />
                 <StatChip
-                  icon={Timer}
                   label={tx('statLongest')}
                   value={fmtDuration(longest?.activeMs)}
                   sub={
@@ -356,13 +326,11 @@ export default function Page() {
                 />
               </div>
               <Heatmap heatmap={data.heatmap} locale={locale} />
-            </Section>
+            </Card>
 
-            <Section
-              icon={TrendingUp}
+            <Card
               title={tx('trendTitle')}
               desc={tx('trendDesc')}
-              index={1}
               extra={
                 <div className="range-chips">
                   {rangeChips.map(({ key, label, r }) => (
@@ -381,18 +349,18 @@ export default function Page() {
                 agents={agents.map((a) => ({ id: a.id, label: clientLabel(a.id) }))}
                 locale={locale}
               />
-            </Section>
+            </Card>
 
-            <div className="grid-2">
-              <Section icon={PieChart} title={tx('agentsTitle')} desc={tx('agentsDesc')} index={2}>
+            <div className="blocks">
+              <Block title={tx('agentsTitle')} desc={tx('agentsDesc')}>
                 <AgentsPanel
                   agents={agents.map((a) => ({ ...a, label: clientLabel(a.id) }))}
                   models={data.models ?? []}
                   totals={{ totalTokens: totals.totalTokens, costUsd: totals.costUsd, cacheHitRate: data.cacheHitRate }}
                   locale={locale}
                 />
-              </Section>
-              <Section icon={Layers} title={tx('modelTitle')} desc={tx('modelDesc')} index={3}>
+              </Block>
+              <Block title={tx('modelTitle')} desc={tx('modelDesc')}>
                 <ModelBars models={data.models ?? []} totalTokens={totals.totalTokens} locale={locale} />
                 <details className="details">
                   <summary>{tx('details')}</summary>
@@ -429,16 +397,16 @@ export default function Page() {
                     </table>
                   </div>
                 </details>
-              </Section>
+              </Block>
             </div>
 
-            <div className="grid-2">
-              <Section icon={Clock} title={tx('hourTitle')} desc={tx('hourDesc')} index={4}>
+            <div className="blocks">
+              <Block title={tx('hourTitle')} desc={tx('hourDesc')}>
                 <HourBars hourly={data.hourly} locale={locale} />
-              </Section>
-              <Section icon={BarChart3} title={tx('monthTitle')} desc={tx('monthDesc')} index={5}>
+              </Block>
+              <Block title={tx('monthTitle')} desc={tx('monthDesc')}>
                 <MonthlyBars monthly={data.monthly} locale={locale} />
-              </Section>
+              </Block>
             </div>
           </>
         )}

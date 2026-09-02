@@ -1,7 +1,8 @@
-/* toksight dashboard — Vercel-style pure-black theme, fluid card layout (v3).
+/* toksight dashboard — pure-black minimal data panel, fluid layout (v4).
  * See design-spec.md. Dark only; no light overrides.
- * Motion: cards stagger in, numbers count up, charts wipe/grow in — all
- * disabled under `prefers-reduced-motion`. */
+ * Motion is interaction feedback only (hover, expand, chart switch replay);
+ * no page-wide entrance choreography. Everything is disabled under
+ * `prefers-reduced-motion`. */
 
 :root {
   --color-primary: #3291ff;
@@ -29,19 +30,17 @@
   --color-heat-3: #1f6feb;
   --color-heat-4: #7ab8ff;
   --color-cat-1: #3291ff;
-  --color-cat-2: #45d483;
-  --color-cat-3: #f5a524;
-  --color-cat-4: #bc8cff;
-  --color-cat-5: #f778ba;
-  --color-cat-6: #39c5cf;
-  --color-cat-7: #ff4d4d;
-  --color-cat-8: #8ddb8c;
+  --color-cat-2: #9a9a9a;
+  --color-cat-3: #6e6e6e;
+  --color-cat-4: #4c4c4c;
+  --color-cat-5: #2e2e2e;
   --font-sans: var(--font-geist-sans), system-ui, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
   --font-mono: var(--font-geist-mono), ui-monospace, "Cascadia Code", "JetBrains Mono", Consolas, monospace;
   --font-size-xs: 12px;
   --font-size-sm: 14px;
   --font-size-md: 16px;
   --font-size-lg: 18px;
+  --font-size-chip: 20px;
   --font-size-xl: 24px;
   --radius-sm: 6px;
   --radius-md: 8px;
@@ -56,7 +55,6 @@
   --space-7: 48px;
   --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.6);
   --duration: 150ms;
-  --duration-anim: 550ms;
   --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
   --page-max: 1720px;
 }
@@ -67,6 +65,13 @@
   padding: 0;
 }
 
+/* Keyboard-only focus ring, so tabbing through seg buttons / legend chips /
+ * agent rows is visible against the pure-black surface. */
+:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
 html,
 body {
   background: var(--color-bg);
@@ -75,13 +80,6 @@ body {
   font-size: var(--font-size-sm);
   line-height: 1.7;
   -webkit-font-smoothing: antialiased;
-}
-
-/* Single ambient glow behind the hero area — the only decorative gradient. */
-body {
-  background:
-    radial-gradient(1100px 460px at 50% -160px, rgba(50, 145, 255, 0.09), transparent 72%)
-    var(--color-bg) no-repeat;
 }
 
 code,
@@ -104,6 +102,13 @@ code {
   max-width: var(--page-max);
   margin: 0 auto;
   padding: var(--space-5) clamp(var(--space-4), 3.2vw, 56px) var(--space-7);
+  animation: page-fade 240ms var(--ease-out) both;
+}
+
+@keyframes page-fade {
+  from {
+    opacity: 0;
+  }
 }
 
 /* ---------- sticky top nav ---------- */
@@ -149,34 +154,12 @@ code {
 }
 
 .live-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
+  /* Plain text — the data is fetched per request, so we state the last
+   * fetch time instead of pretending a live stream. */
   color: var(--color-text-muted);
   font-size: var(--font-size-xs);
-  border: 1px solid var(--color-border);
-  border-radius: 999px;
-  padding: 1px var(--space-2);
+  font-variant-numeric: tabular-nums;
   white-space: nowrap;
-}
-
-.live-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--color-success);
-  flex: none;
-  animation: live-ping 2.2s ease-out infinite;
-}
-
-@keyframes live-ping {
-  0% {
-    box-shadow: 0 0 0 0 rgba(69, 212, 131, 0.55);
-  }
-  70%,
-  100% {
-    box-shadow: 0 0 0 6px rgba(69, 212, 131, 0);
-  }
 }
 
 .head-actions {
@@ -235,14 +218,7 @@ code {
   animation: spin 1s linear infinite;
 }
 
-/* ---------- cards: entrance animation & hover ---------- */
-
-@keyframes card-in {
-  from {
-    opacity: 0;
-    transform: translateY(16px) scale(0.992);
-  }
-}
+/* ---------- cards (primary sections) ---------- */
 
 .card {
   background: var(--color-surface);
@@ -258,8 +234,6 @@ code {
 
 .section {
   margin-top: var(--space-4);
-  animation: card-in var(--duration-anim) var(--ease-out) both;
-  animation-delay: calc(var(--i, 0) * 90ms);
 }
 
 .section-head {
@@ -271,17 +245,9 @@ code {
 }
 
 .section-head h2 {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
   font-size: var(--font-size-md);
   font-weight: 600;
   letter-spacing: -0.01em;
-}
-
-.section-head h2 svg {
-  color: var(--color-text-muted);
-  flex: none;
 }
 
 .section-desc {
@@ -293,11 +259,41 @@ code {
   margin-left: auto;
 }
 
-.grid-2 {
+/* ---------- borderless blocks (secondary statistics) ----------
+ * After the two primary cards, everything else drops the card chrome:
+ * a hairline + extra whitespace separates these from the card rhythm. */
+
+.blocks {
   display: grid;
   grid-template-columns: 1.08fr 1fr;
-  gap: var(--space-4);
+  gap: var(--space-5);
   align-items: start;
+  margin-top: var(--space-6);
+}
+
+.block-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  margin-bottom: var(--space-3);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--color-border);
+}
+
+.block-head h3 {
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.block-desc {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+}
+
+.block-extra {
+  margin-left: auto;
 }
 
 /* ---------- hero stat strip (inside the activity card) ---------- */
@@ -310,30 +306,16 @@ code {
 }
 
 .chip {
-  display: flex;
-  align-items: flex-start;
-  gap: var(--space-2);
   background: var(--color-surface-subtle);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
-  padding: var(--space-2) var(--space-3);
+  padding: var(--space-3);
   min-width: 0;
   transition: border-color var(--duration) var(--ease-out);
 }
 
 .chip:hover {
   border-color: var(--color-border-strong);
-}
-
-.chip-icon {
-  color: var(--color-text-muted);
-  flex: none;
-  margin-top: 3px;
-  display: inline-flex;
-}
-
-.chip.accent .chip-icon {
-  color: var(--color-success);
 }
 
 .chip-body {
@@ -350,7 +332,7 @@ code {
 }
 
 .chip-value {
-  font-size: 20px;
+  font-size: var(--font-size-chip);
   font-weight: 700;
   letter-spacing: -0.01em;
   font-variant-numeric: tabular-nums;
@@ -511,18 +493,9 @@ code {
 .heat-3 { fill: var(--color-heat-3); background: var(--color-heat-3); }
 .heat-4 { fill: var(--color-heat-4); background: var(--color-heat-4); }
 
-@keyframes heat-in {
-  from {
-    opacity: 0;
-    transform: scale(0.4);
-  }
-}
-
 .hm rect {
   transform-box: fill-box;
   transform-origin: center;
-  animation: heat-in 0.4s var(--ease-out) both;
-  animation-delay: var(--d, 0ms);
   transition: transform var(--duration) var(--ease-out);
 }
 
@@ -625,30 +598,6 @@ code {
   opacity: 1;
 }
 
-@keyframes grow-y {
-  from {
-    transform: scaleY(0);
-  }
-}
-
-.grow-y {
-  transform-origin: bottom;
-  animation: grow-y 0.7s var(--ease-out) both;
-  animation-delay: var(--d, 0ms);
-}
-
-@keyframes grow-x {
-  from {
-    transform: scaleX(0);
-  }
-}
-
-.grow-x {
-  transform-origin: left;
-  animation: grow-x 0.8s var(--ease-out) both;
-  animation-delay: calc(var(--i, 0) * 60ms);
-}
-
 .months {
   overflow-x: auto;
   padding-bottom: var(--space-1);
@@ -667,12 +616,20 @@ code {
 }
 
 .axis {
-  display: flex;
-  justify-content: space-between;
+  position: relative;
+  height: 20px;
   color: var(--color-text-muted);
   font-size: var(--font-size-xs);
   margin-top: var(--space-2);
   font-variant-numeric: tabular-nums;
+}
+
+/* Hour labels are absolutely positioned at each tick's bar center (see
+ * Bars.jsx); a flex/space-between row would drift off the bars at the edges. */
+.axis span {
+  position: absolute;
+  transform: translateX(-50%);
+  white-space: nowrap;
 }
 
 .legend-row {
@@ -767,10 +724,12 @@ code {
   }
 }
 
+/* Replayed only when the user switches range / mode / series — the first
+ * paint is static (see TrendChart.jsx); 450ms reads as feedback, not show. */
 .trend-wipe {
   transform-box: fill-box;
   transform-origin: left;
-  animation: wipe-x 0.9s var(--ease-out) both;
+  animation: wipe-x 450ms var(--ease-out) both;
 }
 
 .trend-dot {
@@ -844,6 +803,8 @@ code {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  /* Let the 1fr column shrink on narrow screens instead of overflowing. */
+  min-width: 0;
   transition: color var(--duration) var(--ease-out);
 }
 
@@ -896,9 +857,6 @@ code {
   height: 100%;
   border-radius: var(--radius-sm);
   background: var(--color-success);
-  transform-origin: left;
-  animation: grow-x 0.8s var(--ease-out) both;
-  animation-delay: 150ms;
 }
 
 .arow-bar {
@@ -913,11 +871,7 @@ code {
   display: block;
   height: 100%;
   border-radius: var(--radius-sm);
-  background: linear-gradient(
-    90deg,
-    var(--bar-color, var(--color-primary)),
-    color-mix(in srgb, var(--bar-color, var(--color-primary)) 60%, white)
-  );
+  background: var(--bar-color, var(--color-primary));
 }
 
 /* expandable per-model detail (grid-rows trick animates height) */
@@ -1075,7 +1029,18 @@ code {
 }
 
 .model-legend i.seg-fresh {
-  background: var(--color-text-muted);
+  /* The fresh segment's color is each model's rank color, so the legend
+   * swatch is a two-tone hard stop (same technique as the bars) marking it
+   * as "varies by rank" — a solid swatch reads as a literal color. */
+  background: linear-gradient(
+    90deg,
+    var(--color-cat-1) 0 50%,
+    var(--color-cat-2) 50% 100%
+  );
+}
+
+.legend-note {
+  color: var(--color-text-muted);
 }
 
 /* ---------- collapsible details ---------- */
@@ -1231,26 +1196,20 @@ code {
 /* ---------- responsive ---------- */
 
 @media (max-width: 1080px) {
-  .grid-2 {
+  .blocks {
     grid-template-columns: 1fr;
   }
 }
 
 @media (max-width: 640px) {
-  .arow-head {
-    grid-template-columns: 18px 1fr auto;
-  }
-
-  .arow-meta {
-    display: none;
-  }
-
+  .arow-head,
   .arow-total {
-    grid-template-columns: 18px 1fr auto;
+    grid-template-columns: 18px 1fr auto auto;
   }
 
-  .arow-total .arow-meta {
-    display: block;
+  /* Keep the tokens number on narrow screens; drop cost/share. */
+  .arow-meta-extra {
+    display: none;
   }
 
   .wrap {
