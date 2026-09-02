@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { buildPayload } from '../src/cli.js';
+import { buildPayload } from '../src/payload.js';
 
 // Base entry: 2026-08-10 12:00 local time — same shape the parsers emit.
 function entry(over = {}) {

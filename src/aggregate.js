@@ -46,11 +46,21 @@ function group(entries, keyFn, decorate) {
   }
   const rows = [];
   for (const [key, groupEntries] of groups) {
+    // Loop, not Math.min(...entries): the spread form hits the ~65k argument
+    // limit once one group grows large enough (e.g. a dominant model).
+    let firstAt = Infinity;
+    let lastAt = 0;
+    for (const e of groupEntries) {
+      if (e.timestamp != null && Number.isFinite(e.timestamp)) {
+        if (e.timestamp < firstAt) firstAt = e.timestamp;
+        if (e.timestamp > lastAt) lastAt = e.timestamp;
+      }
+    }
     rows.push({
       key,
       totals: summarize(groupEntries),
-      firstAt: Math.min(...groupEntries.map((e) => e.timestamp ?? Infinity)),
-      lastAt: Math.max(...groupEntries.map((e) => e.timestamp ?? 0)),
+      firstAt,
+      lastAt,
       ...decorate(groupEntries),
     });
   }
@@ -79,7 +89,6 @@ export function byModel(entries) {
     (g) => ({
       client: g[0].client,
       model: g[0].model,
-      models: [...new Set(g.map((e) => e.model))],
     }),
   );
   return rows.sort((a, b) => (b.totals.costUsd - a.totals.costUsd) || (b.totals.totalTokens - a.totals.totalTokens));

@@ -1,6 +1,7 @@
 import os from 'node:os';
 import path from 'node:path';
 import { walkFiles, readJson, pathExists } from '../fsutils.js';
+import { openSqliteReadOnly } from './sqlite.js';
 
 export const id = 'opencode';
 export const label = 'OpenCode';
@@ -27,7 +28,7 @@ export async function collect({ env, home, roots } = {}) {
   const dbEntries = await collectFromDb(base, warnings);
   if (dbEntries) return { entries: dbEntries, warnings };
 
-  const entries = await collectFromJson(path.join(base, 'storage', 'message'));
+  const entries = await collectFromJson(path.join(base, 'storage', 'message'), warnings);
   return { entries, warnings };
 }
 
@@ -40,8 +41,7 @@ async function collectFromDb(base, warnings) {
 
   let db;
   try {
-    const { DatabaseSync } = await import('node:sqlite');
-    db = new DatabaseSync(dbPath, { readOnly: true });
+    db = await openSqliteReadOnly(dbPath);
   } catch (err) {
     warnings.push(`opencode: database unreadable (${err.message}), falling back to legacy JSON storage`);
     return null;
@@ -106,9 +106,10 @@ async function collectFromDb(base, warnings) {
 // Legacy v1.1.x layout: one JSON file per message. Assistant messages carry a
 // `tokens` object and, when the provider pricing was known to OpenCode, a
 // precomputed `cost` — honored as-is (a missing/zero cost there is real).
-async function collectFromJson(root) {
+async function collectFromJson(root, warnings) {
   const entries = [];
-  const files = await walkFiles(root, { filter: (name) => name.endsWith('.json') });
+  const { files, warnings: walkWarnings } = await walkFiles(root, { filter: (name) => name.endsWith('.json') });
+  warnings.push(...walkWarnings);
 
   for (const file of files) {
     let o = null;

@@ -22,7 +22,10 @@ export async function collect({ env, home, roots } = {}) {
 
   const files = [];
   for (const root of scanRoots) {
-    files.push(...(await walkFiles(root, { filter: (name) => name.endsWith('.jsonl') })));
+    // Loop, not spread: see claude.js — large histories break `push(...)`.
+    const { files: found, warnings: rootWarnings } = await walkFiles(root, { filter: (name) => name.endsWith('.jsonl') });
+    for (const f of found) files.push(f);
+    warnings.push(...rootWarnings);
   }
 
   for (const file of files) {

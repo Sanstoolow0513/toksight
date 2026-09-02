@@ -4,20 +4,7 @@
 // matching the `daily`/`monthly` grouping in aggregate.js.
 
 import { summarize, cacheHitRate, localDate, localMonth, bySession } from './aggregate.js';
-
-function startOfDay(ts) {
-  const d = new Date(ts);
-  return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
-}
-
-// DST-safe day step on local midnights (never a blind `ts + n * 24h`): the
-// latter drifts one hour per transition inside the span, which shifts window
-// starts off their calendar day.
-function stepDay(ts, n) {
-  const d = new Date(ts);
-  d.setDate(d.getDate() + n);
-  return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
-}
+import { startOfDay, stepDay } from './dates.js';
 
 function roundUsd(v) {
   return Math.round(v * 1e6) / 1e6;

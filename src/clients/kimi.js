@@ -30,8 +30,13 @@ export async function collect({ env, home, roots } = {}) {
     try {
       const parsed = await readJson(path.join(sessionDir, 'state.json'));
       state = parsed && typeof parsed === 'object' ? parsed : null;
-    } catch {
+    } catch (err) {
+      // Missing state.json is normal (older sessions); anything else —
+      // unreadable file, malformed JSON — deserves a warning.
       state = null;
+      if (err?.code !== 'ENOENT') {
+        warnings.push(`kimi: cannot read ${path.join(sessionDir, 'state.json')} (${err?.code || err?.message || err})`);
+      }
     }
     stateCache.set(sessionDir, state);
     return state;
@@ -39,7 +44,10 @@ export async function collect({ env, home, roots } = {}) {
 
   const files = [];
   for (const root of scanRoots) {
-    files.push(...(await walkFiles(root, { filter: (name) => name === 'wire.jsonl' })));
+    // Loop, not spread: see claude.js — large histories break `push(...)`.
+    const { files: found, warnings: rootWarnings } = await walkFiles(root, { filter: (name) => name === 'wire.jsonl' });
+    for (const f of found) files.push(f);
+    warnings.push(...rootWarnings);
   }
 
   for (const file of files) {

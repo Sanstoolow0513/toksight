@@ -69,31 +69,37 @@ function builtinMap() {
 }
 
 function buildExactMap(entries) {
-  const map = new Map();
+  const exact = new Map();
   for (const [key, price] of entries) {
     const normalized = normalizeModelName(key);
     if (!normalized) continue;
-    const existing = map.get(normalized);
+    const existing = exact.get(normalized);
     if (!existing || key.length > (existing.keyLength ?? 0)) {
-      map.set(normalized, { ...price, keyLength: key.length });
+      exact.set(normalized, { ...price, keyLength: key.length });
     }
   }
-  return map;
+  // Suffix index: bare model name -> price for provider-prefixed keys
+  // (e.g. "zhipuai/glm-5.3" is also reachable as "glm-5.3"). Prebuilt so a
+  // miss on the exact map is one O(1) lookup instead of a scan over the
+  // whole LiteLLM table (thousands of entries) per unpriced model.
+  const suffix = new Map();
+  for (const [normalized, price] of exact) {
+    const slash = normalized.lastIndexOf('/');
+    if (slash === -1) continue;
+    const base = normalized.slice(slash + 1);
+    if (!base) continue;
+    const existing = suffix.get(base);
+    if (!existing || (price.keyLength ?? 0) > (existing.keyLength ?? 0)) {
+      suffix.set(base, price);
+    }
+  }
+  return { exact, suffix };
 }
 
 function lookupExact(map, model) {
   if (!map) return null;
   const n = normalizeModelName(model);
-  const hit = map.get(n);
-  if (hit) return hit;
-  // Provider-prefixed keys (e.g. "zhipuai/glm-5.3") also match bare names.
-  let best = null;
-  for (const [key, price] of map) {
-    if (key.endsWith(`/${n}`) && (!best || key.length > best.keyLength)) {
-      best = price;
-    }
-  }
-  return best ?? null;
+  return map.exact.get(n) ?? map.suffix.get(n) ?? null;
 }
 
 export function computeCost(entry, price) {
@@ -167,6 +173,13 @@ function buildLitellmMap(data) {
       {
         input: v.input_cost_per_token,
         output: v.output_cost_per_token,
+        // When LiteLLM lacks cache prices, fall back to the input price. This
+        // is a deliberate conservative OVERestimate (cache reads are usually
+        // ~10% of the input price) — costs are never silently undercounted,
+        // and models with real cache prices price normally. Alternative
+        // (treat the entry as unpriced) was rejected for now; a second
+        // pricing source to fill the gap is tracked in AGENTS.md
+        // ("Researched but not implemented" — models.dev).
         cacheRead: v.cache_read_input_token_cost ?? v.input_cost_per_token,
         cacheWrite: v.cache_creation_input_token_cost ?? v.input_cost_per_token,
         source: 'litellm',

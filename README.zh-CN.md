@@ -83,6 +83,8 @@ zcode   glm-5.3             41   116K    1.99M        0   43.3K  94.5%   $0.870
 --no-color       关闭 ANSI 颜色
 ```
 
+带值参数支持两种写法：`--since 2026-08-01` 与 `--since=2026-08-01`。
+
 按天分组和日期过滤都使用**本地时区**。
 
 ## 定价
@@ -105,6 +107,10 @@ zcode   glm-5.3             41   116K    1.99M        0   43.3K  94.5%   $0.870
 `<config>` 为 `%XDG_CONFIG_HOME% || ~/.config`（可用 `TOKSIGHT_CONFIG_DIR` 覆盖）。
 查不到价格的模型照常计数，成本显示为 `—`，并在 JSON 输出的 `pricing.unpricedModels` 中列出。
 OpenCode 自带的价格（`cost` 字段）会被直接采用。
+
+当 LiteLLM 条目缺少独立的缓存价格时，缓存 token 会按该模型的输入价计费——这是有意选择的
+保守高估（真实缓存读取价通常只有输入价的 10% 左右），保证成本不会被悄悄少算；有完整缓存
+价格的模型不受影响。
 
 ## 网页仪表盘
 
@@ -182,6 +188,9 @@ LiteLLM 价格拉取；`--offline` 可以连它也关掉。
 `clients` 的每一项是该 Agent 的 totals 外加它自己的 `cacheHitRate`；该映射由**过滤后**的
 entries 构建，`--client` / `--since` / `--until` 对它与其余切片一样生效。
 
+`warnings` 会披露采集问题（无法读取的目录、存在但打不开的 SQLite 数据库）和数据口径问题——
+尤其是被 `--since` / `--until` 过滤排除的“无时间戳”条目，会在这里报告而不是无声消失。
+
 网页仪表盘消费同一份载荷（外加 web 专属字段：`heatmap`、`trend`、`trend7`、`trend90`、
 `trendByAgent`、`hourly`、`today`、`last7Days`、`last30Days`、`thisMonth`、`activeDays`、
 `streaks`、`peakDay`、`topSessions`、`longestSession`、`activityRange`、`timezone`），
@@ -200,13 +209,19 @@ npm run web:dev       # 开发仪表盘 UI（需先跑着 `toksight web --api-on
 
 ```
 bin/toksight.js        可执行入口
-src/cli.js             参数解析、子命令、渲染
-src/clients/           每个 agent 一个解析器，归一化为统一数据结构
+src/cli.js             子命令分发 + 采集管线（collectAll）
+src/args.js            命令行参数解析（--flag value / --flag=value）
+src/render.js          文本渲染（表格、摘要、警告）
+src/payload.js         --json / web API 的载荷契约
+src/dates.js           共享的本地时间日期工具（DST 安全）
 src/pricing.js         内置价格表 + LiteLLM 缓存 + 用户覆盖
 src/aggregate.js       分组与合计
 src/webdata.js         网页仪表盘聚合（热力图、趋势、会话……）
 src/webserver.js       `toksight web` 的零依赖 HTTP 服务器
 src/format.js          ANSI 表格与数字格式化
+src/fsutils.js         walkFiles、readJsonl、readJson、pathExists
+src/clients/           每个 agent 一个解析器，归一化为统一数据结构
+                       （共享 src/clients/sqlite.js 只读打开助手）
 web/                   Next.js 仪表盘（静态导出，由 CLI 托管）
 ```
 
