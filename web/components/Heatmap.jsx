@@ -32,10 +32,16 @@ function weekdayOf(date) {
 export default function Heatmap({ heatmap, locale = 'zh-CN' }) {
   const [tip, setTip] = useState(null);
   const scrollRef = useRef(null);
+  const didInitialScroll = useRef(false);
   const tr = (key, vars) => t(locale, key, vars);
+  // API responses replace `heatmap`; only the first rendered grid should
+  // reset to the newest week, not every refresh.
   useEffect(() => {
     const el = scrollRef.current;
-    if (el) el.scrollLeft = el.scrollWidth;
+    if (el && !didInitialScroll.current) {
+      el.scrollLeft = el.scrollWidth;
+      didInitialScroll.current = true;
+    }
   }, [heatmap]);
   if (!heatmap?.days?.length) return <div className="muted">{tr('heatEmpty')}</div>;
 

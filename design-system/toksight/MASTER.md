@@ -1,9 +1,5 @@
 # Design System Master File
 
-> **LOGIC:** When building a specific page, first check `design-system/toksight/pages/[page-name].md`.
-> If that file exists, its rules **override** this Master file.
-> If not, strictly follow the rules below.
->
 > **SOURCE OF TRUTH:** repo-root `design-spec.md`. This file is a **projection** of that spec
 > (tokens, components, anti-patterns). If they conflict, `design-spec.md` wins.
 > Do **not** regenerate this file with ui-ux-pro-max `--persist` and ship it as-is — the
