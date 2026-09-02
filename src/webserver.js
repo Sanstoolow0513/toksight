@@ -39,14 +39,14 @@ function setupPage() {
   return `<!doctype html>
 <html lang="zh-CN">
 <head><meta charset="utf-8"><title>toksight web — 仪表盘尚未构建</title></head>
-<body style="background:#0d1117;color:#e6edf3;font:15px/1.7 ui-sans-serif,system-ui,'Segoe UI','Microsoft YaHei',sans-serif;display:grid;place-items:center;min-height:96vh;margin:0">
-  <main style="max-width:560px;padding:32px">
-    <h1 style="font-size:20px">toksight web · 仪表盘尚未构建</h1>
-    <p style="color:#8b949e">JSON API 已可用：<code style="color:#79c0ff">/api/data</code>。要看到完整界面，请先构建静态资源（约需 1–2 分钟）：</p>
-    <pre style="background:#161b22;border:1px solid #30363d;border-radius:8px;padding:14px 16px;overflow:auto"><code>cd web
+<body style="background:#060609;color:#e8e8f2;font:14px/1.7 ui-monospace,'Cascadia Code',Consolas,monospace;display:grid;place-items:center;min-height:96vh;margin:0">
+  <main style="max-width:560px;padding:32px;border:2px solid #4a4a5e;background:#0e0e15">
+    <h1 style="font-size:14px;letter-spacing:0.08em;text-transform:uppercase;margin:0 0 16px"><span style="background:#c9f24b;color:#060609;padding:2px 8px">toksight</span> web · 仪表盘尚未构建</h1>
+    <p style="color:#82829c">JSON API 已可用：<code style="color:#c9f24b;background:#15151f;border:1px solid #26262f;padding:0 4px">/api/data</code>。要看到完整界面，请先构建静态资源（约需 1–2 分钟）：</p>
+    <pre style="background:#15151f;border:1px solid #4a4a5e;padding:14px 16px;overflow:auto"><code>cd web
 npm install
 npm run build</code></pre>
-    <p style="color:#8b949e">或在仓库根目录执行 <code style="color:#79c0ff">npm run web:build</code>，然后重启 <code style="color:#79c0ff">toksight web</code> 并刷新本页。</p>
+    <p style="color:#82829c">或在仓库根目录执行 <code style="color:#c9f24b;background:#15151f;border:1px solid #26262f;padding:0 4px">npm run web:build</code>，然后重启 <code style="color:#c9f24b;background:#15151f;border:1px solid #26262f;padding:0 4px">toksight web</code> 并刷新本页。</p>
   </main>
 </body>
 </html>

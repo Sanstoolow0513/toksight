@@ -1,10 +1,8 @@
 'use client';
 
-// Ranked model list, aggregated across agents. The big change vs. a plain
-// token bar: each bar is split into a green "cache read" segment and a solid
-// "fresh traffic" segment (fresh input + cache write + output), so a model
-// dominated by cache reads no longer *looks* like raw spend. Bar length is
-// max-relative; the split inside is that model's cache share of its tokens.
+// Ranked model list, aggregated across agents. Each bar is two sibling hard
+// segments: green cache-read, then rank-color fresh traffic (fresh input +
+// cache write + output). No CSS gradient — Brutalism only allows a hard split.
 
 import { useMemo } from 'react';
 import { fmtTokens, fmtCost, fmtPct } from '@/lib/format';
@@ -51,15 +49,11 @@ export default function ModelBars({ models = [], totalTokens = 0, limit = 8, loc
                 <em className="cache-badge">{t(locale, 'modelCacheShare', { pct: fmtPct(cacheFrac, 0) })}</em>
               </span>
             </div>
-            <div className="mrow-bar mrow-bar-split">
-              <i
-                className="grow-x"
-                style={{
-                  width: `${Math.max((r.tokens / max) * 100, 1)}%`,
-                  '--cache-frac': `${(cacheFrac * 100).toFixed(2)}%`,
-                  '--bar-color': colorAt(i),
-                }}
-              />
+            <div className="mrow-bar">
+              <span className="mrow-fill" style={{ width: `${Math.max((r.tokens / max) * 100, 1)}%` }}>
+                <i className="mrow-cache" style={{ width: `${(cacheFrac * 100).toFixed(2)}%` }} />
+                <i className="mrow-fresh" style={{ background: colorAt(i) }} />
+              </span>
             </div>
           </div>
         );
@@ -81,8 +75,10 @@ export default function ModelBars({ models = [], totalTokens = 0, limit = 8, loc
         </span>
         <span>
           <i className="seg-fresh" />
+          <i className="seg-fresh-dim" />
           {t(locale, 'modelLegendFresh')}
         </span>
+        <span className="legend-note">{t(locale, 'rankNote')}</span>
       </div>
     </div>
   );

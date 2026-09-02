@@ -1,60 +1,73 @@
 # toksight Design Specification
 
-> v3（2026-08）：从固定 1200px 宽的分区滚动页迁移到**流式卡片布局 + 动效系统**。
-> 信息密度重排：KPI 大卡片与次级指标条并入活动卡片的统计条；时间范围表并入趋势卡片；
-> Agent 环形图与命中率卡合并；会话 Top 表移除；模型条内嵌缓存占比分段。
+> v6（2026-09）：推倒重来——视觉语言从"细腻暗色 SaaS"整体切换为 **Brutalism 磷光终端
+> 工作表**。风格方向来自 ui-ux-pro-max（variance 8 / motion 3 / density 9），但 **施工图
+> 以本文件为准**。`design-system/toksight/MASTER.md` 是本文件的投影（token / 组件 /
+> 反模式），禁止用 skill `--persist` 的泛 SaaS 模板（圆角、阴影、200ms 过渡、Google
+> Fonts）覆盖。整页是一张带 2px 外框的马赛克工作表，区块之间用 2px 硬网格线分割
+> （gap + `--color-border-strong` 底色），方角、零圆角、零模糊、零阴影、零渐变；
+> Geist Mono 主导数据排版；配色为 ANSI 磷光系（lime 品牌色 + green/cyan/magenta/amber
+> 图表色）；交互反馈是"硬反转"（lime 底黑字），无平滑过渡。信息架构：masthead → 4 格
+> KPI 条 → 12 列 Bento 工作表（趋势、热力图、Agent/模型、小时/月/节奏、会话表）。v6
+> 恢复会话用量表（按 tokens 排名前 10，数据一直在 API 的 `topSessions` 里）。v4 的动效
+> 纪律、图标纪律、名次取色原则保留（调色板换为 lime 主导）。
 > 布局、信息层级、动效、图标系统以本文件为准。
 
 ## 1. Design direction
 
 - **Product**: 本地优先的 AI coding agent token 用量仪表盘（`toksight web`）。数据只读本地会话文件，不出机器。
-- **Style family**: Vercel Dashboard 式纯黑极简 + 克制的动效层 —— 纯黑底、细描边、无阴影、
-  卡片交错入场、数字滚动、图表擦揭示。
-- **Tone**: 本地、克制、数据优先；动效服务层级感知，不为炫技。
-- **Hard constraints**: 只出深色；中英可切；根 CLI 零运行时依赖（dashboard 依赖只允许在 `web/`，构建期）；
-  原生 CSS（无 Tailwind / 组件库）；Windows 路径与中文 UI 必须可用。
+- **Style family**: Brutalism 磷光终端工作表——CLI 工具的可视化延伸。页面是一张工作表
+  （`.frame`，2px 实线外框、最大宽 1680px、页面留白包裹），内部区块以 2px 硬网格线分割；
+  结构靠边框而非表面色差；无圆角、无阴影、无模糊、无渐变、无光晕。对比度极高，密度高。
+- **Tone**: 工具感、硬朗、数据优先；这是给人看的工作表，不是给客户演示的 SaaS 皮肤。
+- **Hard constraints**: 只出深色；中英可切；根 CLI 零运行时依赖（dashboard 依赖只允许在
+  `web/`，构建期）；原生 CSS（无 Tailwind / 组件库）；Windows 路径与中文 UI 必须可用。
 - **Locale**: primary `zh-CN`，secondary `en`，整页切换，localStorage `toksight-locale`。
+- **Fonts**: Geist Sans / Geist Mono（`geist` 本地打包，运行时不联网）。MASTER 与本文件
+  使用同一套字体；禁止 Google Fonts `@import`。Mono 承载全部数据文本（标签、数值、表格、
+  图表刻度、logo、会话名），Sans 只用于说明文字与正文。
 
 ## 2. Color
 
-Pure-black neutrals + 单一品牌蓝（与 v2 一致，未改动）。
+ANSI 磷光系：黑底、lime 品牌色、绿=缓存语义、终端图表四色。结构色是灰线，不是表面色差。
 
 ### Brand
 
-- `--color-primary`: `#3291ff` — 链接、选中、主图表序列、logo 句点
-- `--color-primary-hover`: `#5ea8ff`
-- `--color-primary-subtle`: `rgba(50, 145, 255, 0.14)` — 分段选中底、筛选提示底
+- `--color-primary`: `#c9f24b`（磷光 lime）— 交互、选中、logo chip、hero tokens 数值、
+  柱状图、热力图顶档、名次第 1
+- `--color-primary-ink`: `#060609` — lime 底上的文字（硬反转用黑字）
+- `--color-primary-subtle`: `rgba(201, 242, 75, 0.12)`
 
 ### Neutrals
 
-- `--color-bg`: `#000000` — 页面底（纯黑）
-- `--color-surface`: `#0a0a0a` — 卡片
-- `--color-surface-subtle`: `#111111` — 统计 chip、分段轨道、进度条槽、code 底、骨架块
-- `--color-border`: `#262626` — 卡片描边、表行线
-- `--color-border-strong`: `#3d3d3d` — 表头底线、按钮描边、浮层描边
-- `--color-text`: `#ededed`
-- `--color-text-secondary`: `#a1a1a1`
-- `--color-text-muted`: `#666666`
+- `--color-bg`: `#060609` — 页面底（工作表外的留白）
+- `--color-panel`: `#0e0e15` — 工作表格子
+- `--color-panel-2`: `#15151f` — 格内嵌槽（分段轨道、进度槽、code 底、骨架）
+- `--color-line`: `#26262f` — 格内 1px 细分（表行、节奏行、热力空格描边）
+- `--color-border-strong`: `#4a4a5e` — 外框、**2px 马赛克分隔**（`.frame` / `.kpis` /
+  `.sheet` 的 gap 底色）、表头底线、控件描边。内部 2px 网格必须用此色，用 `--color-line`
+  当 gap 底会和 panel 糊在一起，读不成工作表。
+- `--color-text`: `#e8e8f2` / `--color-text-secondary`: `#a0a0b6` / `--color-text-muted`: `#82829c`
 
 ### Semantic
 
-- `--color-success`: `#45d483` — 缓存命中率、缓存读取序列、live 指示点、模型条中的缓存分段
-- `--color-warning`: `#f5a524` / `--color-error`: `#ff4d4d`
+- `--color-success`: `#3ddc97` — 缓存命中率、缓存读取、模型条缓存段
+- `--color-warning`: `#ffb020` / `--color-error`: `#ff5c5c`
 
 ### Charts
 
-Token 四类：`input #3291ff` / `cache-read #45d483` / `cache-write #bc8cff` / `output #f5a524`。
+Token 四类（ANSI 磷光）：`input #c9f24b`（lime）/ `cache-read #3ddc97`（green）/
+`cache-write #c86bff`（magenta）/ `output #ffb84d`（amber）。
 
-热力图 5 档（纯黑校准）：`#161616` / `#0a2a52` / `#0d4a9e` / `#1f6feb` / `#7ab8ff`。
+热力图 5 档（lime 强度 ramp）：`#101018` / `#202d10` / `#374d16` / `#6f9b26` / `#c9f24b`。
 
-分类色 `--color-cat-1..8`：`#3291ff #45d483 #f5a524 #bc8cff #f778ba #39c5cf #ff4d4d #8ddb8c`，
-与 `web/lib/palette.js` 一一对应；同一实体在趋势 Agent 模式、Agent 份额条、展开明细里必须同色
-（Agent 按份额降序取色，两个视图使用同一顺序）。
+分类色 `--color-cat-1..5`：`#c9f24b #9a9ab2 #6a6a84 #4a4a62 #2e2e42`（lime 主导 + 灰阶），
+与 `web/lib/palette.js` 一一对应。**按名次取色**：降序第 1 名 lime，其余灰阶——编码排名
+而非身份；趋势 Agent 模式、Agent 份额条、模型排行条按同一排序取色。
 
 ### Ambient
 
-唯一允许的装饰渐变：页面顶部一道极淡的品牌蓝 radial glow（`body` 背景，约 9% 透明度），
-呼应 hero 卡片；不得再加任何背景纹理 / 光斑。
+无。纯黑底 + 硬线；无光晕、无纹理、无模糊（Brutalism 明确不用 backdrop blur）。
 
 ### Dark mode
 
@@ -62,76 +75,84 @@ Token 四类：`input #3291ff` / `cache-read #45d483` / `cache-write #bc8cff` / 
 
 ## 3. Typography
 
-- **Geist Sans / Geist Mono**：通过 `geist` npm 包 + `next/font` 本地打包（运行时不联网），
-  CSS 变量 `--font-geist-sans` / `--font-geist-mono`，回退 system-ui / ui-monospace。
-- Logo、模型名、session id、路径、code 用 mono。
-- Type scale (px)：`12 / 14 / 16 / 18 / 20(chip 数值) / 24`。v3 取消 30px KPI 大数字——
-  数值层级收敛到统计 chip 的 20px。
-- 标题 `letter-spacing: -0.01em ~ -0.02em`；数字 `tabular-nums`；正文 `line-height: 1.7`。
+- **Geist Sans / Geist Mono**：`geist` npm 包本地打包，CSS 变量 `--font-geist-sans` /
+  `--font-geist-mono`。数据文本（标签、数值、表格、图表、会话名、logo）全 mono；说明
+  文字用 sans。
+- Type scale (px)：`11(微标签) / 12 / 14 / 16 / 24 / 34(hero)`。hero 数值 34px mono 700。
+- 微标签（stat-label、表头、desc）：mono uppercase、`letter-spacing: 0.08em`、11px。
+- 数字 `tabular-nums`；正文 `line-height: 1.7`；标题不收紧字距（mono 无需）。
 
 ## 4. Spacing / Radius / Elevation / Motion
 
-- Spacing base 4px：`4 / 8 / 12 / 16 / 24 / 32 / 48`；卡片 padding 24px；栅格 gap 16px。
-- **页面流式宽度**：无固定内容宽。容器 `max-width: 1720px`（超宽屏的护栏而已）+ 
-  `padding-inline: clamp(16px, 3.2vw, 56px)`，卡片随视口伸缩；图表用 ResizeObserver 自适应。
-- Radius：`sm 6px` / `md 8px` / `lg 12px`（chip）/ `xl 16px`（卡片）。
-- Elevation：平。容器靠描边；`--shadow-lg` 仅 tooltip / 浮层。
-- **Motion（v3 核心）**：全部动效走 `--ease-out: cubic-bezier(.22,1,.36,1)`，且
-  `prefers-reduced-motion: reduce` 下一律关闭（JS 的数字滚动同样监听该媒体查询）。
-  - 卡片入场：`card-in`（opacity + 14px 上移 + 轻微 scale），按 `--i` 每卡错峰 90ms；
-  - 数字滚动：hero 统计 chip 数值 `useCountUp`（easeOutCubic ~900ms）；
-  - 热力格：`heat-in`（scale .4 → 1）按列错峰 ~9ms/列，hover 放大 1.35；
-  - 趋势图：`wipe-x` clipPath 从左向右揭示（0.9s），切换范围/模式/序列时重放；
-  - 条形：`grow-x` / `grow-y`（origin left/bottom），小时/月份柱按索引错峰；
-  - live 指示点：绿色 `live-ping` 呼吸（2.2s 循环）；
-  - Agent 行展开：`grid-template-rows 0fr → 1fr` 高度过渡（0.3s）；
-  - 微交互：卡片 hover 描边提亮、bar hover 增亮、分段/图例 hover 变色，均 ≤150ms。
-  - 保留 v2 例外：刷新图标旋转、骨架屏脉冲。
+- Spacing base 4px：`4 / 8 / 12 / 16 / 20 / 24 / 32 / 48`；格子 padding 20/24；网格线 2px。
+- **Radius：全部 0**（方角是风格核心，勿加圆角）。
+- **Elevation：零阴影、零模糊**。层级=边框粗细（外框与马赛克 2px `--color-border-strong`、
+  格内 1px `--color-line`）+ 底色差（panel / panel-2）。
+- **Charts**：趋势为按日 **阶梯堆叠**（step-after 实心带，`shape-rendering: crispEdges`），
+  禁止贝塞尔 / monotone-cubic 光滑山形与半透明填充（那会读成渐变）。悬停标记为方点。
+  热力图方格、**2px** 缝。模型条用两段相邻实色（缓存绿 + 名次色），不用 `linear-gradient`。
+  图例色块 8×8 方角，禁止圆点。
+- **页面流式宽度**：`.wrap` max-width 1680px + 页边留白 clamp(12px, 2.5vw, 40px)；
+  工作表 `.frame` 撑满 wrap；图表 ResizeObserver 自适应。
+- **Motion（Brutalism：硬切换 + 必要的展开反馈）**：
+  - 悬停/选中/按钮：**无过渡，瞬时硬反转**（lime 底黑字 / 亮线）；active 时 `translateY(1px)`
+    模拟按压。
+  - 保留的动画（均受 `prefers-reduced-motion` 全局关闭）：Agent 行展开
+    （`grid-template-rows 0fr → 1fr`，0.25s）与 caret 旋转；趋势图在用户切换范围/维度/序列
+    时重放 450ms 擦揭示（首屏静态）；刷新图标旋转；骨架屏脉冲；整页首次载入 240ms 淡入。
+  - 勿回归：入场错峰、数字滚动、逐格/逐柱生长、呼吸点、一切 hover 渐变过渡。
 
 ## 5. Icon system
 
-- **Set**: `lucide-react`（`web/` 构建期依赖）。统一 `strokeWidth={2}`，尺寸 14–18px。
-- 用途限定：导航操作（RefreshCw）、统计 chip 角标、区块标题、警告/筛选条、空/错误态、
-  Agent 行展开箭头（ChevronDown，展开时旋转 180°）。
-- 图例与模型行仍用 8px 色点，不用图标。
+- **Set**: `lucide-react`（构建期依赖）。`strokeWidth={2}`，尺寸 14–18px。
+- 用途限定：**只用于操作与状态**——刷新按钮（RefreshCw）、警告/筛选条、空/错误态、
+  Agent 行展开箭头（ChevronDown）。标签、标题、数值不带图标。
 
 ## 6. Layout / information hierarchy
 
-1. **吸顶导航** `.topnav`：`sticky` + `backdrop-filter: blur` + 半透明黑底；左 logo + live badge（绿点），
-   右语言分段、自动刷新 checkbox、刷新按钮。**v3 移除副标题行**（产品一句话与时区；
-   时区挪到页脚 `footTimezone`）。
-2. 警告条 / 筛选提示条（图标 + 语义色描边）。
-3. **活动卡片**（span 全宽）：统计条 `.statstrip`（auto-fit ≥168px 的 chip 网格：累计 Tokens、
-   总费用、缓存命中率（绿色强调）、活跃天数、连续活跃、峰值日、最长会话（活跃时长，
-   副行标注壁钟跨度））+ GitHub 风格热力图 + 少/多图例。
-4. **趋势卡片**（span 全宽）：头部右侧为今日 / 近 7 天 / 近 30 天 / 本月汇总胶囊
-   （label + tokens + cost，取代旧时间范围表）；控制行 = 范围分段（7/30/90）× 维度分段
-   （构成 / Agent）；可点击图例 chip 开关序列（至少保留一个）；合计 tokens 与费用常驻右上。
-   Agent 模式与 Agent 份额卡共用调色顺序。
-5. **双栏**（≤1080px 单列）：Agent 分布卡（份额条 max 相对宽 + tokens/费用/占比 +
-   绿色命中率细条 + 点击行展开分模型命中明细 + 合计行）｜模型用量卡（跨 Agent 聚合排行，
-   条内 `linear-gradient` 硬分段：绿色缓存读取段 + 模型色的其余流量段，绿色"缓存 N%"徽标，
-   底部两色图例；Agent × 模型明细折叠表保留）。
-6. **双栏**：按小时直方图（当地时间）｜按月直方图（全历史）。
-7. **页脚**：时区、统计范围、生成时间、未定价模型、版本与 local-first 声明。
-8. **v3 移除**：四张 KPI 大卡、次级指标条、时间范围表、Agent 环形图独立卡、
-   Agent 命中率独立卡（tab 切换）、会话 Top 表（API 保留 `topSessions` 供兼容）。
-   命中率统计按每次请求归因（session 切模型会被拆分归入各模型，不误计）。
-9. **最长会话语义**：按 `activeMs`（请求间隔 5 分钟封口）排名，壁钟跨度 `durationMs`
-   只作副行标注——挂机过夜的会话不再虚增时长。
+1. **页面壳**：body 纯黑留白 → `.wrap` → `.frame`（2px 外框、mono 马赛克，纵向堆叠，
+   子元素间 2px `--color-border-strong` 分隔）。
+2. **Masthead**（frame 首行，sticky、实底无模糊）：左 = lime 底黑字 mono logo chip
+   `toksight` + "上次抓取 …"（取 `generatedAt`，不宣称实时）；右 = 语言分段（方角，
+   选中 lime 反转）、自动刷新 checkbox、刷新按钮（方角，hover lime 反转，进行中图标旋转）。
+3. 警告条 / 筛选提示条（语义色左边 4px 实条 + 边框，方角）。
+4. **KPI 条** `.kpis`（4 格，2px 分隔；≤900px 2×2）：累计 Tokens（lime 值，副行 请求·会话）、
+   总费用（副行定价状态）、缓存命中率（**green 值**，副行缓存读 tokens）、活跃天数（副行
+   起始日期）。值 34px mono 700。
+5. **工作表** `.sheet`（12 列 gap-grid，2px `--color-border-strong` 分隔，格子 `.cell span-N`）：
+   - 趋势 `span-12`：范围分段（7/30/90）× 维度分段（构成/Agent）+ 可点击图例（至少留一）
+     + 右上合计；头部右侧今日/近7天/近30天/本月方角汇总标签；图表高 300。图形是按日
+     **阶梯堆叠实心带**（不是光滑面积山）。
+   - 活动热力图 `span-12`：GitHub 风格 53 周、**方格、2px 缝**、lime ramp、少/多图例。
+   - Agent 分布 `span-5`（≤1200px `span-6`）｜模型用量 `span-7`：份额条（lime/灰阶名次色）
+     + 绿色命中率细条；模型条内绿色缓存读段 + 名次色其余段（两截相邻实色，禁止渐变）+
+     "缓存 N%" 方角徽标 + Agent×模型折叠表。
+   - 按小时 `span-4`｜按月 `span-4`｜**活跃节奏 `span-4`**（v6 新增：连续活跃、峰值日、
+     最长会话三行，label 左 / 值右）。小时轴标签绝对定位在柱心 `(h+0.5)/24`。
+   - **会话用量 `span-12`**（v6 恢复）：`topSessions` 按 tokens 排序前 10 的 mono 表——
+     序号、Agent、会话（title 缺省用 directory，截断 + title 提示）、tokens、请求、命中率、
+     费用、开始时间、活跃时长（activeMs，5 分钟封口）。
+6. **页脚**（frame 末行）：时区、统计范围、生成时间、未定价模型、版本与 local-first 声明，
+   mono 11px。
+7. 命中率统计按每次请求归因（session 切模型会被拆分归入各模型，不误计）。最长会话按
+   `activeMs` 排名，壁钟跨度只作副注。
 
 ## 7. States
 
-- **Loading**：骨架屏（`.skel` 脉冲，仅 opacity 动画），形状对齐新布局（活动卡 + 趋势卡两块）。
-- **Empty**：单卡 + Inbox 图标 + `toksight env` / `--client` / `--since` 提示。
-- **Error**：单卡 + TriangleAlert 图标 + 失败原因与下一步 + 重试按钮。
+- **Loading**：骨架（`.skel` 脉冲）对齐 KPI 条 + 前两格形状。
+- **Empty**：单格 + Inbox 图标 + `toksight env` / `--client` / `--since` 提示。
+- **Error**：单格 + TriangleAlert + 失败原因与下一步 + 重试按钮。
 
 ## 8. Anti-patterns
 
-- 不要浅色主题；不要卡片阴影；除顶部 ambient glow 与进度条渐变外不要装饰性渐变。
-- 不要回归固定 1200px 内容宽；不要复活 KPI 大卡墙 / 会话 Top 表。
+- 不要圆角、阴影、模糊、渐变、光晕——方角硬线是风格本体（功能性双色硬分段除外）。
+- 不要浅色主题。
+- 不要平滑 hover 过渡（brutalism 是瞬时反转）；不要入场动画编排、数字滚动。
+- 不要"实时"徽标或呼吸点——导航栏用"上次抓取"时间表述。
+- 分类色不要回到彩虹色板；lime + 灰阶是名次编码。
 - 不要在动效里忽略 `prefers-reduced-motion`。
-- 不要把 Inter 等其他字体当升级（本项目用 Geist）。
+- 不要给标签/标题/数值加装饰图标；图标只用于操作与状态。
+- 不要把 Inter 等其他字体当升级（本项目用 Geist，mono 主导）。
 - 不要把未定价模型藏掉——页脚必须可见。
 - 不要用 UTC 日期；日界与筛选跟本机本地时区。
 - 同一 Agent/模型在不同图里换颜色。
@@ -139,4 +160,4 @@ Token 四类：`input #3291ff` / `cache-read #45d483` / `cache-write #bc8cff` / 
 
 ## 9. Open questions
 
-- 明暗双主题：用户暂不需要；如未来要做，所有颜色已是 CSS 变量，加一套 `:root[data-theme=light]` override 即可。
+- 明暗双主题：暂不需要；颜色全部是 CSS 变量，未来加 `:root[data-theme=light]` 即可。

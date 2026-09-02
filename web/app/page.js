@@ -1,36 +1,14 @@
 'use client';
 
-// toksight dashboard — fluid card layout (design-spec v3):
-//   1. Activity card: compact stat strip + GitHub-style heatmap. The old
-//      four-KPI grid and substat strip folded into the strip.
-//   2. Trend card: range × mode (composition / agents) cross stats, with the
-//      old ranges table folded in as summary chips.
-//   3. Agent share + hit rate (merged donut & hit-rate cards) beside model
-//      usage with cache-read share segmented into every bar.
-//   4. Hourly / monthly histograms.
-// The top-sessions table was dropped (API keeps `topSessions` for compat).
+// toksight dashboard — Brutalism phosphor worksheet (design-spec v6): a 2px
+// framed mosaic. Masthead → 4-cell KPI strip → 12-col sheet (trend, heatmap,
+// agent/model, hour/month/pace, sessions). Hard invert on hover, no chrome
+// radius/blur/shadow. Icons only mark actions and states; last-fetch time
+// comes from generatedAt.
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import {
-  Activity,
-  BarChart3,
-  CalendarDays,
-  CircleDollarSign,
-  Clock,
-  Database,
-  Flame,
-  Inbox,
-  Layers,
-  PieChart,
-  RefreshCw,
-  Timer,
-  TrendingUp,
-  TriangleAlert,
-  Zap,
-  Filter,
-} from 'lucide-react';
+import { Inbox, RefreshCw, TriangleAlert, Filter } from 'lucide-react';
 import { fmtTokens, fmtCost, fmtPct, fmtDateTime, fmtDuration } from '@/lib/format';
-import { useCountUp } from '@/lib/motion';
 import Heatmap from '@/components/Heatmap';
 import TrendChart from '@/components/TrendChart';
 import AgentsPanel from '@/components/AgentsPanel';
@@ -51,51 +29,32 @@ function coded(text) {
   return parts.map((p, i) => (i % 2 ? <code key={i}>{p}</code> : p));
 }
 
-function Section({ icon: Icon, title, desc, extra, children, index = 0 }) {
+function Cell({ title, desc, extra, span = 12, children }) {
   return (
-    <section className="card section" style={{ '--i': index }}>
-      <div className="section-head">
-        <h2>
-          <Icon size={16} strokeWidth={2} />
-          {title}
-        </h2>
-        {desc ? <span className="section-desc">{desc}</span> : null}
-        {extra ? <div className="section-extra">{extra}</div> : null}
+    <section className={`cell span-${span}`}>
+      <div className="cell-head">
+        <h2>{title}</h2>
+        {desc ? <span className="cell-desc">{desc}</span> : null}
+        {extra ? <div className="cell-extra">{extra}</div> : null}
       </div>
       {children}
     </section>
   );
 }
 
-// Hero stat chip: animated number + label + optional sub line. `animate`
-// enables the count-up (skipped for textual values like dates/durations).
-function StatChip({ icon: Icon, label, value, sub, accent, animate }) {
-  const target = useMemo(() => (animate?.type === 'number' ? Number(animate.value) || 0 : 0), [animate]);
-  const shown = useCountUp(target);
-  const display =
-    animate?.type === 'number'
-      ? animate.format === 'cost'
-        ? fmtCost(shown)
-        : animate.format === 'pct'
-          ? fmtPct(shown)
-          : fmtTokens(shown)
-      : value;
+function Stat({ label, value, sub, tone }) {
   return (
-    <div className={accent ? 'chip accent' : 'chip'}>
-      <span className="chip-icon">
-        <Icon size={14} strokeWidth={2} />
-      </span>
-      <div className="chip-body">
-        <span className="chip-label">{label}</span>
-        <span className="chip-value">{display}</span>
-        {sub ? <span className="chip-sub">{sub}</span> : null}
-      </div>
+    <div className={tone ? `stat stat-${tone}` : 'stat'}>
+      <span className="stat-label">{label}</span>
+      <span className="stat-value">{value}</span>
+      {sub ? <span className="stat-sub">{sub}</span> : null}
     </div>
   );
 }
 
 const clientLabel = (id) => CLIENT_LABELS[id] || id;
 const dateOnly = (ts) => (ts == null ? '—' : fmtDateTime(ts).slice(0, 10));
+const sessionName = (s) => s.title || s.directory || s.sessionId || '—';
 
 function LangSwitch({ locale, onChange, label }) {
   return (
@@ -113,15 +72,99 @@ function LangSwitch({ locale, onChange, label }) {
 function Skeleton() {
   return (
     <>
-      <div className="skel-block" style={{ height: 300 }}>
-        <div className="skel" style={{ height: 52, marginBottom: 20 }} />
-        <div className="skel" style={{ height: 170 }} />
+      <div className="skel-kpis">
+        {[0, 1, 2, 3].map((i) => (
+          <div key={i}>
+            <div className="skel" style={{ height: 11, width: 76, marginBottom: 12 }} />
+            <div className="skel" style={{ height: 34, width: 140 }} />
+          </div>
+        ))}
       </div>
-      <div className="skel-block" style={{ height: 340 }}>
-        <div className="skel" style={{ height: 16, width: 140, marginBottom: 20 }} />
-        <div className="skel" style={{ height: 240 }} />
+      <div className="skel-cell">
+        <div className="skel" style={{ height: 14, width: 140, marginBottom: 24 }} />
+        <div className="skel" style={{ height: 300 }} />
+      </div>
+      <div className="skel-cell">
+        <div className="skel" style={{ height: 14, width: 140, marginBottom: 24 }} />
+        <div className="skel" style={{ height: 180 }} />
       </div>
     </>
+  );
+}
+
+function Rhythm({ streaks, peakDay, longest, tx }) {
+  return (
+    <dl className="rhythm">
+      <div className="rhythm-row">
+        <dt>{tx('statStreak')}</dt>
+        <dd>
+          {Number.isFinite(streaks.current) ? <b>{tx('statStreakValue', { n: streaks.current })}</b> : '—'}
+          {Number.isFinite(streaks.longest) ? ` · ${tx('statStreakLongest', { n: streaks.longest })}` : ''}
+        </dd>
+      </div>
+      <div className="rhythm-row">
+        <dt>{tx('statPeak')}</dt>
+        <dd>{peakDay ? <><b>{fmtTokens(peakDay.tokens)}</b> · {peakDay.date}</> : '—'}</dd>
+      </div>
+      <div className="rhythm-row">
+        <dt>{tx('statLongest')}</dt>
+        <dd>
+          {longest ? (
+            <>
+              <b>{fmtDuration(longest.activeMs)}</b> · {clientLabel(longest.client)}
+              {longest.durationMs != null ? ` · ${tx('statLongestSpan', { duration: fmtDuration(longest.durationMs) })}` : ''}
+            </>
+          ) : (
+            '—'
+          )}
+        </dd>
+      </div>
+    </dl>
+  );
+}
+
+function SessionTable({ rows, tx }) {
+  if (!rows.length) return <div className="muted">{tx('sessEmpty')}</div>;
+  return (
+    <div className="table-scroll">
+      <table className="tbl">
+        <thead>
+          <tr>
+            <th>{tx('thRank')}</th>
+            <th>{tx('thAgent')}</th>
+            <th>{tx('thSession')}</th>
+            <th className="num">{tx('thTokens')}</th>
+            <th className="num">{tx('thRequests')}</th>
+            <th className="num">{tx('thHitRate')}</th>
+            <th className="num">{tx('thCost')}</th>
+            <th>{tx('thStarted')}</th>
+            <th className="num">{tx('thActive')}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((s, i) => {
+            const name = sessionName(s);
+            return (
+              <tr key={`${s.client}/${s.sessionId}`}>
+                <td className="num dim">{i + 1}</td>
+                <td>{clientLabel(s.client)}</td>
+                <td>
+                  <span className="sess-name" title={name}>
+                    {name}
+                  </span>
+                </td>
+                <td className="num">{fmtTokens(s.totalTokens)}</td>
+                <td className="num">{s.requests}</td>
+                <td className="num">{fmtPct(s.cacheHitRate)}</td>
+                <td className="num">{fmtCost(s.costUsd)}</td>
+                <td className="dim">{dateOnly(s.startedAt)}</td>
+                <td className="num">{fmtDuration(s.activeMs)}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
   );
 }
 
@@ -179,64 +222,54 @@ export default function Page() {
 
   const tx = useCallback((key, vars) => t(locale, key, vars), [locale]);
 
-  const nav = (
-    <div className="topnav">
-      <div className="topnav-inner">
-        <div className="brand">
-          <h1 className="logo">
-            toksight<span className="logo-dot">.</span>
-          </h1>
-          <span className="live-badge">
-            <i className="live-dot" />
-            {tx('live')}
-          </span>
-        </div>
-        <div className="head-actions">
-          <LangSwitch locale={locale} onChange={setLocale} label={tx('langGroup')} />
-          <label className="auto-label">
-            <input type="checkbox" checked={auto} onChange={(e) => setAuto(e.target.checked)} />
-            {tx('autoRefresh')}
-          </label>
-          <button className="btn" type="button" onClick={load} disabled={loading}>
-            <RefreshCw size={14} strokeWidth={2} className={loading ? 'icon-spin' : undefined} />
-            {loading ? tx('refreshing') : tx('refresh')}
-          </button>
-        </div>
+  const masthead = (
+    <header className="masthead">
+      <div className="brand">
+        <h1 className="logo-chip">toksight</h1>
+        {data && <span className="fetch-meta">{tx('live', { time: fmtDateTime(data.generatedAt) })}</span>}
+      </div>
+      <div className="head-actions">
+        <LangSwitch locale={locale} onChange={setLocale} label={tx('langGroup')} />
+        <label className="auto-label">
+          <input type="checkbox" checked={auto} onChange={(e) => setAuto(e.target.checked)} />
+          {tx('autoRefresh')}
+        </label>
+        <button className="btn" type="button" onClick={load} disabled={loading}>
+          <RefreshCw size={14} strokeWidth={2} className={loading ? 'icon-spin' : undefined} aria-hidden="true" />
+          {loading ? tx('refreshing') : tx('refresh')}
+        </button>
+      </div>
+    </header>
+  );
+
+  const shell = (body) => (
+    <div className="wrap">
+      <div className="frame">
+        {masthead}
+        {body}
       </div>
     </div>
   );
 
   if (error && !data) {
-    return (
-      <>
-        {nav}
-        <div className="wrap">
-          <div className="card error-card">
-            <h1>
-              <TriangleAlert size={18} strokeWidth={2} />
-              {tx('errorTitle')}
-            </h1>
-            <p>{coded(tx('errorFail', { error }))}</p>
-            <p>{coded(tx('errorHint'))}</p>
-            <button className="btn" type="button" onClick={load}>
-              <RefreshCw size={14} strokeWidth={2} />
-              {tx('retry')}
-            </button>
-          </div>
-        </div>
-      </>
+    return shell(
+      <div className="state-card" role="alert">
+        <h1>
+          <TriangleAlert size={18} strokeWidth={2} aria-hidden="true" />
+          {tx('errorTitle')}
+        </h1>
+        <p>{coded(tx('errorFail', { error }))}</p>
+        <p>{coded(tx('errorHint'))}</p>
+        <button className="btn" type="button" onClick={load}>
+          <RefreshCw size={14} strokeWidth={2} aria-hidden="true" />
+          {tx('retry')}
+        </button>
+      </div>,
     );
   }
 
   if (!data) {
-    return (
-      <>
-        {nav}
-        <div className="wrap">
-          <Skeleton />
-        </div>
-      </>
-    );
+    return shell(<Skeleton />);
   }
 
   const totals = data.totals ?? {};
@@ -250,6 +283,7 @@ export default function Page() {
   const heatDesc = [tx('heatDesc', { weeks: data.heatmap?.weeks ?? 53 }), activeWindowDays ? tx('heatActive', { n: activeWindowDays }) : null]
     .filter(Boolean)
     .join(' · ');
+  const topSessions = (data.topSessions ?? []).slice(0, 10);
 
   const rangeChips = [
     { key: 'today', label: tx('rangeToday'), r: data.today },
@@ -258,205 +292,190 @@ export default function Page() {
     { key: 'month', label: tx('rangeMonth'), r: data.thisMonth },
   ];
 
-  return (
+  const footer = (
+    <footer className="foot">
+      <span>{tx('footTimezone', { tz: data.timezone ?? '—' })}</span>
+      <span>
+        {tx('footRange', {
+          range: data.activityRange?.firstAt
+            ? `${fmtDateTime(data.activityRange.firstAt)} → ${fmtDateTime(data.activityRange.lastAt)}`
+            : '—',
+        })}
+      </span>
+      <span>{tx('footGenerated', { time: fmtDateTime(data.generatedAt) })}</span>
+      {unpriced.length > 0 && <span>{tx('footUnpriced', { models: unpriced.join(', ') })}</span>}
+      <span>{tx('footLocal', { version: data.version })}</span>
+    </footer>
+  );
+
+  const banners = (
     <>
-      {nav}
-      <div className="wrap">
-        {data.warnings?.length > 0 && (
-          <div className="warn">
-            <TriangleAlert size={14} strokeWidth={2} />
-            <div>
-              {data.warnings.map((w, i) => (
-                <div key={i}>
-                  {tx('warnPrefix')}{w}
-                </div>
+      {data.warnings?.length > 0 && (
+        <div className="banner warn">
+          <TriangleAlert size={14} strokeWidth={2} aria-hidden="true" />
+          <div>
+            {data.warnings.map((w, i) => (
+              <div key={i}>
+                {tx('warnPrefix')}
+                {w}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+      {filtered && (
+        <div className="banner filter">
+          <Filter size={14} strokeWidth={2} aria-hidden="true" />
+          <span>
+            {tx('filterNote')}
+            {[
+              data.clientsFilter?.length ? tx('filterClient', { clients: data.clientsFilter.map(clientLabel).join(', ') }) : null,
+              data.range?.since != null ? tx('filterSince', { date: fmtDateTime(data.range.since).slice(0, 10) }) : null,
+              data.range?.until != null ? tx('filterUntil', { date: fmtDateTime(data.range.until).slice(0, 10) }) : null,
+            ]
+              .filter(Boolean)
+              .join(' · ')}
+          </span>
+        </div>
+      )}
+    </>
+  );
+
+  if (totals.requests === 0) {
+    return shell(
+      <>
+        {banners}
+        <div className="state-card">
+          <h1>
+            <Inbox size={18} strokeWidth={2} aria-hidden="true" />
+            {tx('emptyTitle')}
+          </h1>
+          <p>{coded(tx('emptyBody'))}</p>
+        </div>
+        {footer}
+      </>,
+    );
+  }
+
+  return shell(
+    <>
+      {banners}
+      <section className="kpis" aria-label={tx('heroAria')}>
+        <Stat
+          label={tx('statTokens')}
+          tone="lime"
+          value={fmtTokens(totals.totalTokens)}
+          sub={tx('statTokensSub', { requests: totals.requests ?? 0, sessions: totals.sessions ?? 0 })}
+        />
+        <Stat
+          label={tx('statCost')}
+          value={fmtCost(totals.costUsd)}
+          sub={unpriced.length === 0 ? tx('statCostPriced') : unpriced.length === 1 ? tx('statCostUnpricedOne') : tx('statCostUnpriced', { n: unpriced.length })}
+        />
+        <Stat
+          label={tx('statCache')}
+          tone="green"
+          value={fmtPct(data.cacheHitRate)}
+          sub={tx('statCacheSub', { tokens: fmtTokens(totals.cacheReadTokens) })}
+        />
+        <Stat
+          label={tx('statActiveDays')}
+          value={data.activeDays ?? activeWindowDays}
+          sub={data.activityRange?.firstAt ? tx('statActiveSince', { date: dateOnly(data.activityRange.firstAt) }) : '—'}
+        />
+      </section>
+
+      <div className="sheet">
+        <Cell
+          title={tx('trendTitle')}
+          desc={tx('trendDesc')}
+          extra={
+            <div className="range-chips">
+              {rangeChips.map(({ key, label, r }) => (
+                <span key={key} className="range-chip">
+                  <span className="range-chip-label">{label}</span>
+                  <b>{fmtTokens(r?.tokens ?? 0)}</b>
+                  <span className="range-chip-cost">{fmtCost(r?.costUsd ?? 0)}</span>
+                </span>
               ))}
             </div>
-          </div>
-        )}
+          }
+        >
+          <TrendChart
+            trends={{ 7: data.trend7, 30: data.trend, 90: data.trend90 }}
+            trendsByAgent={data.trendByAgent ?? {}}
+            agents={agents.map((a) => ({ id: a.id, label: clientLabel(a.id) }))}
+            locale={locale}
+          />
+        </Cell>
 
-        {filtered && (
-          <div className="filter-note">
-            <Filter size={14} strokeWidth={2} />
-            <span>
-              {tx('filterNote')}
-              {[
-                data.clientsFilter?.length ? tx('filterClient', { clients: data.clientsFilter.map(clientLabel).join(', ') }) : null,
-                data.range?.since != null ? tx('filterSince', { date: fmtDateTime(data.range.since).slice(0, 10) }) : null,
-                data.range?.until != null ? tx('filterUntil', { date: fmtDateTime(data.range.until).slice(0, 10) }) : null,
-              ]
-                .filter(Boolean)
-                .join(' · ')}
-            </span>
-          </div>
-        )}
+        <Cell title={tx('heatTitle')} desc={heatDesc}>
+          <Heatmap heatmap={data.heatmap} locale={locale} />
+        </Cell>
 
-        {totals.requests === 0 ? (
-          <div className="card error-card">
-            <h1>
-              <Inbox size={18} strokeWidth={2} />
-              {tx('emptyTitle')}
-            </h1>
-            <p>{coded(tx('emptyBody'))}</p>
-          </div>
-        ) : (
-          <>
-            <Section icon={Activity} title={tx('heatTitle')} desc={heatDesc} index={0}>
-              <div className="statstrip">
-                <StatChip
-                  icon={Zap}
-                  label={tx('statTokens')}
-                  value={fmtTokens(totals.totalTokens)}
-                  animate={{ type: 'number', value: totals.totalTokens, format: 'tokens' }}
-                  sub={tx('statTokensSub', { requests: totals.requests ?? 0, sessions: totals.sessions ?? 0 })}
-                />
-                <StatChip
-                  icon={CircleDollarSign}
-                  label={tx('statCost')}
-                  value={fmtCost(totals.costUsd)}
-                  animate={{ type: 'number', value: totals.costUsd, format: 'cost' }}
-                  sub={unpriced.length ? tx('statCostUnpriced', { n: unpriced.length }) : tx('statCostPriced')}
-                />
-                <StatChip
-                  icon={Database}
-                  label={tx('statCache')}
-                  accent
-                  value={fmtPct(data.cacheHitRate)}
-                  animate={{ type: 'number', value: data.cacheHitRate ?? 0, format: 'pct' }}
-                  sub={tx('statCacheSub', { tokens: fmtTokens(totals.cacheReadTokens) })}
-                />
-                <StatChip
-                  icon={CalendarDays}
-                  label={tx('statActiveDays')}
-                  value={data.activeDays ?? activeWindowDays}
-                  animate={{ type: 'number', value: data.activeDays ?? activeWindowDays, format: 'tokens' }}
-                  sub={data.activityRange?.firstAt ? tx('statActiveSince', { date: dateOnly(data.activityRange.firstAt) }) : '—'}
-                />
-                <StatChip
-                  icon={Flame}
-                  label={tx('statStreak')}
-                  value={Number.isFinite(streaks.current) ? tx('statStreakValue', { n: streaks.current }) : '—'}
-                  sub={Number.isFinite(streaks.longest) ? tx('statStreakLongest', { n: streaks.longest }) : null}
-                />
-                <StatChip
-                  icon={TrendingUp}
-                  label={tx('statPeak')}
-                  value={peakDay ? fmtTokens(peakDay.tokens) : '—'}
-                  sub={peakDay?.date ?? null}
-                />
-                <StatChip
-                  icon={Timer}
-                  label={tx('statLongest')}
-                  value={fmtDuration(longest?.activeMs)}
-                  sub={
-                    longest
-                      ? `${clientLabel(longest.client)} · ${tx('statLongestSpan', { duration: fmtDuration(longest.durationMs) })}`
-                      : '—'
-                  }
-                />
-              </div>
-              <Heatmap heatmap={data.heatmap} locale={locale} />
-            </Section>
+        <Cell title={tx('agentsTitle')} desc={tx('agentsDesc')} span={5}>
+          <AgentsPanel
+            agents={agents.map((a) => ({ ...a, label: clientLabel(a.id) }))}
+            models={data.models ?? []}
+            totals={{ totalTokens: totals.totalTokens, costUsd: totals.costUsd, cacheHitRate: data.cacheHitRate }}
+            locale={locale}
+          />
+        </Cell>
 
-            <Section
-              icon={TrendingUp}
-              title={tx('trendTitle')}
-              desc={tx('trendDesc')}
-              index={1}
-              extra={
-                <div className="range-chips">
-                  {rangeChips.map(({ key, label, r }) => (
-                    <span key={key} className="range-chip">
-                      <span className="range-chip-label">{label}</span>
-                      <b>{fmtTokens(r?.tokens ?? 0)}</b>
-                      <span className="range-chip-cost">{fmtCost(r?.costUsd ?? 0)}</span>
-                    </span>
+        <Cell title={tx('modelTitle')} desc={tx('modelDesc')} span={7}>
+          <ModelBars models={data.models ?? []} totalTokens={totals.totalTokens} locale={locale} />
+          <details className="details">
+            <summary>{tx('details')}</summary>
+            <div className="table-scroll">
+              <table className="tbl">
+                <thead>
+                  <tr>
+                    <th>{tx('thModel')}</th>
+                    <th>{tx('thAgent')}</th>
+                    <th className="num">{tx('thRequests')}</th>
+                    <th className="num">{tx('thInput')}</th>
+                    <th className="num">{tx('thCacheRead')}</th>
+                    <th className="num">{tx('thCacheWrite')}</th>
+                    <th className="num">{tx('thOutput')}</th>
+                    <th className="num">{tx('thHitRate')}</th>
+                    <th className="num">{tx('thCost')}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(data.models ?? []).map((m) => (
+                    <tr key={`${m.client}/${m.model}`}>
+                      <td className="mono">{m.model}</td>
+                      <td className="dim">{clientLabel(m.client)}</td>
+                      <td className="num">{m.requests}</td>
+                      <td className="num">{fmtTokens(m.inputTokens)}</td>
+                      <td className="num">{fmtTokens(m.cacheReadTokens)}</td>
+                      <td className="num">{fmtTokens(m.cacheWriteTokens)}</td>
+                      <td className="num">{fmtTokens(m.outputTokens)}</td>
+                      <td className="num">{fmtPct(m.cacheHitRate)}</td>
+                      <td className="num">{fmtCost(m.costUsd)}</td>
+                    </tr>
                   ))}
-                </div>
-              }
-            >
-              <TrendChart
-                trends={{ 7: data.trend7, 30: data.trend, 90: data.trend90 }}
-                trendsByAgent={data.trendByAgent ?? {}}
-                agents={agents.map((a) => ({ id: a.id, label: clientLabel(a.id) }))}
-                locale={locale}
-              />
-            </Section>
-
-            <div className="grid-2">
-              <Section icon={PieChart} title={tx('agentsTitle')} desc={tx('agentsDesc')} index={2}>
-                <AgentsPanel
-                  agents={agents.map((a) => ({ ...a, label: clientLabel(a.id) }))}
-                  models={data.models ?? []}
-                  totals={{ totalTokens: totals.totalTokens, costUsd: totals.costUsd, cacheHitRate: data.cacheHitRate }}
-                  locale={locale}
-                />
-              </Section>
-              <Section icon={Layers} title={tx('modelTitle')} desc={tx('modelDesc')} index={3}>
-                <ModelBars models={data.models ?? []} totalTokens={totals.totalTokens} locale={locale} />
-                <details className="details">
-                  <summary>{tx('details')}</summary>
-                  <div className="table-scroll">
-                    <table className="tbl">
-                      <thead>
-                        <tr>
-                          <th>{tx('thModel')}</th>
-                          <th>{tx('thAgent')}</th>
-                          <th className="num">{tx('thRequests')}</th>
-                          <th className="num">{tx('thInput')}</th>
-                          <th className="num">{tx('thCacheRead')}</th>
-                          <th className="num">{tx('thCacheWrite')}</th>
-                          <th className="num">{tx('thOutput')}</th>
-                          <th className="num">{tx('thHitRate')}</th>
-                          <th className="num">{tx('thCost')}</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {(data.models ?? []).map((m) => (
-                          <tr key={`${m.client}/${m.model}`}>
-                            <td className="mono">{m.model}</td>
-                            <td className="dim">{clientLabel(m.client)}</td>
-                            <td className="num">{m.requests}</td>
-                            <td className="num">{fmtTokens(m.inputTokens)}</td>
-                            <td className="num">{fmtTokens(m.cacheReadTokens)}</td>
-                            <td className="num">{fmtTokens(m.cacheWriteTokens)}</td>
-                            <td className="num">{fmtTokens(m.outputTokens)}</td>
-                            <td className="num">{fmtPct(m.cacheHitRate)}</td>
-                            <td className="num">{fmtCost(m.costUsd)}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </details>
-              </Section>
+                </tbody>
+              </table>
             </div>
+          </details>
+        </Cell>
 
-            <div className="grid-2">
-              <Section icon={Clock} title={tx('hourTitle')} desc={tx('hourDesc')} index={4}>
-                <HourBars hourly={data.hourly} locale={locale} />
-              </Section>
-              <Section icon={BarChart3} title={tx('monthTitle')} desc={tx('monthDesc')} index={5}>
-                <MonthlyBars monthly={data.monthly} locale={locale} />
-              </Section>
-            </div>
-          </>
-        )}
+        <Cell title={tx('hourTitle')} desc={tx('hourDesc')} span={4}>
+          <HourBars hourly={data.hourly} locale={locale} />
+        </Cell>
+        <Cell title={tx('monthTitle')} desc={tx('monthDesc')} span={4}>
+          <MonthlyBars monthly={data.monthly} locale={locale} />
+        </Cell>
+        <Cell title={tx('rhythmTitle')} desc={tx('rhythmDesc')} span={4}>
+          <Rhythm streaks={streaks} peakDay={peakDay} longest={longest} tx={tx} />
+        </Cell>
 
-        <footer className="foot">
-          <span>{tx('footTimezone', { tz: data.timezone ?? '—' })}</span>
-          <span>
-            {tx('footRange', {
-              range: data.activityRange?.firstAt
-                ? `${fmtDateTime(data.activityRange.firstAt)} → ${fmtDateTime(data.activityRange.lastAt)}`
-                : '—',
-            })}
-          </span>
-          <span>{tx('footGenerated', { time: fmtDateTime(data.generatedAt) })}</span>
-          {unpriced.length > 0 && <span>{tx('footUnpriced', { models: unpriced.join(', ') })}</span>}
-          <span>{tx('footLocal', { version: data.version })}</span>
-        </footer>
+        <Cell title={tx('sessTitle')} desc={tx('sessDesc')}>
+          <SessionTable rows={topSessions} tx={tx} />
+        </Cell>
       </div>
-    </>
+      {footer}
+    </>,
   );
 }
