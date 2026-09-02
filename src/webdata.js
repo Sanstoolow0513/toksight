@@ -4,7 +4,7 @@
 // matching the `daily`/`monthly` grouping in aggregate.js.
 
 import { summarize, cacheHitRate, localDate, localMonth, bySession } from './aggregate.js';
-import { startOfDay, stepDay } from './dates.js';
+import { dayKeyToTs, eachDay, startOfDay, stepDay } from './dates.js';
 
 function roundUsd(v) {
   return Math.round(v * 1e6) / 1e6;
@@ -51,17 +51,8 @@ function bucketRow(b, date) {
   };
 }
 
-// Steps local midnights (not +24h hops) so DST transitions can't skip or
-// duplicate a day key. The start is snapped to local midnight first: a caller
-// start that landed off-midnight would shift the whole series by that offset.
-function* localMidnights(startTs, endTs) {
-  const d = new Date(startTs);
-  d.setHours(0, 0, 0, 0);
-  while (d.getTime() <= endTs) {
-    yield d.getTime();
-    d.setDate(d.getDate() + 1);
-  }
-}
+// Zero-filled per-day windows come from dates.eachDay (shared with the CLI
+// windows) — see dates.js for why day stepping must walk local midnights.
 
 // GitHub-style grid: whole weeks starting on Sunday, ending at today. The last
 // column is partial (only up to today's weekday), so days.length is
@@ -72,7 +63,7 @@ export function buildHeatmap(entries, { weeks = 53, now = Date.now() } = {}) {
   const gridStart = stepDay(todayStart, -((weeks - 1) * 7 + new Date(now).getDay()));
   const days = [];
   let maxTokens = 0;
-  for (const ts of localMidnights(gridStart, todayStart)) {
+  for (const ts of eachDay(gridStart, todayStart)) {
     const date = localDate(ts);
     const row = buckets.has(date) ? bucketRow(buckets.get(date), date) : zeroDay(date);
     if (row.tokens > maxTokens) maxTokens = row.tokens;
@@ -87,7 +78,7 @@ export function buildTrend(entries, { days = 30, now = Date.now() } = {}) {
   const buckets = buildDayBuckets(entries);
   const todayStart = startOfDay(now);
   const rows = [];
-  for (const ts of localMidnights(stepDay(todayStart, -(days - 1)), todayStart)) {
+  for (const ts of eachDay(stepDay(todayStart, -(days - 1)), todayStart)) {
     const date = localDate(ts);
     rows.push(buckets.has(date) ? bucketRow(buckets.get(date), date) : zeroDay(date));
   }
@@ -115,7 +106,7 @@ export function buildTrendByAgent(entries, { days = 30, now = Date.now() } = {})
   }
   const todayStart = startOfDay(now);
   const rows = [];
-  for (const ts of localMidnights(stepDay(todayStart, -(days - 1)), todayStart)) {
+  for (const ts of eachDay(stepDay(todayStart, -(days - 1)), todayStart)) {
     const date = localDate(ts);
     const b = buckets.get(date);
     const c = perClient.get(date);
@@ -263,7 +254,7 @@ function computeStreaks(activeDates, now) {
   let run = 0;
   let prev = null;
   for (const date of activeDates) {
-    const ts = Date.parse(`${date}T00:00:00`);
+    const ts = dayKeyToTs(date);
     run = prev != null && stepDay(prev, 1) === ts ? run + 1 : 1;
     if (run > longest) longest = run;
     prev = ts;

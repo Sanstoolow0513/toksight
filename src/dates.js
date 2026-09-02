@@ -29,11 +29,35 @@ export function endOfDay(ts) {
 // --since/--until values are local calendar dates (YYYY-MM-DD). The boundary
 // is inclusive: 'end' maps to the last ms of that local day.
 export function parseDateArg(value, boundary) {
-  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(value ?? '').trim());
-  if (!m) throw new Error(`invalid date "${value}", expected YYYY-MM-DD`);
+  const ts = dayKeyToTs(String(value ?? '').trim());
+  if (ts == null) throw new Error(`invalid date "${value}", expected YYYY-MM-DD`);
+  return boundary === 'end' ? endOfDay(ts) : ts;
+}
+
+// Inverse of aggregate.localDate: 'YYYY-MM-DD' → that local day's midnight,
+// or null when the string is not a calendar date. Unlike
+// `Date.parse(`${key}T00:00:00`)` the contract is explicit and testable.
+export function dayKeyToTs(dateKey) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(dateKey ?? ''));
+  if (!m) return null;
   const [, y, mo, d] = m.map(Number);
-  if (boundary === 'end') {
-    return new Date(y, mo - 1, d, 23, 59, 59, 999).getTime();
+  return new Date(y, mo - 1, d).getTime();
+}
+
+// First local midnight of the calendar month containing ts.
+export function startOfMonth(ts) {
+  const d = new Date(ts);
+  return new Date(d.getFullYear(), d.getMonth(), 1).getTime();
+}
+
+// Every local midnight from startTs's day through endTs, inclusive, as an
+// iterator. Snaps to local midnight first (an off-midnight start would shift
+// the whole series by that offset) and steps calendar days — never +24h hops,
+// which drift across DST transitions.
+export function* eachDay(startTs, endTs) {
+  const d = new Date(startOfDay(startTs));
+  while (d.getTime() <= endTs) {
+    yield d.getTime();
+    d.setDate(d.getDate() + 1);
   }
-  return new Date(y, mo - 1, d, 0, 0, 0, 0).getTime();
 }

@@ -10,7 +10,7 @@ local dashboard (still no TUI).
 
 ## Commands
 
-- `node --test` (or `npm test`) — run the node:test suite (66 tests); uses per-client fixtures, no
+- `node --test` (or `npm test`) — run the node:test suite (78 tests); uses per-client fixtures, no
   network needed. Note: `node --test test/` with a directory arg fails with MODULE_NOT_FOUND on
   Node v24/Windows (the directory is treated as a module to load) — that's why the script passes
   no path; explicit file paths or a glob like `node --test "test/*.test.js"` also work.
@@ -28,17 +28,23 @@ local dashboard (still no TUI).
 
 ```
 bin/toksight.js     executable entry, calls src/cli.js main()
-src/cli.js          command dispatch + collection pipeline: collectAll (pricing + clients +
-                    filters, env/home threaded for tests) and runWeb (single-flight getData);
-                    no rendering lives here
+src/cli.js          command dispatch only: parse → help/version → web (runWeb single-flight
+                    getData) → collect → render; no collection or rendering lives here
 src/args.js         parseArgs (value options accept `--flag value` AND `--flag=value`;
                     `now` injectable for deterministic window tests)
-src/render.js       all text rendering: tables, totals section, warnings, empty-state page
+src/collect.js      collectAll — the collection pipeline shared by the CLI, --json and the
+                    web API (pricing + clients + filters, env/home threaded for tests);
+                    perClient rows carry { id, label, roots, entries } so renderers never
+                    re-ask the client registry or use process defaults
+src/render.js       all text rendering: renderCommand (per-command pages incl. env),
+                    renderJson, tables, totals section, warnings, empty-state page
+                    (prints the perClient roots actually scanned)
 src/payload.js      buildPayload — the user-facing --json contract (feeds both --json and the
                     web API); presentation-free data layer
 src/dates.js        the ONLY home for local-time date arithmetic (startOfDay/endOfDay/stepDay/
-                    parseDateArg). endOfDay/--week step local midnights — DST-safe, never
-                    blind `+24h`; do not re-implement these elsewhere
+                    startOfMonth/eachDay/dayKeyToTs/parseDateArg). endOfDay/--week/every day
+                    loop step local midnights — DST-safe, never blind `+24h`; do not
+                    re-implement these elsewhere
 src/clients/        one parser per agent, registered in src/clients/index.js; shared
                     src/clients/sqlite.js openSqliteReadOnly() centralizes the
                     dynamic node:sqlite import + readOnly open for the db-first guards
@@ -82,7 +88,7 @@ the `clients` map and `clientAliases` in `src/clients/index.js`, get a fixture u
 
 Every parser emits records with exactly: `client, sessionId, model, timestamp` (ms epoch or
 `null`), `inputTokens, outputTokens, reasoningTokens, cacheReadTokens, cacheWriteTokens`,
-`costUsd` (see below), `directory, title`. Cost is computed centrally in `cli.js`
+`costUsd` (see below), `directory, title`. Cost is computed centrally in `src/collect.js`
 (`collectAll` → `computeCost`) — parsers leave `costUsd: null` unless the agent itself reports
 cost (only OpenCode does).
 
@@ -103,11 +109,13 @@ cost (only OpenCode does).
   writes stay separate), so both paths subtract `cacheRead` to emit fresh input — without this,
   the hit-rate denominator and `computeCost` double-count cached tokens.
 - **Parsers must never throw** on bad data: tolerate malformed/unreadable files, push messages
-  into `warnings`, skip empty-usage rows. `cli.js` collects clients via `Promise.allSettled` and
+  into `warnings`, skip empty-usage rows. `src/collect.js` collects clients via
+  `Promise.allSettled` and
   prints warnings on stderr (they also appear under `warnings` in JSON output). Warnings also
   cover read failures that are NOT a plain missing root (`walkFiles` ENOENT on a root is silent —
   not every agent is installed; EACCES/ENOTDIR etc. warn), kimi `state.json` that exists but
-  cannot be read/parsed, and entries without a timestamp excluded by `--since`/`--until`
+  cannot be read/parsed, and entries without a timestamp (null OR non-finite — parsers
+  normalize NaN to null) excluded by `--since`/`--until`
   (reported instead of silently vanishing).
 - **Claude dedup is max-wins**: assistant lines can repeat a message id with a *growing* usage
   snapshot (streaming partial → final). Keep the snapshot with the largest token total, not the

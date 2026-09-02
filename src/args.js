@@ -6,7 +6,7 @@
 // `--since=2026-08-01`. Boolean flags ignore an attached `=` value.
 
 import { resolveClientIds } from './clients/index.js';
-import { endOfDay, parseDateArg, startOfDay, stepDay } from './dates.js';
+import { endOfDay, parseDateArg, startOfDay, startOfMonth, stepDay } from './dates.js';
 
 const COMMANDS = ['overview', 'daily', 'monthly', 'models', 'sessions', 'web', 'env', 'help'];
 
@@ -55,8 +55,7 @@ export function parseArgs(argv, { now = Date.now() } = {}) {
       // "Last 7 days (inclusive)" = today plus the previous 6 calendar days.
       case '--week': opts.since = stepDay(startOfDay(now), -6); opts.until = endOfDay(now); break;
       case '--month': {
-        const d = new Date(now);
-        opts.since = new Date(d.getFullYear(), d.getMonth(), 1).getTime();
+        opts.since = startOfMonth(now);
         opts.until = endOfDay(now);
         break;
       }

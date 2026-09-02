@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-import { collectAll } from '../src/cli.js';
+import { collectAll } from '../src/collect.js';
 
 // A tiny live fixture tree: one Claude session with a timestamped entry and
 // one without; the other four clients are pointed at roots that do not exist
