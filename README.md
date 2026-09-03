@@ -153,39 +153,32 @@ All filters (`--client`, `--since`, `--until`, `--today/--week/--month`) work fo
 the page offers a manual refresh, a 30s auto-refresh toggle, and a 中文 / EN language switch
 (stored in `localStorage` as `toksight-locale`, default Chinese).
 
-### Agent configuration transfer
+### Agent configuration viewer (read-only)
 
-Open **Config** in the dashboard masthead (or `/config`) to preview, selectively export, and
-selectively import user-level agent configuration. This first version intentionally supports only
-these fixed files:
+Open **Config** in the dashboard masthead (or `/config`) for a read-only summary of the five
+agents' user-level configuration: default model, auth method, providers and endpoints, the model
+list (with context sizes), key settings such as permissions/sandbox, and which file each setting
+comes from. Expanding an agent shows redacted raw previews of its files. **The page never writes
+anything.**
 
-| Agent | Included user configuration |
+Files read (fixed allowlist, all user-level):
+
+| Agent | Files read |
 |---|---|
-| ZCode | `%ZCODE_HOME%\v2\config.json`, `v2\setting.json`, `cli\config.json` (default root `%USERPROFILE%\.zcode`) |
-| Claude Code | `%CLAUDE_CONFIG_DIR%\settings.json` (default `%USERPROFILE%\.claude`) |
-| Codex CLI | `%CODEX_HOME%\config.toml` (default `%USERPROFILE%\.codex`) |
-| OpenCode | `%OPENCODE_CONFIG_DIR%\opencode.json` / `opencode.jsonc` (directory defaults to `%XDG_CONFIG_HOME%\opencode`, then `%USERPROFILE%\.config\opencode`); `%OPENCODE_CONFIG%` overrides the matching JSON/JSONC item when set |
-| Kimi Code | `%KIMI_CODE_HOME%\config.toml`, `tui.toml`, `mcp.json` (default `%USERPROFILE%\.kimi-code`) |
+| ZCode | `%ZCODE_HOME%\v2\config.json`, `v2\setting.json`, `cli\config.json`, `v2\credentials.json` (existence probe only; default root `%USERPROFILE%\.zcode`) |
+| Claude Code | `%CLAUDE_CONFIG_DIR%\settings.json`, `.claude.json` (state/MCP, home-root by default), `.credentials.json` (probe only; default `%USERPROFILE%\.claude`) |
+| Codex CLI | `%CODEX_HOME%\config.toml`, `auth.json` (auth mode only), `.env` (variable names only), `*.config.toml` profiles (default `%USERPROFILE%\.codex`) |
+| OpenCode | `%OPENCODE_CONFIG_DIR%\opencode.json` / `opencode.jsonc`, data-dir `auth.json` (provider names only), state-dir `model.json` (defaults under `%USERPROFILE%\.config\opencode` etc.; `OPENCODE_CONFIG` override supported) |
+| Kimi Code | `%KIMI_CODE_HOME%\config.toml`, `tui.toml`, `mcp.json`, `region`, `credentials\kimi-code.json` (probe only; default `%USERPROFILE%\.kimi-code`) |
 
-Project settings, managed policy, session/history data, `.env`, and dedicated credential/auth
-stores are never scanned by this page. There is no field-by-field editor yet; each selectable item
-is one complete file. Notably excluded are ZCode `v2\credentials.json`, Claude `%USERPROFILE%\.claude.json`
-(mixed state/auth/MCP data), Codex `auth.json`, OpenCode `%USERPROFILE%\.local\share\opencode\auth.json`, and
-Kimi credential storage.
+Credential files are **never displayed** — only their existence is reported, plus whitelisted
+facts such as Codex's `chatgpt` / `apikey` auth mode or OAuth state. Previews of regular config
+files replace secret-bearing values with `[REDACTED]`; Claude's `settings.json` `env` block is
+judged per variable name (`ANTHROPIC_BASE_URL` / `ANTHROPIC_MODEL` visible,
+`ANTHROPIC_API_KEY` hidden), so third-party relay setups stay readable. Project-level config and
+managed/enterprise policy files are out of scope. The configuration API accepts loopback clients
+only, even when `--host` exposes the statistics dashboard more broadly.
 
-Exports are inspectable `.toksight-config.json` bundles with checksums; the manifest does not add
-absolute source/destination paths (the unchanged configuration text can contain its own paths).
-The redacted previews hide common secret-bearing keys, but the downloaded bundle contains
-the **exact original file contents** and can therefore contain API keys or tokens. Store and share
-it as carefully as credentials. Checksums detect accidental damage; they are not signatures.
-Configuration can also define hooks, plugins or MCP commands, so import trusted bundles only.
-
-On import, the package cannot choose its destination: toksight resolves every selected item through
-the same fixed allowlist above. If a destination already exists, it is first renamed to
-`<name>.backup-YYYYMMDDTHHMMSSZ` (with `-2`, `-3`, … on collision), then the imported file is put in
-place. A multi-item import prepares all temporary files first and attempts to restore all backups
-if applying any item fails. Configuration APIs are same-origin, have no CORS access, and remain
-restricted to loopback clients even when `--host` exposes the statistics dashboard elsewhere.
 
 ### Dashboard bundle
 
@@ -264,7 +257,7 @@ src/args.js            CLI argument parsing (--flag value / --flag=value)
 src/render.js          text rendering (tables, sections, warnings)
 src/payload.js         the --json / web API payload contract
 src/dates.js           shared local-time date helpers (DST-safe)
-src/agentconfigs.js    fixed-scope config preview/export/import + backup transaction
+src/agentconfigs.js    fixed-allowlist config reading + structured summaries (with src/toml.js TOML parsing)
 src/pricing.js         built-in table + LiteLLM cache + user overrides
 src/aggregate.js       grouping/totals
 src/webdata.js         web-dashboard aggregations (heatmap, trend, sessions…)
@@ -282,7 +275,7 @@ The CLI itself keeps **zero runtime dependencies**; the dashboard's dependencies
 ### Roadmap
 
 - [x] Web dashboard (`toksight web`, phase 2)
-- [x] Selective agent configuration preview/export/import (`toksight web` → Config)
+- [x] Read-only agent configuration viewer: summaries + redacted previews (`toksight web` → Config)
 - [ ] TUI watch mode
 - [ ] More clients (Cursor, Windsurf, pi…)
 - [ ] `--export csv`, leaderboard-style sharing

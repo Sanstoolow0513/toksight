@@ -1,37 +1,46 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
-import {
-  Check,
-  ChevronDown,
-  Download,
-  FileUp,
-  RefreshCw,
-  ShieldAlert,
-  TriangleAlert,
-} from 'lucide-react';
+import { ChevronDown, RefreshCw, ShieldAlert, TriangleAlert } from 'lucide-react';
 import { DEFAULT_LOCALE, readStoredLocale, t, writeStoredLocale } from '@/lib/i18n';
-
-const AGENT_LABELS = {
-  zcode: 'ZCode',
-  claude: 'Claude Code',
-  codex: 'Codex CLI',
-  opencode: 'OpenCode',
-  kimi: 'Kimi Code',
-};
+import { fmtTokens } from '@/lib/format';
 
 const ITEM_KEYS = {
   'zcode.providers': 'cfgItemZcodeProviders',
   'zcode.settings': 'cfgItemZcodeSettings',
   'zcode.plugins': 'cfgItemZcodePlugins',
+  'zcode.credentials': 'cfgItemZcodeCredentials',
   'claude.settings': 'cfgItemClaudeSettings',
+  'claude.state': 'cfgItemClaudeState',
+  'claude.credentials': 'cfgItemClaudeCredentials',
   'codex.config': 'cfgItemCodexConfig',
+  'codex.auth': 'cfgItemCodexAuth',
+  'codex.env': 'cfgItemCodexEnv',
   'opencode.config-json': 'cfgItemOpenCodeJson',
   'opencode.config-jsonc': 'cfgItemOpenCodeJsonc',
+  'opencode.auth': 'cfgItemOpenCodeAuth',
+  'opencode.state-model': 'cfgItemOpenCodeStateModel',
   'kimi.config': 'cfgItemKimiConfig',
   'kimi.tui': 'cfgItemKimiTui',
   'kimi.mcp': 'cfgItemKimiMcp',
+  'kimi.region': 'cfgItemKimiRegion',
+  'kimi.credentials': 'cfgItemKimiCredentials',
+};
+
+const AUTH_METHODS = {
+  oauth: 'amOauth',
+  chatgpt: 'amChatgpt',
+  apikey: 'amApikey',
+  envKey: 'amEnvkey',
+  file: 'amFile',
+  providers: 'amProviders',
+};
+
+const AUTH_VIA = {
+  oauth: 'avOauth',
+  key: 'avKey',
+  env: 'avEnv',
 };
 
 function LangSwitch({ locale, onChange, label }) {
@@ -58,14 +67,6 @@ async function responseJson(res) {
   return body;
 }
 
-function postJson(url, body) {
-  return fetch(url, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(body),
-  });
-}
-
 function formatBytes(value, locale) {
   if (!Number.isFinite(value)) return '—';
   if (value < 1024) return `${value} B`;
@@ -79,89 +80,197 @@ function formatDate(value, locale) {
   return Number.isFinite(date.valueOf()) ? date.toLocaleString(locale) : '—';
 }
 
-function toggleIn(setter, id) {
-  setter((current) => {
-    const next = new Set(current);
-    if (next.has(id)) next.delete(id);
-    else next.add(id);
-    return next;
-  });
+function FileState({ file, tx }) {
+  if (file.error) return <span className="tag tag-error">{tx('cfgUnreadable')}</span>;
+  if (!file.exists) return <span className="tag">{tx('cfgMissing')}</span>;
+  return <span className="tag tag-ok">{tx('cfgFound')}</span>;
 }
 
-function ItemPreview({ item, selected, onSelect, expanded, onExpand, locale, tx, mode }) {
-  const label = tx(ITEM_KEYS[item.id] || item.label);
+function FileCard({ file, locale, tx }) {
+  const label = tx(ITEM_KEYS[file.id] || 'cfgItemFallback');
   return (
-    <article className={`config-item${item.exists === false ? ' config-item-missing' : ''}`}>
-      <div className="config-item-main">
-        <label className="config-choice">
-          <input
-            type="checkbox"
-            checked={selected}
-            disabled={(mode === 'export' && !item.exportable) || (mode === 'import' && item.importable === false)}
-            onChange={() => onSelect(item.id)}
-          />
-          <span className="config-choice-box" aria-hidden="true" />
-          <span className="config-choice-copy">
-            <b>{label}</b>
-            <span>{item.fileName} · {String(item.format).toUpperCase()}</span>
-          </span>
-        </label>
-        <div className="config-item-state">
-          {mode === 'export' ? (
-            item.error ? <span className="tag tag-error">{tx('cfgUnreadable')}</span> :
-              item.exists && !item.exportable ? <span className="tag tag-warn">{tx('cfgTooLarge')}</span> :
-                item.exists ? <span className="tag tag-ok">{tx('cfgFound')}</span> : <span className="tag">{tx('cfgMissing')}</span>
-          ) : item.importable === false ? (
-            <span className="tag tag-error">{tx('cfgInvalidDestination')}</span>
-          ) : item.destinationExists ? (
-            <span className="tag tag-warn">{tx('cfgWillBackup')}</span>
-          ) : (
-            <span className="tag tag-ok">{tx('cfgWillCreate')}</span>
-          )}
-          {item.preview != null && (
-            <button className={`preview-toggle${expanded ? ' open' : ''}`} type="button" onClick={() => onExpand(item.id)}>
-              <ChevronDown size={14} strokeWidth={2} aria-hidden="true" />
-              {expanded ? tx('cfgHidePreview') : tx('cfgShowPreview')}
-            </button>
-          )}
-        </div>
+    <article className={`config-file${file.exists ? '' : ' config-file-missing'}`}>
+      <div className="config-file-head">
+        <b>{label}</b>
+        <span className="config-file-name">{file.fileName} · {String(file.format).toUpperCase()}</span>
+        <FileState file={file} tx={tx} />
       </div>
-
       <dl className="config-meta">
-        <div><dt>{tx(mode === 'export' ? 'cfgPath' : 'cfgDestination')}</dt><dd title={item.path}>{item.path}</dd></div>
-        <div><dt>{tx('cfgSize')}</dt><dd>{formatBytes(item.size, locale)}</dd></div>
-        {mode === 'export' && <div><dt>{tx('cfgModified')}</dt><dd>{formatDate(item.modifiedAt, locale)}</dd></div>}
+        <div><dt>{tx('cfgPath')}</dt><dd title={file.path}>{file.path}</dd></div>
+        <div><dt>{tx('cfgSize')}</dt><dd>{formatBytes(file.size, locale)}</dd></div>
+        <div><dt>{tx('cfgModified')}</dt><dd>{formatDate(file.modifiedAt, locale)}</dd></div>
       </dl>
-
-      {expanded && item.preview != null && (
+      {file.exists && file.preview != null && (
         <div className="config-preview">
           <div className="config-preview-head">
             <span>{tx('cfgRedactedPreview')}</span>
-            {item.truncated && <span>{tx('cfgPreviewTruncated')}</span>}
+            {file.truncated && <span>{tx('cfgPreviewTruncated')}</span>}
           </div>
-          <pre>{item.preview}</pre>
+          <pre>{file.preview}</pre>
         </div>
       )}
+      {file.exists && file.preview == null && !file.error && file.previewable === false && (
+        <p className="config-file-note">{tx('cfgCredentialNote')}</p>
+      )}
     </article>
+  );
+}
+
+function ProvidersTable({ providers, tx }) {
+  return (
+    <div className="config-table-wrap">
+      <table className="config-table">
+        <thead>
+          <tr>
+            <th>{tx('colProvider')}</th>
+            <th>{tx('colType')}</th>
+            <th>{tx('colEndpoint')}</th>
+            <th>{tx('colAuthCol')}</th>
+            <th>{tx('colState')}</th>
+            <th>{tx('colModelsCol')}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {providers.map((row) => (
+            <tr key={row.name}>
+              <td title={row.name}>{row.name}</td>
+              <td>{row.kind || '—'}</td>
+              <td title={row.baseURL || ''}>{row.baseURL || '—'}</td>
+              <td>
+                {row.authVia ? tx(AUTH_VIA[row.authVia]) || row.authVia : row.apiKeySet ? tx('avKey') : '—'}
+              </td>
+              <td>{row.enabled == null ? '—' : row.enabled ? tx('stateOn') : tx('stateOff')}</td>
+              <td>{row.modelCount == null ? '—' : row.modelCount}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function ModelsBlock({ models, tx }) {
+  const groups = [];
+  for (const model of models) {
+    const last = groups[groups.length - 1];
+    if (last && last.provider === model.provider) last.models.push(model);
+    else groups.push({ provider: model.provider, models: [model] });
+  }
+  return (
+    <div className="config-models">
+      {groups.map((group) => (
+        <div className="config-model-group" key={group.provider || 'none'}>
+          <span className="config-model-provider">{group.provider || '—'}</span>
+          <div className="config-chips">
+            {group.models.map((model) => (
+              <span className="chip" key={`${model.provider}/${model.name}`} title={model.provider ? `${model.provider}/${model.name}` : model.name}>
+                {model.name}
+                {model.contextTokens != null && <i>{fmtTokens(model.contextTokens)}</i>}
+              </span>
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function AgentCard({ agent, locale, tx }) {
+  const [open, setOpen] = useState(false);
+  const { summary } = agent;
+  const foundFiles = agent.files.filter((file) => file.exists).length;
+  const hasContent =
+    summary.defaultModel || summary.auth || summary.facts.length > 0 ||
+    summary.providers.length > 0 || summary.models.length > 0 || summary.mcpServers.length > 0;
+
+  return (
+    <section className="config-agent">
+      <div className="config-agent-head">
+        <div>
+          <h3>{agent.label}</h3>
+          <p>
+            {tx('cfgAgentFiles', { found: foundFiles, total: agent.files.length })}
+            {summary.providers.length > 0 && ` · ${tx('cfgAgentProviders', { n: summary.providers.length })}`}
+            {summary.models.length > 0 && ` · ${tx('cfgAgentModels', { n: summary.models.length })}`}
+          </p>
+        </div>
+        {summary.auth && (
+          <span className="config-agent-badge" title={summary.auth.detail || undefined}>
+            {tx(AUTH_METHODS[summary.auth.method]) || summary.auth.method}
+          </span>
+        )}
+      </div>
+
+      {!hasContent ? (
+        <p className="config-agent-empty">{tx('cfgNoConfig')}</p>
+      ) : (
+        <div className="config-agent-body">
+          {(summary.defaultModel || summary.auth || summary.mcpServers.length > 0) && (
+            <dl className="config-kv">
+              {summary.defaultModel != null && (
+                <div><dt>{tx('cfgDefaultModel')}</dt><dd>{summary.defaultModel}</dd></div>
+              )}
+              {summary.auth && (
+                <div>
+                  <dt>{tx('cfgAuth')}</dt>
+                  <dd>
+                    {tx(AUTH_METHODS[summary.auth.method]) || summary.auth.method}
+                    {summary.auth.detail && <span className="config-kv-detail"> · {summary.auth.detail}</span>}
+                  </dd>
+                </div>
+              )}
+              {summary.mcpServers.length > 0 && (
+                <div>
+                  <dt>{tx('cfgMcp')}</dt>
+                  <dd>{tx('cfgMcpCount', { n: summary.mcpServers.length })}<span className="config-kv-detail"> · {summary.mcpServers.join(', ')}</span></dd>
+                </div>
+              )}
+            </dl>
+          )}
+
+          {summary.facts.length > 0 && (
+            <ul className="config-facts">
+              {summary.facts.map((fact) => (
+                <li key={fact.key}>
+                  <span>{tx(fact.key)}</span>
+                  <b>{fact.value}</b>
+                </li>
+              ))}
+            </ul>
+          )}
+
+          {summary.providers.length > 0 && <ProvidersTable providers={summary.providers} tx={tx} />}
+          {summary.models.length > 0 && <ModelsBlock models={summary.models} tx={tx} />}
+
+          <div className="config-files">
+            <button
+              className={`config-files-toggle${open ? ' open' : ''}`}
+              type="button"
+              onClick={() => setOpen((value) => !value)}
+              aria-expanded={open}
+            >
+              <ChevronDown size={14} strokeWidth={2} aria-hidden="true" />
+              {open ? tx('cfgHideFiles') : tx('cfgShowFiles', { n: agent.files.length })}
+            </button>
+            {open && (
+              <div className="config-files-list">
+                {agent.files.map((file) => (
+                  <FileCard file={file} key={file.id} locale={locale} tx={tx} />
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </section>
   );
 }
 
 export default function ConfigPage() {
   const [locale, setLocaleState] = useState(DEFAULT_LOCALE);
   const [inventory, setInventory] = useState(null);
-  const [exportSelection, setExportSelection] = useState(new Set());
-  const [importSelection, setImportSelection] = useState(new Set());
-  const [expandedExport, setExpandedExport] = useState(new Set());
-  const [expandedImport, setExpandedImport] = useState(new Set());
-  const [bundle, setBundle] = useState(null);
-  const [bundlePreview, setBundlePreview] = useState(null);
-  const [bundleName, setBundleName] = useState('');
-  const [lastImport, setLastImport] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [busy, setBusy] = useState(null);
   const [error, setError] = useState(null);
-  const [notice, setNotice] = useState(null);
-  const fileRef = useRef(null);
 
   const tx = useCallback((key, vars) => t(locale, key, vars), [locale]);
   const setLocale = useCallback((next) => {
@@ -180,11 +289,6 @@ export default function ConfigPage() {
     try {
       const data = await responseJson(await fetch('/api/config', { cache: 'no-store' }));
       setInventory(data);
-      setExportSelection((current) => {
-        const available = new Set(data.agents.flatMap((agent) => agent.items).filter((item) => item.exportable).map((item) => item.id));
-        if (current.size === 0) return available;
-        return new Set([...current].filter((id) => available.has(id)));
-      });
       setError(null);
     } catch (err) {
       setError(String(err?.message || err));
@@ -194,99 +298,6 @@ export default function ConfigPage() {
   }, []);
 
   useEffect(() => { load(); }, [load]);
-
-  const availableItems = useMemo(
-    () => inventory?.agents.flatMap((agent) => agent.items).filter((item) => item.exportable) ?? [],
-    [inventory],
-  );
-
-  const exportConfigs = async () => {
-    setBusy('export');
-    setError(null);
-    setNotice(null);
-    try {
-      const res = await postJson('/api/config/export', { items: [...exportSelection] });
-      if (!res.ok) await responseJson(res);
-      const blob = await res.blob();
-      const disposition = res.headers.get('content-disposition') || '';
-      const name = disposition.match(/filename="([^"]+)"/)?.[1] || `toksight-config-${Date.now()}.toksight-config.json`;
-      const url = URL.createObjectURL(blob);
-      const anchor = document.createElement('a');
-      anchor.href = url;
-      anchor.download = name;
-      document.body.appendChild(anchor);
-      anchor.click();
-      anchor.remove();
-      URL.revokeObjectURL(url);
-      setNotice(tx('cfgExportDone', { n: exportSelection.size }));
-    } catch (err) {
-      setError(String(err?.message || err));
-    } finally {
-      setBusy(null);
-    }
-  };
-
-  const chooseBundle = async (event) => {
-    const file = event.target.files?.[0];
-    event.target.value = '';
-    if (!file) return;
-    setBusy('preview');
-    setError(null);
-    setNotice(null);
-    setBundle(null);
-    setBundlePreview(null);
-    setLastImport(null);
-    setImportSelection(new Set());
-    setExpandedImport(new Set());
-    setBundleName(file.name);
-    try {
-      if (file.size > 12 * 1024 * 1024) throw new Error(tx('cfgFileTooLarge'));
-      let parsed;
-      try {
-        parsed = JSON.parse(await file.text());
-      } catch {
-        throw new Error(tx('cfgInvalidJson'));
-      }
-      const preview = await responseJson(await postJson('/api/config/import/preview', { bundle: parsed }));
-      setBundle(parsed);
-      setBundlePreview(preview);
-      setImportSelection(new Set(preview.items.filter((item) => item.importable !== false).map((item) => item.id)));
-      setExpandedImport(new Set());
-    } catch (err) {
-      setError(String(err?.message || err));
-      setBundleName('');
-    } finally {
-      setBusy(null);
-    }
-  };
-
-  const importConfigs = async () => {
-    if (!bundle || importSelection.size === 0) return;
-    if (!window.confirm(tx('cfgConfirm', { n: importSelection.size }))) return;
-    setBusy('import');
-    setError(null);
-    setNotice(null);
-    try {
-      const result = await responseJson(await postJson('/api/config/import', {
-        bundle,
-        items: [...importSelection],
-      }));
-      setNotice(tx('cfgImportDone', { n: result.imported.length, backups: result.backups.length }));
-      setLastImport(result);
-      setBundle(null);
-      setBundlePreview(null);
-      setBundleName('');
-      setImportSelection(new Set());
-      await load();
-    } catch (err) {
-      setError(String(err?.message || err));
-    } finally {
-      setBusy(null);
-    }
-  };
-
-  const selectAllExports = () => setExportSelection(new Set(availableItems.map((item) => item.id)));
-  const selectAllImports = () => setImportSelection(new Set(bundlePreview?.items.filter((item) => item.importable !== false).map((item) => item.id) ?? []));
 
   return (
     <main className="wrap">
@@ -302,7 +313,7 @@ export default function ConfigPage() {
               <Link className="active" href="/config" aria-current="page">{tx('navConfig')}</Link>
             </nav>
             <LangSwitch locale={locale} onChange={setLocale} label={tx('langGroup')} />
-            <button className="btn" type="button" onClick={load} disabled={loading || Boolean(busy)}>
+            <button className="btn" type="button" onClick={load} disabled={loading}>
               <RefreshCw size={14} strokeWidth={2} className={loading ? 'icon-spin' : undefined} aria-hidden="true" />
               {loading ? tx('refreshing') : tx('refresh')}
             </button>
@@ -326,12 +337,6 @@ export default function ConfigPage() {
             <span>{error}</span>
           </div>
         )}
-        {notice && (
-          <div className="banner success" role="status">
-            <Check size={15} strokeWidth={2} aria-hidden="true" />
-            <span>{notice}</span>
-          </div>
-        )}
         {inventory?.warnings?.map((warning, index) => (
           <div className="banner warn" key={`${warning}-${index}`}>
             <TriangleAlert size={15} strokeWidth={2} aria-hidden="true" />
@@ -340,140 +345,20 @@ export default function ConfigPage() {
         ))}
 
         <div className="config-stack">
-          <section className="config-pane" aria-labelledby="config-export-title">
-            <div className="config-pane-head">
-              <div>
-                <span className="config-step">{tx('cfgExportStep')}</span>
-                <h2 id="config-export-title">{tx('cfgExportTitle')}</h2>
-                <p>{tx('cfgExportDesc')}</p>
-              </div>
-              <div className="config-select-actions">
-                <button type="button" onClick={selectAllExports}>{tx('cfgSelectAll')}</button>
-                <button type="button" onClick={() => setExportSelection(new Set())}>{tx('cfgClear')}</button>
-              </div>
-            </div>
-
-            {loading && !inventory ? (
-              <div className="config-loading"><span className="skel" /><span className="skel" /><span className="skel" /></div>
-            ) : inventory ? (
-              <div className="config-agents">
-                {inventory.agents.map((agent) => (
-                  <section className="config-agent" key={agent.id}>
-                    <div className="config-agent-head">
-                      <h3>{AGENT_LABELS[agent.id] || agent.label}</h3>
-                      <span>{agent.items.filter((item) => item.exportable).length}/{agent.items.length}</span>
-                    </div>
-                    {agent.items.map((item) => (
-                      <ItemPreview
-                        key={item.id}
-                        item={item}
-                        selected={exportSelection.has(item.id)}
-                        onSelect={(id) => toggleIn(setExportSelection, id)}
-                        expanded={expandedExport.has(item.id)}
-                        onExpand={(id) => toggleIn(setExpandedExport, id)}
-                        locale={locale}
-                        tx={tx}
-                        mode="export"
-                      />
-                    ))}
-                  </section>
-                ))}
-              </div>
-            ) : (
-              <div className="config-empty">{tx('cfgLoadEmpty')}</div>
-            )}
-
-            <div className="config-pane-foot">
-              <span>{tx('cfgSelected', { n: exportSelection.size })}</span>
-              <button className="btn" type="button" disabled={exportSelection.size === 0 || Boolean(busy)} onClick={exportConfigs}>
-                <Download size={14} strokeWidth={2} aria-hidden="true" />
-                {busy === 'export' ? tx('cfgExporting') : tx('cfgExportButton')}
-              </button>
-            </div>
-          </section>
-
-          <section className="config-pane" aria-labelledby="config-import-title">
-            <div className="config-pane-head">
-              <div>
-                <span className="config-step">{tx('cfgImportStep')}</span>
-                <h2 id="config-import-title">{tx('cfgImportTitle')}</h2>
-                <p>{tx('cfgImportDesc')}</p>
-              </div>
-            </div>
-
-            <div className="config-drop">
-              <FileUp size={18} strokeWidth={2} aria-hidden="true" />
-              <div>
-                <b>{bundleName || tx('cfgChooseBundle')}</b>
-                <span>{tx('cfgBundleHint')}</span>
-              </div>
-              <input ref={fileRef} type="file" accept=".json,.toksight-config.json,application/json" onChange={chooseBundle} tabIndex={-1} aria-hidden="true" />
-              <button className="btn" type="button" disabled={Boolean(busy)} onClick={() => fileRef.current?.click()}>
-                <FileUp size={14} strokeWidth={2} aria-hidden="true" />
-                {busy === 'preview' ? tx('cfgChecking') : tx('cfgBrowse')}
-              </button>
-            </div>
-
-            {bundlePreview ? (
-              <>
-                <div className="config-bundle-meta">
-                  <span>{tx('cfgBundleVersion', { version: bundlePreview.version })}</span>
-                  <span>{tx('cfgBundleCreated', { time: formatDate(bundlePreview.createdAt, locale) })}</span>
-                </div>
-                <div className="config-select-actions config-select-actions-wide">
-                  <button type="button" onClick={selectAllImports}>{tx('cfgSelectAll')}</button>
-                  <button type="button" onClick={() => setImportSelection(new Set())}>{tx('cfgClear')}</button>
-                </div>
-                <div className="config-agents config-import-items">
-                  {bundlePreview.items.map((item) => (
-                    <ItemPreview
-                      key={item.id}
-                      item={item}
-                      selected={importSelection.has(item.id)}
-                      onSelect={(id) => toggleIn(setImportSelection, id)}
-                      expanded={expandedImport.has(item.id)}
-                      onExpand={(id) => toggleIn(setExpandedImport, id)}
-                      locale={locale}
-                      tx={tx}
-                      mode="import"
-                    />
-                  ))}
-                </div>
-              </>
-            ) : lastImport ? (
-              <section className="config-result" aria-label={tx('cfgResultTitle')}>
-                <h3><Check size={16} strokeWidth={2} aria-hidden="true" />{tx('cfgResultTitle')}</h3>
-                <div>
-                  <b>{tx('cfgResultImported')}</b>
-                  <ul>{lastImport.imported.map((item) => <li key={item.id}>{item.path}</li>)}</ul>
-                </div>
-                <div>
-                  <b>{tx('cfgResultBackups')}</b>
-                  {lastImport.backups.length ? (
-                    <ul>{lastImport.backups.map((item) => <li key={item.id}>{item.backupPath}</li>)}</ul>
-                  ) : <p>{tx('cfgNoBackups')}</p>}
-                </div>
-              </section>
-            ) : (
-              <div className="config-empty config-empty-import">
-                <span>01</span>
-                <p>{tx('cfgImportEmpty')}</p>
-              </div>
-            )}
-
-            <div className="config-pane-foot">
-              <span>{tx('cfgSelected', { n: importSelection.size })}</span>
-              <button className="btn" type="button" disabled={!bundle || importSelection.size === 0 || Boolean(busy)} onClick={importConfigs}>
-                <FileUp size={14} strokeWidth={2} aria-hidden="true" />
-                {busy === 'import' ? tx('cfgImporting') : tx('cfgImportButton')}
-              </button>
-            </div>
-          </section>
+          {loading && !inventory ? (
+            <div className="config-loading"><span className="skel" /><span className="skel" /><span className="skel" /></div>
+          ) : inventory ? (
+            inventory.agents.map((agent) => (
+              <AgentCard agent={agent} key={agent.id} locale={locale} tx={tx} />
+            ))
+          ) : (
+            <div className="config-empty">{tx('cfgLoadEmpty')}</div>
+          )}
         </div>
 
         <footer className="foot">
           <span>{tx('cfgFootScope')}</span>
-          <span>{tx('cfgFootBackup')}</span>
+          <span>{tx('cfgFootRedact')}</span>
           <span>{tx('cfgFootLocal')}</span>
         </footer>
       </div>

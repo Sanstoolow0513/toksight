@@ -31,7 +31,7 @@ Commands
   monthly       Usage grouped by month
   models        Usage grouped by model
   sessions      Top sessions by cost
-  web           Launch the local dashboard and agent config transfer page
+  web           Launch the local dashboard (usage stats + agent config viewer)
   env           Show detected data sources and pricing state
   help          Show this help
 
@@ -53,8 +53,8 @@ Options
   --version        Print version
   --help           Print this help
 
-Data stays on your machine: stats only read local session files. Config import
-writes only the explicitly selected agent settings after backing up old files.
+Data stays on your machine: toksight only reads — session files, and the
+agent configuration shown in the web dashboard (previews are redacted).
 Pricing: built-in estimates, refreshed from LiteLLM (1h disk cache), overridable
 in ${path.join('<config>', 'toksight', 'pricing.json')} — see README.
 Inspired by tokscale.`;

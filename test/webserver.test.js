@@ -83,24 +83,12 @@ test('serves the prebuilt dashboard from outDir and 404s missing assets', async 
   });
 });
 
-test('configuration API supports inventory, export preview and selective import', async () => {
+test('configuration API is a read-only loopback inventory', async () => {
   const calls = [];
   const configService = {
     async inspect() {
       calls.push(['inspect']);
-      return { agents: [{ id: 'codex', items: [] }], warnings: [] };
-    },
-    async exportBundle(items) {
-      calls.push(['export', items]);
-      return { format: 'toksight-agent-config', version: 1, createdAt: '2026-09-02T12:30:00.000Z', items: [] };
-    },
-    async previewBundle(bundle) {
-      calls.push(['preview', bundle]);
-      return { format: bundle.format, items: [{ id: 'codex.config', redacted: true }] };
-    },
-    async importBundle(bundle, items) {
-      calls.push(['import', bundle, items]);
-      return { imported: items.map((id) => ({ id })), backups: [] };
+      return { agents: [{ id: 'codex', files: [], summary: {} }], warnings: [] };
     },
   };
 
@@ -108,85 +96,40 @@ test('configuration API supports inventory, export preview and selective import'
     const inventory = await fetch(`${url}/api/config`);
     assert.equal(inventory.status, 200);
     assert.equal(inventory.headers.get('access-control-allow-origin'), null);
-    assert.deepEqual(await inventory.json(), { agents: [{ id: 'codex', items: [] }], warnings: [] });
+    assert.equal(inventory.headers.get('cache-control'), 'no-store');
+    assert.deepEqual(await inventory.json(), { agents: [{ id: 'codex', files: [], summary: {} }], warnings: [] });
 
-    const exported = await fetch(`${url}/api/config/export`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ items: ['codex.config'] }),
-    });
-    assert.equal(exported.status, 200);
-    assert.match(exported.headers.get('content-disposition'), /\.toksight-config\.json/);
-    const bundle = await exported.json();
+    // Write attempts and sub-paths are rejected outright — there is no
+    // transfer API to abuse, so nothing but GET inspect ever runs.
+    const posted = await fetch(`${url}/api/config`, { method: 'POST', body: '{}' });
+    assert.equal(posted.status, 405);
+    assert.equal((await posted.json()).code, 'METHOD_NOT_ALLOWED');
 
-    const previewed = await fetch(`${url}/api/config/import/preview`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json; charset=utf-8' },
-      body: JSON.stringify({ bundle }),
-    });
-    assert.deepEqual(await previewed.json(), {
-      format: 'toksight-agent-config',
-      items: [{ id: 'codex.config', redacted: true }],
-    });
-
-    const imported = await fetch(`${url}/api/config/import`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ bundle, items: ['codex.config'] }),
-    });
-    assert.deepEqual(await imported.json(), { imported: [{ id: 'codex.config' }], backups: [] });
+    const subPath = await fetch(`${url}/api/config/export`);
+    assert.equal(subPath.status, 404);
+    const imported = await fetch(`${url}/api/config/import`, { method: 'POST', body: '{}' });
+    assert.equal(imported.status, 404);
   });
 
-  assert.deepEqual(calls, [
-    ['inspect'],
-    ['export', ['codex.config']],
-    ['preview', { format: 'toksight-agent-config', version: 1, createdAt: '2026-09-02T12:30:00.000Z', items: [] }],
-    ['import', { format: 'toksight-agent-config', version: 1, createdAt: '2026-09-02T12:30:00.000Z', items: [] }, ['codex.config']],
-  ]);
+  assert.deepEqual(calls, [['inspect']]);
 });
 
-test('configuration writes require JSON and return structured service errors', async () => {
+test('configuration API reports a missing service and inspect failures', async () => {
+  await withServer({}, async (url) => {
+    const missing = await fetch(`${url}/api/config`);
+    assert.equal(missing.status, 503);
+    assert.equal((await missing.json()).code, 'CONFIG_UNAVAILABLE');
+  });
+
   const configService = {
-    inspect: async () => ({ agents: [], warnings: [] }),
-    exportBundle: async () => {
-      throw Object.assign(new Error('bad selection'), { status: 400, code: 'INVALID_SELECTION' });
+    async inspect() {
+      throw new Error('disk on fire');
     },
   };
   await withServer({ configService }, async (url) => {
-    const wrongType = await fetch(`${url}/api/config/export`, { method: 'POST', body: '{}' });
-    assert.equal(wrongType.status, 415);
-    assert.equal((await wrongType.json()).code, 'UNSUPPORTED_MEDIA_TYPE');
-
-    const almostJson = await fetch(`${url}/api/config/export`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/jsonp' },
-      body: '{}',
-    });
-    assert.equal(almostJson.status, 415);
-
-    const tooLarge = await fetch(`${url}/api/config/export`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: 'x'.repeat(12 * 1024 * 1024 + 1),
-    });
-    assert.equal(tooLarge.status, 413);
-    assert.equal((await tooLarge.json()).code, 'BODY_TOO_LARGE');
-
-    const invalid = await fetch(`${url}/api/config/export`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: '{',
-    });
-    assert.equal(invalid.status, 400);
-    assert.equal((await invalid.json()).code, 'INVALID_JSON');
-
-    const serviceError = await fetch(`${url}/api/config/export`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: '{"items":[]}',
-    });
-    assert.equal(serviceError.status, 400);
-    assert.deepEqual(await serviceError.json(), { error: 'bad selection', code: 'INVALID_SELECTION' });
+    const failed = await fetch(`${url}/api/config`);
+    assert.equal(failed.status, 500);
+    assert.deepEqual(await failed.json(), { error: 'disk on fire', code: 'CONFIG_ERROR' });
   });
 });
 

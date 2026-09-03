@@ -1217,7 +1217,7 @@ code {
   color: var(--color-success);
 }
 
-/* Agent configuration transfer */
+/* --- config viewer page --- */
 
 .config-frame {
   min-height: calc(100vh - clamp(24px, 5vw, 80px));
@@ -1265,7 +1265,7 @@ code {
   background: var(--color-border-strong);
 }
 
-.config-pane {
+.config-agent {
   background: var(--color-panel);
   display: flex;
   flex-direction: column;
@@ -1273,429 +1273,335 @@ code {
   padding: var(--space-6);
 }
 
-.config-pane-head {
+.config-agent-head {
   align-items: flex-start;
   display: flex;
   gap: var(--space-4);
   justify-content: space-between;
-  margin-bottom: var(--space-5);
-}
-
-.config-pane-head h2 {
-  font-family: var(--font-sans);
-  font-size: var(--font-size-xl);
-  letter-spacing: -0.02em;
-  line-height: 1.25;
-  margin-bottom: var(--space-2);
-}
-
-.config-pane-head p {
-  color: var(--color-text-muted);
-  font-family: var(--font-sans);
-  font-size: var(--font-size-xs);
-  max-width: 58ch;
-}
-
-.config-select-actions {
-  display: inline-flex;
-  flex: none;
-  gap: 1px;
-  background: var(--color-line);
-  border: 1px solid var(--color-line);
-}
-
-.config-select-actions button {
-  background: var(--color-panel-2);
-  border: 0;
-  color: var(--color-text-secondary);
-  font-family: var(--font-mono);
-  font-size: var(--font-size-2xs);
-  letter-spacing: 0.06em;
-  padding: var(--space-1) var(--space-2);
-  text-transform: uppercase;
-}
-
-.config-select-actions button:hover {
-  background: var(--color-primary);
-  color: var(--color-primary-ink);
-}
-
-.config-select-actions-wide {
-  align-self: flex-end;
-  margin: 0 0 var(--space-3);
-}
-
-.config-agents {
-  display: flex;
-  flex: 1 1 auto;
-  flex-direction: column;
-  gap: var(--space-3);
-}
-
-.config-agent {
-  border: 1px solid var(--color-border-strong);
-  min-width: 0;
-}
-
-.config-agent-head {
-  align-items: center;
-  background: var(--color-panel-2);
-  border-bottom: 1px solid var(--color-border-strong);
-  display: flex;
-  justify-content: space-between;
-  padding: var(--space-2) var(--space-3);
+  margin-bottom: var(--space-4);
 }
 
 .config-agent-head h3 {
-  font-size: var(--font-size-xs);
+  font-family: var(--font-sans);
+  font-size: var(--font-size-xl);
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+  margin: 0 0 var(--space-1);
+}
+
+.config-agent-head p {
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-2xs);
+  margin: 0;
+}
+
+.config-agent-badge {
+  background: var(--color-panel-2);
+  border: 1px solid var(--color-border-strong);
+  color: var(--color-text-secondary);
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: var(--font-size-2xs);
+  letter-spacing: 0.04em;
+  padding: 3px 10px;
+}
+
+.config-agent-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.config-agent-empty {
+  color: var(--color-text-muted);
+  font-family: var(--font-sans);
+  margin: 0;
+}
+
+.config-kv {
+  border: 1px solid var(--color-border-strong);
+  display: grid;
+  gap: 1px;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.config-kv > div {
+  background: var(--color-panel-2);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  padding: var(--space-2) var(--space-3);
+}
+
+.config-kv dt {
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-2xs);
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
 
-.config-agent-head span {
+.config-kv dd {
+  font-family: var(--font-mono);
+  font-size: var(--font-size-sm);
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.config-kv-detail {
   color: var(--color-text-muted);
-  font-size: var(--font-size-2xs);
 }
 
-.config-item {
-  background: var(--color-panel);
-  min-width: 0;
+.config-facts {
+  display: grid;
+  gap: 1px;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  list-style: none;
+  margin: 0;
+  padding: 0;
 }
 
-.config-item + .config-item {
-  border-top: 1px solid var(--color-line);
-}
-
-.config-item-missing {
-  background: color-mix(in srgb, var(--color-panel) 88%, var(--color-bg));
-}
-
-.config-item-main {
-  align-items: flex-start;
-  display: flex;
-  gap: var(--space-3);
-  justify-content: space-between;
-  padding: var(--space-3);
-}
-
-.config-choice {
-  align-items: flex-start;
-  cursor: pointer;
+.config-facts li {
+  background: var(--color-panel-2);
+  border: 1px solid var(--color-line);
   display: flex;
   gap: var(--space-2);
+  justify-content: space-between;
   min-width: 0;
-  position: relative;
+  padding: 6px var(--space-3);
 }
 
-.config-choice input {
-  height: 14px;
-  left: 0;
-  opacity: 0;
-  position: absolute;
-  top: 2px;
-  width: 14px;
+.config-facts li span {
+  color: var(--color-text-muted);
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: var(--font-size-xs);
 }
 
-.config-choice-box {
-  background: var(--color-panel-2);
+.config-facts li b {
+  font-family: var(--font-mono);
+  font-size: var(--font-size-xs);
+  font-weight: 500;
+  overflow-wrap: anywhere;
+  text-align: right;
+}
+
+.config-table-wrap {
   border: 1px solid var(--color-border-strong);
-  flex: 0 0 14px;
-  height: 14px;
-  margin-top: 2px;
-  position: relative;
-  width: 14px;
+  overflow-x: auto;
 }
 
-.config-choice input:checked + .config-choice-box {
-  background: var(--color-primary);
-  border-color: var(--color-primary);
+.config-table {
+  border-collapse: collapse;
+  width: 100%;
 }
 
-.config-choice input:focus-visible + .config-choice-box {
-  outline: 2px solid var(--color-primary);
-  outline-offset: 2px;
+.config-table th {
+  background: var(--color-panel-2);
+  border-bottom: 1px solid var(--color-border-strong);
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-2xs);
+  letter-spacing: 0.08em;
+  padding: 6px var(--space-3);
+  text-align: left;
+  text-transform: uppercase;
+  white-space: nowrap;
 }
 
-.config-choice:has(input:disabled) {
-  cursor: default;
-  opacity: 0.45;
+.config-table td {
+  border-bottom: 1px solid var(--color-line);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-xs);
+  max-width: 34ch;
+  overflow: hidden;
+  padding: 6px var(--space-3);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.config-choice-copy {
+.config-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.config-models {
   display: flex;
   flex-direction: column;
-  min-width: 0;
+  gap: var(--space-2);
 }
 
-.config-choice-copy b {
-  font-family: var(--font-sans);
-  font-size: var(--font-size-sm);
+.config-model-group {
+  align-items: baseline;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.config-model-provider {
+  color: var(--color-text-muted);
+  flex: 0 0 220px;
+  font-family: var(--font-mono);
+  font-size: var(--font-size-xs);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.config-choice-copy span {
-  color: var(--color-text-muted);
-  font-size: var(--font-size-2xs);
-}
-
-.config-item-state {
-  align-items: center;
+.config-chips {
   display: flex;
-  flex: none;
+  flex: 1 1 240px;
   flex-wrap: wrap;
-  gap: var(--space-2);
-  justify-content: flex-end;
+  gap: 6px;
+  min-width: 0;
 }
 
-.tag {
+.chip {
+  align-items: baseline;
+  background: var(--color-panel-2);
   border: 1px solid var(--color-line);
+  display: inline-flex;
+  font-family: var(--font-mono);
+  font-size: var(--font-size-xs);
+  gap: 6px;
+  padding: 3px 8px;
+}
+
+.chip i {
   color: var(--color-text-muted);
+  font-style: normal;
   font-size: var(--font-size-2xs);
-  letter-spacing: 0.07em;
-  padding: 0 var(--space-2);
-  text-transform: uppercase;
-  white-space: nowrap;
 }
 
-.tag-ok {
-  border-color: color-mix(in srgb, var(--color-success) 50%, transparent);
-  color: var(--color-success);
-}
-
-.tag-warn {
-  border-color: color-mix(in srgb, var(--color-warning) 50%, transparent);
-  color: var(--color-warning);
-}
-
-.tag-error {
-  border-color: color-mix(in srgb, var(--color-error) 50%, transparent);
-  color: var(--color-error);
-}
-
-.preview-toggle {
+.config-files-toggle {
   align-items: center;
   background: transparent;
   border: 0;
-  color: var(--color-primary);
+  color: var(--color-text-secondary);
   display: inline-flex;
   font-family: var(--font-mono);
-  font-size: var(--font-size-2xs);
-  gap: var(--space-1);
-  padding: 0 var(--space-1);
+  font-size: var(--font-size-xs);
+  gap: 6px;
+  letter-spacing: 0.04em;
+  padding: 0;
   text-transform: uppercase;
 }
 
-.preview-toggle:hover {
-  background: var(--color-primary);
-  color: var(--color-primary-ink);
+.config-files-toggle:hover {
+  color: var(--color-primary);
 }
 
-.preview-toggle svg {
-  transform: rotate(-90deg);
+.config-files-toggle svg {
+  transition: transform 0.15s ease;
 }
 
-.preview-toggle.open svg {
-  transform: rotate(0);
+.config-files-toggle.open svg {
+  transform: rotate(180deg);
+}
+
+.config-files-list {
+  border-top: 1px dashed var(--color-border-strong);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin-top: var(--space-3);
+  padding-top: var(--space-3);
+}
+
+.config-file {
+  background: var(--color-panel-2);
+  border: 1px solid var(--color-line);
+  padding: var(--space-3);
+}
+
+.config-file-missing {
+  opacity: 0.6;
+}
+
+.config-file-head {
+  align-items: baseline;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-3);
+  margin-bottom: var(--space-2);
+}
+
+.config-file-head b {
+  font-family: var(--font-sans);
+  font-size: var(--font-size-sm);
+}
+
+.config-file-name {
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-2xs);
+}
+
+.config-file-note {
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-xs);
+  margin: 0;
 }
 
 .config-meta {
   display: grid;
-  gap: var(--space-1);
-  padding: 0 var(--space-3) var(--space-3) 36px;
+  gap: 2px 12px;
+  grid-template-columns: max-content minmax(0, 3fr) max-content minmax(0, 2fr);
+  margin: 0 0 var(--space-2);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-2xs);
 }
 
 .config-meta > div {
-  display: grid;
-  gap: var(--space-2);
-  grid-template-columns: 88px minmax(0, 1fr);
+  display: flex;
+  gap: 6px;
+  min-width: 0;
 }
 
 .config-meta dt {
   color: var(--color-text-muted);
-  font-size: var(--font-size-2xs);
-  letter-spacing: 0.06em;
+  flex: none;
   text-transform: uppercase;
 }
 
 .config-meta dd {
-  color: var(--color-text-secondary);
-  font-size: var(--font-size-2xs);
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-
-.config-preview {
-  border-top: 1px solid var(--color-line);
-}
-
-.config-preview-head {
-  background: var(--color-panel-2);
-  color: var(--color-text-muted);
-  display: flex;
-  font-size: var(--font-size-2xs);
-  justify-content: space-between;
-  letter-spacing: 0.08em;
-  padding: var(--space-1) var(--space-3);
-  text-transform: uppercase;
-}
-
-.config-preview pre {
-  color: var(--color-text-secondary);
-  font-family: var(--font-mono);
-  font-size: var(--font-size-2xs);
-  line-height: 1.55;
-  max-height: 320px;
-  overflow: auto;
-  padding: var(--space-3);
-  tab-size: 2;
-  white-space: pre-wrap;
-  word-break: break-word;
-}
-
-.config-pane-foot {
-  align-items: center;
-  border-top: 1px solid var(--color-border-strong);
-  display: flex;
-  justify-content: space-between;
-  margin-top: var(--space-5);
-  padding-top: var(--space-4);
-}
-
-.config-pane-foot > span {
-  color: var(--color-text-muted);
-  font-size: var(--font-size-2xs);
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-}
-
-.config-drop {
-  align-items: center;
-  background: var(--color-panel-2);
-  border: 1px dashed var(--color-border-strong);
-  display: grid;
-  gap: var(--space-3);
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  margin-bottom: var(--space-4);
-  padding: var(--space-4);
-}
-
-.config-drop > svg {
-  color: var(--color-primary);
-}
-
-.config-drop > div {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-}
-
-.config-drop b {
-  font-family: var(--font-sans);
+  margin: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.config-drop span {
-  color: var(--color-text-muted);
-  font-size: var(--font-size-2xs);
+.config-preview {
+  border: 1px solid var(--color-border-strong);
 }
 
-.config-drop input {
-  display: none;
-}
-
-.config-bundle-meta {
-  border-bottom: 1px solid var(--color-line);
+.config-preview-head {
+  align-items: center;
+  background: var(--color-panel);
+  border-bottom: 1px solid var(--color-border-strong);
   color: var(--color-text-muted);
   display: flex;
-  flex-wrap: wrap;
+  font-family: var(--font-mono);
   font-size: var(--font-size-2xs);
-  gap: var(--space-2) var(--space-4);
-  margin-bottom: var(--space-3);
-  padding-bottom: var(--space-3);
-  text-transform: uppercase;
+  gap: var(--space-3);
+  justify-content: space-between;
+  padding: 5px var(--space-3);
 }
 
-.config-import-items {
-  border: 1px solid var(--color-border-strong);
-  gap: 0;
+.config-preview pre {
+  margin: 0;
+  max-height: 360px;
+  overflow: auto;
+  padding: var(--space-3);
 }
 
 .config-empty {
-  border: 1px dashed var(--color-border-strong);
+  background: var(--color-panel);
   color: var(--color-text-muted);
   font-family: var(--font-sans);
   padding: var(--space-6);
-  text-align: center;
-}
-
-.config-empty-import {
-  align-items: center;
-  display: flex;
-  flex: 1 1 auto;
-  flex-direction: column;
-  justify-content: center;
-  min-height: 280px;
-}
-
-.config-empty-import > span {
-  color: var(--color-line);
-  font-family: var(--font-mono);
-  font-size: var(--font-size-hero);
-  font-weight: 700;
-  line-height: 1;
-}
-
-.config-empty-import p {
-  max-width: 48ch;
-}
-
-.config-result {
-  border: 1px solid var(--color-success);
-  display: flex;
-  flex: 1 1 auto;
-  flex-direction: column;
-  gap: var(--space-4);
-  min-height: 280px;
-  padding: var(--space-5);
-}
-
-.config-result h3 {
-  align-items: center;
-  color: var(--color-success);
-  display: flex;
-  font-size: var(--font-size-sm);
-  gap: var(--space-2);
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.config-result b {
-  color: var(--color-text-muted);
-  display: block;
-  font-size: var(--font-size-2xs);
-  letter-spacing: 0.06em;
-  margin-bottom: var(--space-1);
-  text-transform: uppercase;
-}
-
-.config-result ul {
-  list-style: none;
-}
-
-.config-result li,
-.config-result p {
-  color: var(--color-text-secondary);
-  font-size: var(--font-size-2xs);
-  overflow-wrap: anywhere;
-}
-
-.config-result li::before {
-  color: var(--color-success);
-  content: "> ";
 }
 
 .config-loading {
@@ -1815,40 +1721,24 @@ code {
   }
 
   .config-hero,
-  .config-pane {
+  .config-agent {
     padding: var(--space-4);
   }
 
-  .config-pane-head,
-  .config-item-main {
+  .config-agent-head {
     flex-direction: column;
   }
 
-  .config-select-actions {
-    align-self: flex-start;
-  }
-
-  .config-item-state {
-    justify-content: flex-start;
-    padding-left: 24px;
+  .config-model-provider {
+    flex-basis: 100%;
   }
 
   .config-meta {
-    padding-left: var(--space-3);
+    grid-template-columns: 1fr;
   }
 
   .config-meta > div {
-    grid-template-columns: 1fr;
-    gap: 0;
-  }
-
-  .config-drop {
-    grid-template-columns: auto minmax(0, 1fr);
-  }
-
-  .config-drop .btn {
-    grid-column: 1 / -1;
-    justify-content: center;
+    grid-template-columns: max-content minmax(0, 1fr);
   }
 
   .cell,

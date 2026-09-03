@@ -1,6 +1,6 @@
 // Minimal zero-dependency HTTP server for `toksight web`.
 // Serves the prebuilt static dashboard from web/out and a live JSON API at
-// /api/data plus the loopback-only agent configuration transfer endpoints.
+// /api/data plus the read-only agent configuration inventory at /api/config.
 // The data API re-collects on every request, so a browser refresh always
 // reflects the latest session files.
 
@@ -35,8 +35,6 @@ const JSON_HEADERS = {
   'cache-control': 'no-store',
   'x-content-type-options': 'nosniff',
 };
-
-const MAX_JSON_BODY_BYTES = 12 * 1024 * 1024;
 
 // Shown at / when web/out has not been built yet; the API keeps working so the
 // dashboard can be developed against live data.
@@ -73,32 +71,6 @@ export function isLoopbackAddress(address) {
     return isIP(mapped) === 4 && mapped.split('.')[0] === '127';
   }
   return false;
-}
-
-async function readJsonBody(req) {
-  const contentType = String(req.headers['content-type'] || '').toLowerCase();
-  if (contentType.split(';', 1)[0].trim() !== 'application/json') {
-    throw Object.assign(new Error('content-type must be application/json'), { status: 415, code: 'UNSUPPORTED_MEDIA_TYPE' });
-  }
-  const declared = Number(req.headers['content-length']);
-  if (Number.isFinite(declared) && declared > MAX_JSON_BODY_BYTES) {
-    throw Object.assign(new Error('request body is too large'), { status: 413, code: 'BODY_TOO_LARGE' });
-  }
-
-  const chunks = [];
-  let size = 0;
-  for await (const chunk of req) {
-    size += chunk.length;
-    if (size > MAX_JSON_BODY_BYTES) {
-      throw Object.assign(new Error('request body is too large'), { status: 413, code: 'BODY_TOO_LARGE' });
-    }
-    chunks.push(chunk);
-  }
-  try {
-    return JSON.parse(Buffer.concat(chunks).toString('utf8'));
-  } catch {
-    throw Object.assign(new Error('request body must be valid JSON'), { status: 400, code: 'INVALID_JSON' });
-  }
 }
 
 function sendJson(res, status, payload, method = 'GET', extraHeaders = {}) {
@@ -208,51 +180,28 @@ export function createWebServer({
 
     if (pathname === '/api/config' || pathname.startsWith('/api/config/')) {
       if (!isLoopbackAddress(req.socket.remoteAddress)) {
-        sendJson(res, 403, { error: 'configuration endpoints are only available from this machine', code: 'LOOPBACK_ONLY' }, req.method);
+        sendJson(res, 403, { error: 'configuration endpoint is only available from this machine', code: 'LOOPBACK_ONLY' }, req.method);
         return;
       }
       if (!configService) {
         sendJson(res, 503, { error: 'configuration service is unavailable', code: 'CONFIG_UNAVAILABLE' }, req.method);
         return;
       }
-
-      try {
-        if (pathname === '/api/config') {
-          if (req.method !== 'GET' && req.method !== 'HEAD') {
-            sendJson(res, 405, { error: 'method not allowed', code: 'METHOD_NOT_ALLOWED' }, req.method, { allow: 'GET, HEAD' });
-            return;
-          }
-          sendJson(res, 200, await configService.inspect(), req.method);
-          return;
-        }
-
-        if (req.method !== 'POST') {
-          sendJson(res, 405, { error: 'method not allowed', code: 'METHOD_NOT_ALLOWED' }, req.method, { allow: 'POST' });
-          return;
-        }
-        const body = await readJsonBody(req);
-
-        if (pathname === '/api/config/export') {
-          const bundle = await configService.exportBundle(body?.items);
-          const stamp = String(bundle.createdAt || new Date().toISOString()).replace(/[:.]/g, '-');
-          sendJson(res, 200, bundle, req.method, {
-            'content-disposition': `attachment; filename="toksight-config-${stamp}.toksight-config.json"`,
-          });
-          return;
-        }
-        if (pathname === '/api/config/import/preview') {
-          sendJson(res, 200, await configService.previewBundle(body?.bundle), req.method);
-          return;
-        }
-        if (pathname === '/api/config/import') {
-          sendJson(res, 200, await configService.importBundle(body?.bundle, body?.items), req.method);
-          return;
-        }
+      // Read-only by design: the inventory endpoint never accepts request
+      // bodies, so nothing but GET/HEAD ever reaches the config service.
+      if (pathname !== '/api/config') {
         sendJson(res, 404, { error: 'not found', code: 'NOT_FOUND' }, req.method);
+        return;
+      }
+      if (req.method !== 'GET' && req.method !== 'HEAD') {
+        sendJson(res, 405, { error: 'method not allowed', code: 'METHOD_NOT_ALLOWED' }, req.method, { allow: 'GET, HEAD' });
+        return;
+      }
+      try {
+        sendJson(res, 200, await configService.inspect(), req.method);
       } catch (err) {
-        const status = Number.isInteger(err?.status) ? err.status : 500;
-        if (status >= 500) logger?.warn?.(`toksight web: ${pathname} failed: ${err?.message || err}`);
-        sendJson(res, status, { error: String(err?.message || err), code: err?.code || 'CONFIG_ERROR' }, req.method);
+        logger?.warn?.(`toksight web: /api/config failed: ${err?.message || err}`);
+        sendJson(res, 500, { error: String(err?.message || err), code: 'CONFIG_ERROR' }, req.method);
       }
       return;
     }

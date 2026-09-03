@@ -146,34 +146,30 @@ OpenCode 自带的价格（`cost` 字段）会被直接采用。
 生效；页面支持手动刷新、30 秒自动刷新，以及顶栏 中文 / EN 切换（记在 `localStorage` 键
 `toksight-locale`，默认中文）。
 
-### Agent 配置迁移
+### Agent 配置一览（只读）
 
-从仪表盘顶栏进入**配置**（或直接打开 `/config`），可以预览、按项导出及按项导入用户级
-Agent 配置。首版有意只支持以下固定文件：
+从仪表盘顶栏进入**配置**（或直接打开 `/config`），查看本机五个 Agent 的用户级配置摘要：
+默认模型、认证方式、服务商与端点、模型列表（含上下文长度）、权限/沙箱等关键设置，以及
+每项设置来自哪个文件。展开任意 Agent 可查看其配置文件的脱敏原文。**该页面只读，不会
+修改任何文件。**
 
-| Agent | 纳入的用户级配置 |
+读取范围（固定白名单，全部为用户级文件）：
+
+| Agent | 读取的文件 |
 |---|---|
-| ZCode | `%ZCODE_HOME%\v2\config.json`、`v2\setting.json`、`cli\config.json`（默认根目录 `%USERPROFILE%\.zcode`） |
-| Claude Code | `%CLAUDE_CONFIG_DIR%\settings.json`（默认 `%USERPROFILE%\.claude`） |
-| Codex CLI | `%CODEX_HOME%\config.toml`（默认 `%USERPROFILE%\.codex`） |
-| OpenCode | `%OPENCODE_CONFIG_DIR%\opencode.json` / `opencode.jsonc`（目录默认取 `%XDG_CONFIG_HOME%\opencode`，再回退 `%USERPROFILE%\.config\opencode`）；设置 `%OPENCODE_CONFIG%` 时覆盖对应 JSON/JSONC 项目 |
-| Kimi Code | `%KIMI_CODE_HOME%\config.toml`、`tui.toml`、`mcp.json`（默认 `%USERPROFILE%\.kimi-code`） |
+| ZCode | `%ZCODE_HOME%\v2\config.json`、`v2\setting.json`、`cli\config.json`、`v2\credentials.json`（仅探测；默认根 `%USERPROFILE%\.zcode`） |
+| Claude Code | `%CLAUDE_CONFIG_DIR%\settings.json`、`.claude.json`（状态/MCP，默认在用户主目录）、`.credentials.json`（仅探测；默认 `%USERPROFILE%\.claude`） |
+| Codex CLI | `%CODEX_HOME%\config.toml`、`auth.json`（仅提取登录方式）、`.env`（仅变量名）、`*.config.toml` profiles（默认 `%USERPROFILE%\.codex`） |
+| OpenCode | `%OPENCODE_CONFIG_DIR%\opencode.json` / `opencode.jsonc`、数据目录 `auth.json`（仅提取服务商名）、状态目录 `model.json`（默认 `%USERPROFILE%\.config\opencode` 等，支持 `OPENCODE_CONFIG` 覆盖） |
+| Kimi Code | `%KIMI_CODE_HOME%\config.toml`、`tui.toml`、`mcp.json`、`region`、`credentials\kimi-code.json`（仅探测；默认 `%USERPROFILE%\.kimi-code`） |
 
-项目级设置、托管策略、会话/历史数据、`.env` 以及专用凭据/认证存储不会被此页面扫描。首版
-也不做逐字段编辑；每个可勾选项目就是一个完整文件。明确排除 ZCode `v2\credentials.json`、
-Claude `%USERPROFILE%\.claude.json`（混有状态/认证/MCP 数据）、Codex `auth.json`、OpenCode
-`%USERPROFILE%\.local\share\opencode\auth.json` 以及 Kimi 的凭据目录。
+凭据文件**永不显示内容**——只报告是否存在，或提取登录方式（如 Codex 的 `chatgpt` /
+`apikey`）与 OAuth 状态。普通配置文件的原文预览会把密钥、令牌类值替换为 `[REDACTED]`：
+Claude `settings.json` 的 `env` 块按变量名逐项判断（`ANTHROPIC_BASE_URL`、
+`ANTHROPIC_MODEL` 可见，`ANTHROPIC_API_KEY` 隐藏），因此第三方中转配置仍具可读性。
+项目级配置、托管/企业策略文件不在扫描范围内。配置 API 仅限本机回环客户端访问，
+即使 `--host` 开放了统计仪表盘。
 
-导出结果是可直接检查的 `.toksight-config.json` 包，带校验和；清单不会额外写入源/目标绝对路径
-（原配置正文自身仍可能包含路径）。
-页面中的预览会隐藏常见敏感键值，但下载的配置包保留**原文件完整内容**，因此可能含 API key
-或 token；请按凭据的安全级别保管和传递。校验和只能发现意外损坏，并非数字签名；配置还可能
-定义 hooks、插件或 MCP 命令，因此只应导入可信来源的配置包。
-
-导入时，配置包不能指定写入位置：toksight 只会根据上面的固定白名单解析每个已选项目的目标。
-若目标已存在，先把它改名为 `<文件名>.backup-YYYYMMDDTHHMMSSZ`（重名时追加 `-2`、`-3`……），
-再放入新文件。多项导入会先准备完全部临时文件；任一项应用失败时，会尝试恢复全部备份。
-配置 API 仅同源、不开 CORS；即使通过 `--host` 对外开放统计仪表盘，也只允许回环客户端操作配置。
 
 ### 仪表盘构建产物
 
@@ -195,7 +191,7 @@ npm run web:build
 
 参数：`--port <n>`（默认 4729）、`--host <addr>`（默认 127.0.0.1）、`--no-open`
 （不自动开浏览器）、`--api-only`（只开 JSON API，供 UI 开发——配合 `web/` 下的
-`npm run web:dev` 使用）。无论 `--host` 如何设置，配置迁移始终要求回环客户端。
+`npm run web:dev` 使用）。无论 `--host` 如何设置，配置页始终只允许回环客户端访问。
 
 ### 缓存命中率
 
@@ -207,9 +203,8 @@ npm run web:build
 
 ## 隐私
 
-toksight 是本地优先的：用量统计只**读取**你机器上的会话文件，绝不上传数据。只有你在配置页
-明确导入所选项目时才会写文件，而且所有已存在的目标都会先备份。导入/导出数据只在本地服务器
-与浏览器之间传递。唯一的外部网络请求是匿名的 LiteLLM 价格拉取；`--offline` 可以连它也关掉。
+toksight 是本地优先的：统计与配置页都只**读取**你机器上的本地文件，绝不上传数据，也不会修改
+任何 Agent 配置。唯一的外部网络请求是匿名的 LiteLLM 价格拉取；`--offline` 可以连它也关掉。
 
 ## JSON 输出
 
@@ -244,7 +239,7 @@ src/args.js            命令行参数解析（--flag value / --flag=value）
 src/render.js          文本渲染（表格、摘要、警告）
 src/payload.js         --json / web API 的载荷契约
 src/dates.js           共享的本地时间日期工具（DST 安全）
-src/agentconfigs.js    固定范围的配置预览/导出/导入与备份事务
+src/agentconfigs.js    固定白名单配置读取与结构化摘要（含 src/toml.js TOML 解析）
 src/pricing.js         内置价格表 + LiteLLM 缓存 + 用户覆盖
 src/aggregate.js       分组与合计
 src/webdata.js         网页仪表盘聚合（热力图、趋势、会话……）
@@ -262,7 +257,7 @@ CLI 本体保持**零运行时依赖**；仪表盘的依赖只存在于 `web/pac
 ### 路线图
 
 - [x] 网页仪表盘（`toksight web`，第二阶段）
-- [x] Agent 配置按项预览/导出/导入（`toksight web` → 配置）
+- [x] Agent 配置只读一览：摘要 + 脱敏原文（`toksight web` → 配置）
 - [ ] TUI watch 模式
 - [ ] 更多客户端（Cursor、Windsurf、pi……）
 - [ ] `--export csv`、排行榜式分享

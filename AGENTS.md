@@ -4,14 +4,15 @@
 
 `toksight` — a Node.js CLI (zero runtime dependencies, ESM only, Node >= 20) that tracks token
 usage, cost, and cache hit rate of AI coding agents by reading the local session files those
-agents already write. Local-first: statistics only read; the explicit web config import is the
-sole write path and backs up existing targets first. The sole network call is the LiteLLM pricing
+agents already write, plus a read-only dashboard view of the agents' configuration files.
+Local-first: everything is read-only — stats scan session files, the config page shows redacted
+previews and never writes. The sole network call is the LiteLLM pricing
 fetch (skippable with `--offline`). Phase 1 (stats) is done; phase 2 adds the `toksight web`
-local dashboard and fixed-scope agent configuration transfer (still no TUI).
+local dashboard with a read-only agent configuration viewer (still no TUI).
 
 ## Commands
 
-- `node --test` (or `npm test`) — run the node:test suite (90 tests); uses per-client fixtures, no
+- `node --test` (or `npm test`) — run the node:test suite (92 tests); uses per-client fixtures, no
   network needed. Note: `node --test test/` with a directory arg fails with MODULE_NOT_FOUND on
   Node v24/Windows (the directory is treated as a module to load) — that's why the script passes
   no path; explicit file paths or a glob like `node --test "test/*.test.js"` also work.
@@ -56,10 +57,13 @@ src/aggregate.js    grouping/totals (summarize, byModel/Day/Month/Session, cache
 src/webdata.js      web-dashboard aggregations over entries (heatmap, trend, trendByAgent,
                     hourly, today/last7Days/thisMonth, sessions w/ activeMs, longestSession)
                     — pure functions; day math imported from src/dates.js
-src/agentconfigs.js fixed five-agent user-config allowlist; redacted inventory, checksummed
-                    export bundles, selective transactional import with timestamped backups
+src/toml.js        tolerant TOML subset parser for agent configs ({ value, error }, never throws)
+src/agentconfigs.js read-only five-agent config viewer: fixed user-file allowlist, per-agent
+                    structured summary (default model, auth, providers, models, facts) built by
+                    SUMMARIZERS + redacted raw previews; credential files probed for existence
+                    only, never previewed
 src/webserver.js    zero-dep node:http server: static web/out + live /api/data and loopback-only
-                    /api/config preview/export/import endpoints
+                    read-only /api/config inventory (GET/HEAD only, no write endpoints)
 src/format.js       ANSI tables & number formatting
 src/fsutils.js      walkFiles (returns { files, warnings }: root ENOENT is silent, other read
                     failures warn), streaming readJsonl, readJson, pathExists
@@ -158,15 +162,18 @@ cost (only OpenCode does).
   TTL); binds 127.0.0.1 by default (never 0.0.0.0 by default); static assets under `web/out/_next/`
   are immutable-cached, everything else `no-cache`; path traversal is rejected (403); if
   `web/out/index.html` is missing, `/` serves the built-in setup page instead of failing.
-- **Config transfer scope/safety**: only user-level configuration for ZCode, Claude Code, Codex
-  CLI, OpenCode and Kimi Code is allowlisted in `src/agentconfigs.js`; never add project/managed
-  policy, `.env`, session/history or auth/credential stores implicitly. Inventory and imported
-  package previews are redacted, but exports intentionally preserve exact file contents and can
-  contain secrets. Bundle paths are never trusted: destinations come only from the allowlist and
-  injected env/home. Selective import prepares same-directory temp files, renames each existing
-  target to `.backup-<UTC timestamp>`, applies all items, and attempts a full rollback on failure.
-  Config APIs require loopback clients, JSON POSTs and same-origin/no-CORS access even when the
-  statistics server is bound more broadly.
+- **Config viewer scope/redaction**: the config page is strictly read-only. Only user-level files
+  for ZCode, Claude Code, Codex CLI, OpenCode and Kimi Code are allowlisted in
+  `src/agentconfigs.js`; project/managed policy files are out of scope on purpose. Credential
+  files (ZCode `v2/credentials.json`, Claude `.credentials.json`, Codex `auth.json`/`.env`,
+  OpenCode data-dir `auth.json`, Kimi `credentials/`) are probed for existence and whitelisted
+  facts ONLY (auth mode, key names, env-var names) — never previewed. Everything else gets
+  `redactConfig`: JSON/JSONC parse to a tree (string-aware JSONC stripper, then per-key
+  redaction), TOML/text fall back to line redaction. `env` blocks are walked into per variable
+  name (SENSITIVE_CONTAINER excludes env deliberately) so Claude relay configs stay readable;
+  `oauth`/`headers`/`credentials` containers collapse whole. Previews cap at 64 KB, files over
+  1 MB keep metadata only. `GET /api/config` requires loopback clients and rejects every other
+  method/path — there are no write endpoints at all.
 - Windows compatibility matters (paths, fixtures use `C:\\...` directories); `pathExists`
   handles `ENOTDIR` for files.
 
