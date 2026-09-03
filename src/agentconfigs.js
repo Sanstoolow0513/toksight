@@ -262,7 +262,7 @@ function extractEnvNames(raw) {
   return { varNames: names };
 }
 
-function fileDefs({ env, home }) {
+export function fileDefs({ env, home }) {
   const zcodeHome = env.ZCODE_HOME || path.join(home, '.zcode');
   const claudeDir = env.CLAUDE_CONFIG_DIR || path.join(home, '.claude');
   // CLAUDE_CONFIG_DIR relocates .claude.json too (GitHub-confirmed behavior);

@@ -4,11 +4,12 @@
 
 `toksight` — a Node.js CLI (zero runtime dependencies, ESM only, Node >= 20) that tracks token
 usage, cost, and cache hit rate of AI coding agents by reading the local session files those
-agents already write, plus a read-only dashboard view of the agents' configuration files.
-Local-first: everything is read-only — stats scan session files, the config page shows redacted
-previews and never writes. The sole network call is the LiteLLM pricing
-fetch (skippable with `--offline`). Phase 1 (stats) is done; phase 2 adds the `toksight web`
-local dashboard with a read-only agent configuration viewer (still no TUI).
+agents already write, plus a read-only dashboard view of the agents' configuration files with an
+opt-in bundle export/import (the only write path — backup-first, allowlist-scoped).
+Local-first: stats scan session files read-only, the config page shows redacted previews, and
+credential files are never displayed, bundled or imported. The sole network call is the LiteLLM
+pricing fetch (skippable with `--offline`). Phase 1 (stats) is done; phase 2 adds the `toksight
+web` local dashboard with the agent configuration viewer/transfer (still no TUI).
 
 ## Commands
 
@@ -61,20 +62,34 @@ src/toml.js        tolerant TOML subset parser for agent configs ({ value, error
 src/agentconfigs.js read-only five-agent config viewer: fixed user-file allowlist, per-agent
                     structured summary (default model, auth, providers, models, facts) built by
                     SUMMARIZERS + redacted raw previews; credential files probed for existence
-                    only, never previewed
+                    only, never previewed. fileDefs() is exported and reused by agenttransfer
+src/agenttransfer.js config bundle export/import — the ONLY write path in toksight. Export
+                    packs existing allowlisted kind:'config' files (never credentials) into one
+                    JSON bundle (unredacted: migration needs real values). planImport validates
+                    a bundle against the same allowlist (unknown/credential ids skipped,
+                    per-file 1 MB cap) and resolves targets on THIS machine; applyImport backs
+                    up existing targets to <config>/toksight/backups/<agentId>/<file>.<ts>
+                    then atomically replaces (temp file + rename). Bundle source paths are
+                    informational only — never write targets
 src/webserver.js    zero-dep node:http server: static web/out + live /api/data and loopback-only
-                    read-only /api/config inventory (GET/HEAD only, no write endpoints); both
-                    API routes validate the Host header against localhost names (DNS-rebinding
-                    defense — /api/config always, /api/data only when loopback-bound)
+                    /api/config endpoints (inventory GET, export GET, import preview/apply POST
+                    — the only write routes). All /api/config routes validate the Host header
+                    against localhost names (DNS-rebinding defense — always, even when
+                    --host is non-loopback) and reject Sec-Fetch-Site: cross-site; import POSTs
+                    additionally require application/json + a matching x-toksight-action
+                    header (both force a CORS preflight this server never answers, so foreign
+                    pages cannot fire writes), with a 10 MB body cap (drain-then-413)
 src/format.js       ANSI tables & number formatting
 src/fsutils.js      walkFiles (returns { files, warnings }: root ENOENT is silent, other read
                     failures warn) + walkFilesMany (multi-root merge shared by the
                     claude/codex/kimi parsers), streaming readJsonl, readJson, pathExists
 web/                Next.js (App Router, JS, no Tailwind) dashboard + app/config/page.js,
                     statically exported to web/out and served by the CLI; app/page.js +
-                    components/ (Heatmap,
-                    TrendChart with mix/agent step-after stacks, AgentsPanel, ModelBars with
-                    hard-split cache bars, Bars; every chart tooltip is the shared components/Tip)
+                    components/ (Heatmap, TrendChart with mix/agent step-after stacks,
+                    AgentsPanel, ModelBars with hard-split cache bars, Bars, TransferPanel
+                    (bundle export/import on /config — download/copy bundle, paste/pick file,
+                    server-side plan preview, apply with per-file results and backup paths);
+                    every chart tooltip is the shared components/Tip)
                     + lib/format.js + lib/i18n.js (zh-CN / en,
                     localStorage `toksight-locale`) + lib/palette.js; fluid layout + motion
                     rules (design-spec.md v6 is the construction spec;
@@ -165,12 +180,13 @@ cost (only OpenCode does).
   TTL); binds 127.0.0.1 by default (never 0.0.0.0 by default); static assets under `web/out/_next/`
   are immutable-cached, everything else `no-cache`; path traversal is rejected (403); if
   `web/out/index.html` is missing, `/` serves the built-in setup page instead of failing.
-- **Config viewer scope/redaction**: the config page is strictly read-only. Only user-level files
-  for ZCode, Claude Code, Codex CLI, OpenCode and Kimi Code are allowlisted in
+- **Config viewer scope/redaction**: the config page inventory is strictly read-only. Only
+  user-level files for ZCode, Claude Code, Codex CLI, OpenCode and Kimi Code are allowlisted in
   `src/agentconfigs.js`; project/managed policy files are out of scope on purpose. Credential
   files (ZCode `v2/credentials.json`, Claude `.credentials.json`, Codex `auth.json`/`.env`,
   OpenCode data-dir `auth.json`, Kimi `credentials/`) are probed for existence and whitelisted
-  facts ONLY (auth mode, key names, env-var names) — never previewed. Everything else gets
+  facts ONLY (auth mode, key names, env-var names) — never previewed, never bundled, never
+  importable (evalEntry rejects kind:'secret'). Everything else gets
   `redactConfig`: JSON/JSONC parse to a tree (string-aware JSONC stripper, then per-key
   redaction), TOML/text fall back to line redaction — quote-aware and multi-line-aware
   (a sensitive value spanning `"""`/`'''` strings or unbalanced brackets suppresses its
@@ -178,7 +194,15 @@ cost (only OpenCode does).
   name (SENSITIVE_CONTAINER excludes env deliberately) so Claude relay configs stay readable;
   `oauth`/`headers`/`credentials` containers collapse whole. Previews cap at 64 KB, files over
   1 MB keep metadata only. `GET /api/config` requires loopback clients with a localhost Host
-  header and rejects every other method/path — there are no write endpoints at all.
+  header and rejects every other method.
+- **Import safety**: `POST /api/config/import[/preview]` is the single write path in toksight.
+  Targets are resolved from THIS machine's allowlist only (a bundle's recorded paths are
+  informational), each file is content-capped at 1 MB, the whole body at 10 MB, and every
+  existing target is copied to `<config>/toksight/backups/<agentId>/<fileName>.<ts>` before
+  the temp-file+rename swap. Bundled config content is UNREDACTED on purpose (migration needs
+  real values, provider keys included) — the UI warns about safe handling. Write POSTs are
+  gated on application/json + `x-toksight-action` (CORS-preflight enforcement) and all
+  /api/config routes reject `Sec-Fetch-Site: cross-site`.
 - Windows compatibility matters (paths, fixtures use `C:\\...` directories); `pathExists`
   handles `ENOTDIR` for files.
 

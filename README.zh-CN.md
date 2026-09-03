@@ -146,12 +146,12 @@ OpenCode 自带的价格（`cost` 字段）会被直接采用。
 生效；页面支持手动刷新、30 秒自动刷新，以及顶栏 中文 / EN 切换（记在 `localStorage` 键
 `toksight-locale`，默认中文）。
 
-### Agent 配置一览（只读）
+### Agent 配置一览（只读 + 迁移）
 
 从仪表盘顶栏进入**配置**（或直接打开 `/config`），查看本机五个 Agent 的用户级配置摘要：
 默认模型、认证方式、服务商与端点、模型列表（含上下文长度）、权限/沙箱等关键设置，以及
-每项设置来自哪个文件。展开任意 Agent 可查看其配置文件的脱敏原文。**该页面只读，不会
-修改任何文件。**
+每项设置来自哪个文件。展开任意 Agent 可查看其配置文件的脱敏原文。页面底部的**打包与导入**
+面板是唯一的写入口：把配置收集成一个 JSON bundle 迁到别的机器，导入前已有文件会自动备份。
 
 读取范围（固定白名单，全部为用户级文件）：
 
@@ -169,6 +169,23 @@ Claude `settings.json` 的 `env` 块按变量名逐项判断（`ANTHROPIC_BASE_U
 `ANTHROPIC_MODEL` 可见，`ANTHROPIC_API_KEY` 隐藏），因此第三方中转配置仍具可读性。
 项目级配置、托管/企业策略文件不在扫描范围内。配置 API 仅限本机回环客户端且要求
 localhost `Host` 头，即使 `--host` 开放了统计仪表盘。
+
+#### 配置打包与导入
+
+配置页底部的**打包与导入**面板用于在机器之间迁移 Agent 配置：
+
+- **导出**：勾选要迁移的配置文件（凭据文件不在列表里，也永远不可导出），下载单个
+  JSON bundle（`toksight-agent-configs.json`）或直接复制 JSON 文本粘贴到别处。bundle
+  里的配置是**未脱敏的原文**（迁移需要真实值，包括你自填的服务商密钥），请妥善保管。
+- **导入**：粘贴 bundle JSON 或选择文件 → **预览**会列出每个文件在本机的写入位置、
+  是新建还是替换 → 确认后执行。已存在的文件先备份到 `<config>/toksight/backups/<agent>/`
+  再原子替换（临时文件 + rename，不会出现写一半的截断文件）。
+- **范围限制**：导入只接受 bundle 中属于固定白名单的**配置**文件——未知条目与凭据条目
+  一律跳过，写入路径按**本机**的白名单解析，bundle 里记录的来源路径仅供参考，因此一个
+  bundle 无法向白名单之外的任何位置写入。
+- **安全**：导出 / 导入端点与配置一览一样仅限回环客户端 + localhost `Host` 头，额外再
+  校验浏览器 `Sec-Fetch-Site`；导入端点只接受 `application/json` + 专用请求头
+  （跨站网页无法伪造），请求体上限 10 MB。
 
 ### 仪表盘构建产物
 
@@ -202,8 +219,9 @@ npm run web:build
 
 ## 隐私
 
-toksight 是本地优先的：统计与配置页都只**读取**你机器上的本地文件，绝不上传数据，也不会修改
-任何 Agent 配置。唯一的外部网络请求是匿名的 LiteLLM 价格拉取；`--offline` 可以连它也关掉。
+toksight 是本地优先的：统计与配置页只**读取**你机器上的本地文件，绝不上传数据。唯一的外部
+网络请求是匿名的 LiteLLM 价格拉取；`--offline` 可以连它也关掉。对 Agent 配置的唯一写入
+入口是配置页显式发起的导入（先备份、只写白名单文件）；凭据文件永不导出。
 
 ## JSON 输出
 
@@ -239,6 +257,7 @@ src/render.js          文本渲染（表格、摘要、警告）
 src/payload.js         --json / web API 的载荷契约
 src/dates.js           共享的本地时间日期工具（DST 安全）
 src/agentconfigs.js    固定白名单配置读取与结构化摘要（含 src/toml.js TOML 解析）
+src/agenttransfer.js   配置 bundle 打包与导入（备份 + 原子替换，唯一写路径）
 src/pricing.js         内置价格表 + LiteLLM 缓存 + 用户覆盖
 src/aggregate.js       分组与合计
 src/webdata.js         网页仪表盘聚合（热力图、趋势、会话……）
@@ -272,6 +291,7 @@ git push origin main v0.4.0   # 推送标签，触发发布工作流
 
 - [x] 网页仪表盘（`toksight web`，第二阶段）
 - [x] Agent 配置只读一览：摘要 + 脱敏原文（`toksight web` → 配置）
+- [x] 配置打包 / 导入：bundle 导出 + 预览 + 备份替换（`toksight web` → 配置）
 - [ ] TUI watch 模式
 - [ ] 更多客户端（Cursor、Windsurf、pi……）
 - [ ] `--export csv`、排行榜式分享

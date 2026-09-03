@@ -8,6 +8,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { clients } from './clients/index.js';
 import { createAgentConfigService } from './agentconfigs.js';
+import { createAgentTransferService } from './agenttransfer.js';
 import { collectAll } from './collect.js';
 import { createFormatter } from './format.js';
 import { pathExists } from './fsutils.js';
@@ -104,6 +105,7 @@ async function runWeb(opts) {
     apiOnly: opts.apiOnly,
     getData,
     configService: createAgentConfigService(),
+    transferService: createAgentTransferService(),
   });
 
   const { url } = await server.start();

@@ -153,13 +153,14 @@ All filters (`--client`, `--since`, `--until`, `--today/--week/--month`) work fo
 the page offers a manual refresh, a 30s auto-refresh toggle, and a 中文 / EN language switch
 (stored in `localStorage` as `toksight-locale`, default Chinese).
 
-### Agent configuration viewer (read-only)
+### Agent configuration viewer (read-only + transfer)
 
 Open **Config** in the dashboard masthead (or `/config`) for a read-only summary of the five
 agents' user-level configuration: default model, auth method, providers and endpoints, the model
 list (with context sizes), key settings such as permissions/sandbox, and which file each setting
-comes from. Expanding an agent shows redacted raw previews of its files. **The page never writes
-anything.**
+comes from. Expanding an agent shows redacted raw previews of its files. The **Bundle & import**
+panel at the bottom of the page is the single write path: it packs configs into a JSON bundle to
+move between machines, and backs up existing files before an import replaces them.
 
 Files read (fixed allowlist, all user-level):
 
@@ -179,6 +180,28 @@ judged per variable name (`ANTHROPIC_BASE_URL` / `ANTHROPIC_MODEL` visible,
 managed/enterprise policy files are out of scope. The configuration API accepts loopback clients
 with a localhost `Host` header only, even when `--host` exposes the statistics dashboard more
 broadly.
+
+#### Config bundling & import
+
+The **Bundle & import** panel at the bottom of the config page migrates agent configuration
+between machines:
+
+- **Export**: pick the config files to carry over (credential files never appear in the list and
+  can never be bundled), then download a single JSON bundle (`toksight-agent-configs.json`) or
+  copy the JSON text to paste it elsewhere. Bundled configs are **unredacted originals** (a
+  migration needs the real values, including provider keys you configured) — store them safely.
+- **Import**: paste the bundle JSON or choose a file → **Preview** lists each file's write
+  target on this machine and whether it creates or replaces → confirm to run. Existing files are
+  backed up to `<config>/toksight/backups/<agent>/` before being atomically replaced
+  (temp file + rename — no half-written truncation).
+- **Scope**: imports only accept allowlisted **config** files from the bundle — unknown and
+  credential entries are always skipped, and write targets are resolved from THIS machine's
+  allowlist (the source paths recorded in the bundle are informational only), so a bundle cannot
+  write anywhere outside the known config files.
+- **Security**: export/import endpoints require loopback clients + a localhost `Host` header
+  like the inventory, plus a browser `Sec-Fetch-Site` check; import endpoints additionally
+  require `application/json` + a dedicated request header (a foreign web page cannot forge
+  either), and request bodies are capped at 10 MB.
 
 ### Dashboard bundle
 
@@ -218,8 +241,10 @@ them to expose fresh input and keep this formula meaningful across agents.
 ## Privacy
 
 toksight is local-first: usage statistics and the configuration page only **read** local files on
-your machine — nothing is uploaded, and no agent configuration is ever modified. The single
-external network call is the anonymous LiteLLM pricing fetch; run `--offline` to disable even that.
+your machine — nothing is uploaded. The single external network call is the anonymous LiteLLM
+pricing fetch; run `--offline` to disable even that. The only writes to agent configuration are
+explicit imports you start on the config page (backup-first, allowlisted files only); credential
+files are never exported.
 
 ## JSON output
 
@@ -256,6 +281,7 @@ src/render.js          text rendering (tables, sections, warnings)
 src/payload.js         the --json / web API payload contract
 src/dates.js           shared local-time date helpers (DST-safe)
 src/agentconfigs.js    fixed-allowlist config reading + structured summaries (with src/toml.js TOML parsing)
+src/agenttransfer.js   config bundle export + import (backup-first atomic replace, the only write path)
 src/pricing.js         built-in table + LiteLLM cache + user overrides
 src/aggregate.js       grouping/totals
 src/webdata.js         web-dashboard aggregations (heatmap, trend, sessions…)
@@ -291,6 +317,7 @@ tarball).
 
 - [x] Web dashboard (`toksight web`, phase 2)
 - [x] Read-only agent configuration viewer: summaries + redacted previews (`toksight web` → Config)
+- [x] Config bundling / import: bundle export + preview + backup-first replace (`toksight web` → Config)
 - [ ] TUI watch mode
 - [ ] More clients (Cursor, Windsurf, pi…)
 - [ ] `--export csv`, leaderboard-style sharing
