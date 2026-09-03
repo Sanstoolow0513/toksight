@@ -253,6 +253,21 @@ web/                   Next.js 仪表盘 + /config 页面（静态导出，由 C
 CLI 本体保持**零运行时依赖**；仪表盘的依赖只存在于 `web/package.json`，
 仅在（重新）构建 `web/out/` 时需要。
 
+### 发布
+
+发布由 [.github/workflows/release.yml](.github/workflows/release.yml) 自动完成：推送一个与
+`package.json` 版本一致的 `v*` 标签，工作流会先跑完整测试矩阵（Ubuntu + Windows，Node
+20/22/24），校验标签与包版本一致，然后发布到 npm（`prepublishOnly` / `prepack` 脚本会再跑
+一次测试，并把 `web/out` 重新构建进发布包），最后用自动生成的变更记录创建 GitHub Release。
+
+```bash
+npm version minor             # 更新 package.json 版本、提交并打标签（v0.4.0）
+git push origin main v0.4.0   # 推送标签，触发发布工作流
+```
+
+需要在仓库里配置一个 `NPM_TOKEN` secret（npm automation token）。标签与包版本不一致、
+任何测试或仪表盘构建失败时，发布都会中止。
+
 ### 路线图
 
 - [x] 网页仪表盘（`toksight web`，第二阶段）

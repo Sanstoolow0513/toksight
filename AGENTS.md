@@ -182,6 +182,17 @@ cost (only OpenCode does).
 - Windows compatibility matters (paths, fixtures use `C:\\...` directories); `pathExists`
   handles `ENOTDIR` for files.
 
+## Release
+
+Versioning: bump `package.json` (+ keep `web/package.json` in sync), commit. Publishing is
+automated by `.github/workflows/release.yml`: push a `v*` tag **matching `package.json`'s
+version** (e.g. `git tag v0.4.0 && git push origin v0.4.0`) → test matrix (Ubuntu + Windows,
+Node 20/22/24) → tag/version guard → `npm publish` (lifecycle: `prepublishOnly` re-runs
+tests, `prepack` rebuilds `web/out` into the tarball) → GitHub Release with auto-generated
+notes. Requires the `NPM_TOKEN` repo secret (npm automation token); without it publish
+fails closed (no GitHub Release either). Never build `web/out` locally for a release —
+CI builds it fresh from the tag.
+
 ## Docs
 
 `README.md` and `README.zh-CN.md` are bilingual mirrors — update both when changing CLI options,
