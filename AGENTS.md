@@ -4,13 +4,15 @@
 
 `toksight` — a Node.js CLI (zero runtime dependencies, ESM only, Node >= 20) that tracks token
 usage, cost, and cache hit rate of AI coding agents by reading the local session files those
-agents already write. Local-first: it only reads; the sole network call is the LiteLLM pricing
+agents already write, plus a read-only dashboard view of the agents' configuration files.
+Local-first: everything is read-only — stats scan session files, the config page shows redacted
+previews and never writes. The sole network call is the LiteLLM pricing
 fetch (skippable with `--offline`). Phase 1 (stats) is done; phase 2 adds the `toksight web`
-local dashboard (still no TUI).
+local dashboard with a read-only agent configuration viewer (still no TUI).
 
 ## Commands
 
-- `node --test` (or `npm test`) — run the node:test suite (78 tests); uses per-client fixtures, no
+- `node --test` (or `npm test`) — run the node:test suite (97 tests); uses per-client fixtures, no
   network needed. Note: `node --test test/` with a directory arg fails with MODULE_NOT_FOUND on
   Node v24/Windows (the directory is treated as a module to load) — that's why the script passes
   no path; explicit file paths or a glob like `node --test "test/*.test.js"` also work.
@@ -55,12 +57,21 @@ src/aggregate.js    grouping/totals (summarize, byModel/Day/Month/Session, cache
 src/webdata.js      web-dashboard aggregations over entries (heatmap, trend, trendByAgent,
                     hourly, today/last7Days/thisMonth, sessions w/ activeMs, longestSession)
                     — pure functions; day math imported from src/dates.js
-src/webserver.js    zero-dep node:http server: static web/out + live /api/data
+src/toml.js        tolerant TOML subset parser for agent configs ({ value, error }, never throws)
+src/agentconfigs.js read-only five-agent config viewer: fixed user-file allowlist, per-agent
+                    structured summary (default model, auth, providers, models, facts) built by
+                    SUMMARIZERS + redacted raw previews; credential files probed for existence
+                    only, never previewed
+src/webserver.js    zero-dep node:http server: static web/out + live /api/data and loopback-only
+                    read-only /api/config inventory (GET/HEAD only, no write endpoints); both
+                    API routes validate the Host header against localhost names (DNS-rebinding
+                    defense — /api/config always, /api/data only when loopback-bound)
 src/format.js       ANSI tables & number formatting
 src/fsutils.js      walkFiles (returns { files, warnings }: root ENOENT is silent, other read
                     failures warn), streaming readJsonl, readJson, pathExists
-web/                Next.js (App Router, JS, no Tailwind) dashboard, statically exported to
-                    web/out and served by the CLI; app/page.js + components/ (Heatmap,
+web/                Next.js (App Router, JS, no Tailwind) dashboard + app/config/page.js,
+                    statically exported to web/out and served by the CLI; app/page.js +
+                    components/ (Heatmap,
                     TrendChart with mix/agent step-after stacks, AgentsPanel, ModelBars with
                     hard-split cache bars, Bars; every chart tooltip is the shared components/Tip)
                     + lib/format.js + lib/i18n.js (zh-CN / en,
@@ -73,7 +84,7 @@ web/                Next.js (App Router, JS, no Tailwind) dashboard, statically 
                     deps in web/package.json). v6 layout: masthead → 4-cell KPI strip →
                     12-col .sheet (trend, heatmap, agent/model, hour/month/pace, sessions
                     table). Kept from v4: icons only for actions/states (RefreshCw,
-                    ChevronDown, warn/empty/error), no entrance choreography, no ambient
+                    ChevronDown, FileUp, Download, success/warn/empty/error), no entrance choreography, no ambient
                     glow, no "live" badge (nav shows last-fetch time from generatedAt),
                     categorical palette is brand-lime + slate-gray rank ramp (colorAt
                     encodes rank, not identity).
@@ -153,6 +164,20 @@ cost (only OpenCode does).
   TTL); binds 127.0.0.1 by default (never 0.0.0.0 by default); static assets under `web/out/_next/`
   are immutable-cached, everything else `no-cache`; path traversal is rejected (403); if
   `web/out/index.html` is missing, `/` serves the built-in setup page instead of failing.
+- **Config viewer scope/redaction**: the config page is strictly read-only. Only user-level files
+  for ZCode, Claude Code, Codex CLI, OpenCode and Kimi Code are allowlisted in
+  `src/agentconfigs.js`; project/managed policy files are out of scope on purpose. Credential
+  files (ZCode `v2/credentials.json`, Claude `.credentials.json`, Codex `auth.json`/`.env`,
+  OpenCode data-dir `auth.json`, Kimi `credentials/`) are probed for existence and whitelisted
+  facts ONLY (auth mode, key names, env-var names) — never previewed. Everything else gets
+  `redactConfig`: JSON/JSONC parse to a tree (string-aware JSONC stripper, then per-key
+  redaction), TOML/text fall back to line redaction — quote-aware and multi-line-aware
+  (a sensitive value spanning `"""`/`'''` strings or unbalanced brackets suppresses its
+  continuation lines to the end of the preview). `env` blocks are walked into per variable
+  name (SENSITIVE_CONTAINER excludes env deliberately) so Claude relay configs stay readable;
+  `oauth`/`headers`/`credentials` containers collapse whole. Previews cap at 64 KB, files over
+  1 MB keep metadata only. `GET /api/config` requires loopback clients with a localhost Host
+  header and rejects every other method/path — there are no write endpoints at all.
 - Windows compatibility matters (paths, fixtures use `C:\\...` directories); `pathExists`
   handles `ENOTDIR` for files.
 

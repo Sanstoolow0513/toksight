@@ -153,6 +153,33 @@ All filters (`--client`, `--since`, `--until`, `--today/--week/--month`) work fo
 the page offers a manual refresh, a 30s auto-refresh toggle, and a 中文 / EN language switch
 (stored in `localStorage` as `toksight-locale`, default Chinese).
 
+### Agent configuration viewer (read-only)
+
+Open **Config** in the dashboard masthead (or `/config`) for a read-only summary of the five
+agents' user-level configuration: default model, auth method, providers and endpoints, the model
+list (with context sizes), key settings such as permissions/sandbox, and which file each setting
+comes from. Expanding an agent shows redacted raw previews of its files. **The page never writes
+anything.**
+
+Files read (fixed allowlist, all user-level):
+
+| Agent | Files read |
+|---|---|
+| ZCode | `%ZCODE_HOME%\v2\config.json`, `v2\setting.json`, `cli\config.json`, `v2\credentials.json` (existence probe only; default root `%USERPROFILE%\.zcode`) |
+| Claude Code | `%CLAUDE_CONFIG_DIR%\settings.json`, `.claude.json` (state/MCP, home-root by default), `.credentials.json` (probe only; default `%USERPROFILE%\.claude`) |
+| Codex CLI | `%CODEX_HOME%\config.toml`, `auth.json` (auth mode only), `.env` (variable names only), `*.config.toml` profiles (default `%USERPROFILE%\.codex`) |
+| OpenCode | `%OPENCODE_CONFIG_DIR%\opencode.json` / `opencode.jsonc`, data-dir `auth.json` (provider names only), state-dir `model.json` (defaults under `%USERPROFILE%\.config\opencode` etc.; `OPENCODE_CONFIG` override supported) |
+| Kimi Code | `%KIMI_CODE_HOME%\config.toml`, `tui.toml`, `mcp.json`, `region`, `credentials\kimi-code.json` (probe only; default `%USERPROFILE%\.kimi-code`) |
+
+Credential files are **never displayed** — only their existence is reported, plus whitelisted
+facts such as Codex's `chatgpt` / `apikey` auth mode or OAuth state. Previews of regular config
+files replace secret-bearing values with `[REDACTED]`; Claude's `settings.json` `env` block is
+judged per variable name (`ANTHROPIC_BASE_URL` / `ANTHROPIC_MODEL` visible,
+`ANTHROPIC_API_KEY` hidden), so third-party relay setups stay readable. Project-level config and
+managed/enterprise policy files are out of scope. The configuration API accepts loopback clients
+with a localhost `Host` header only, even when `--host` exposes the statistics dashboard more
+broadly.
+
 ### Dashboard bundle
 
 The npm package ships with the prebuilt static files in `web/out/`, so installed users can start
@@ -174,9 +201,10 @@ npm run web:build
 source checkout, `toksight web` serves a setup-instructions page at `/` while `/api/data` keeps
 working.
 
-Options: `--port <n>` (default 4729), `--host <addr>` (default 127.0.0.1, loopback only),
+Options: `--port <n>` (default 4729), `--host <addr>` (default 127.0.0.1),
 `--no-open` (skip auto-opening the browser), `--api-only` (JSON API without the dashboard, used
-for UI development — run it alongside `npm run web:dev` in `web/`).
+for UI development — run it alongside `npm run web:dev` in `web/`). The configuration inventory
+endpoint is loopback-only regardless of `--host`.
 
 ### Cache hit rate
 
@@ -189,9 +217,9 @@ them to expose fresh input and keep this formula meaningful across agents.
 
 ## Privacy
 
-toksight is local-first: it only **reads** session files on your machine and never sends your data
-anywhere. The single network call is the anonymous LiteLLM pricing fetch; run `--offline` to
-disable even that.
+toksight is local-first: usage statistics and the configuration page only **read** local files on
+your machine — nothing is uploaded, and no agent configuration is ever modified. The single
+external network call is the anonymous LiteLLM pricing fetch; run `--offline` to disable even that.
 
 ## JSON output
 
@@ -227,6 +255,7 @@ src/args.js            CLI argument parsing (--flag value / --flag=value)
 src/render.js          text rendering (tables, sections, warnings)
 src/payload.js         the --json / web API payload contract
 src/dates.js           shared local-time date helpers (DST-safe)
+src/agentconfigs.js    fixed-allowlist config reading + structured summaries (with src/toml.js TOML parsing)
 src/pricing.js         built-in table + LiteLLM cache + user overrides
 src/aggregate.js       grouping/totals
 src/webdata.js         web-dashboard aggregations (heatmap, trend, sessions…)
@@ -235,7 +264,7 @@ src/format.js          ANSI tables & number formatting
 src/fsutils.js         walkFiles, readJsonl, readJson, pathExists
 src/clients/           one parser per agent, normalized to a common entry shape
                        (+ shared src/clients/sqlite.js read-only opener)
-web/                   Next.js dashboard (static export served by the CLI)
+web/                   Next.js dashboard + /config page (static export served by the CLI)
 ```
 
 The CLI itself keeps **zero runtime dependencies**; the dashboard's dependencies live only in
@@ -244,6 +273,7 @@ The CLI itself keeps **zero runtime dependencies**; the dashboard's dependencies
 ### Roadmap
 
 - [x] Web dashboard (`toksight web`, phase 2)
+- [x] Read-only agent configuration viewer: summaries + redacted previews (`toksight web` → Config)
 - [ ] TUI watch mode
 - [ ] More clients (Cursor, Windsurf, pi…)
 - [ ] `--export csv`, leaderboard-style sharing

@@ -15,7 +15,7 @@
 
 ## 1. Design direction
 
-- **Product**: 本地优先的 AI coding agent token 用量仪表盘（`toksight web`）。数据只读本地会话文件，不出机器。
+- **Product**: 本地优先的 AI coding agent token 用量仪表盘（`toksight web`）及只读的配置一览页。统计与配置页都只读取本地文件，绝不写入。数据不出机器。
 - **Style family**: Brutalism 磷光终端工作表——CLI 工具的可视化延伸。页面是一张工作表
   （`.frame`，2px 实线外框、最大宽 1680px、页面留白包裹），内部区块以 2px 硬网格线分割；
   结构靠边框而非表面色差；无圆角、无阴影、无模糊、无渐变、无光晕。对比度极高，密度高。
@@ -105,16 +105,17 @@ Token 四类（ANSI 磷光）：`input #c9f24b`（lime）/ `cache-read #3ddc97`�
 ## 5. Icon system
 
 - **Set**: `lucide-react`（构建期依赖）。`strokeWidth={2}`，尺寸 14–18px。
-- 用途限定：**只用于操作与状态**——刷新按钮（RefreshCw）、警告/筛选条、空/错误态、
-  Agent 行展开箭头（ChevronDown）。标签、标题、数值不带图标。
+- 用途限定：**只用于操作与状态**——刷新按钮（RefreshCw）、
+  成功/警告/筛选/空/错误态，以及展开箭头（ChevronDown）。标签、标题、数值不带图标。
 
 ## 6. Layout / information hierarchy
 
 1. **页面壳**：body 纯黑留白 → `.wrap` → `.frame`（2px 外框、mono 马赛克，纵向堆叠，
    子元素间 2px `--color-border-strong` 分隔）。
 2. **Masthead**（frame 首行，sticky、实底无模糊）：左 = lime 底黑字 mono logo chip
-   `toksight` + "上次抓取 …"（取 `generatedAt`，不宣称实时）；右 = 语言分段（方角，
-   选中 lime 反转）、自动刷新 checkbox、刷新按钮（方角，hover lime 反转，进行中图标旋转）。
+   `toksight` + 页面元信息；右 = 仪表盘/配置方角导航、语言分段（选中 lime 反转）与页面操作。
+   仪表盘元信息为“上次抓取 …”（取 `generatedAt`，不宣称实时），操作为自动刷新 checkbox +
+   刷新按钮（方角，hover lime 反转，进行中图标旋转）。
 3. 警告条 / 筛选提示条（语义色左边 4px 实条 + 边框，方角）。
 4. **KPI 条** `.kpis`（4 格，2px 分隔；≤900px 2×2）：累计 Tokens（lime 值，副行 请求·会话）、
    总费用（副行定价状态）、缓存命中率（**green 值**，副行缓存读 tokens）、活跃天数（副行
@@ -136,6 +137,24 @@ Token 四类（ANSI 磷光）：`input #c9f24b`（lime）/ `cache-read #3ddc97`�
    mono 11px。
 7. 命中率统计按每次请求归因（session 切模型会被拆分归入各模型，不误计）。最长会话按
    `activeMs` 排名，壁钟跨度只作副注。
+
+### `/config` 配置一览页（只读）
+
+- 与仪表盘共享 `.wrap → .frame → masthead → footer` 壳和中英切换；不另起 SaaS 卡片视觉。
+- 顺序：标题/范围说明 → 凭据安全 warning banner → 五个 Agent 的纵向堆叠区（2px gap-grid）。
+  所有视口单列。
+- 每个 Agent 一张 `config-agent` 卡：头部为 Agent 名 + 文件/服务商/模型计数 + 认证方式
+  徽标；正文自上而下为：默认模型/认证/MCP 的 `config-kv` 网格 → `config-facts` 双列事实
+  标签（label + 等宽值）→ 服务商表格（名称/类型/端点/认证/状态/模型数，单元格省略号）
+  → 模型芯片组（按 provider 分组的 `.chip`，含上下文长度）。无配置时显示空态说明。
+- 每张卡片底部“查看 N 个文件”折叠开关展开 `config-file` 列表：文件名/格式/状态标签、
+  路径/大小/修改时间，以及内嵌的 64 KB 脱敏 `<pre>` 预览。凭据文件永不渲染预览，只显示
+  “凭据文件：内容不显示。”缺失文件降透明度。
+- 风险条必须明确：凭据永不显示；预览中的敏感值已替换为 [REDACTED]；页面只读。图标仍只
+  服务展开与语义状态（ChevronDown、ShieldAlert、RefreshCw、TriangleAlert）。
+- 数据由 `GET /api/config`（仅回环、仅 GET/HEAD、要求 localhost `Host` 头）提供：每个 agent 带 `files` 元数据与
+  `summary`（defaultModel、auth、facts、providers、models、mcpServers）；摘要中的值同样
+  过 `redactString`。
 
 ## 7. States
 

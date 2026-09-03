@@ -203,6 +203,35 @@ code {
   flex-wrap: wrap;
 }
 
+.top-nav {
+  display: inline-flex;
+  border: 1px solid var(--color-border-strong);
+  background: var(--color-panel-2);
+}
+
+.top-nav a {
+  color: var(--color-text-secondary);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-2xs);
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  line-height: 1.7;
+  padding: var(--space-1) var(--space-3);
+  text-decoration: none;
+  text-transform: uppercase;
+}
+
+.top-nav a:hover:not(.active) {
+  background: var(--color-primary-subtle);
+  color: var(--color-text);
+}
+
+.top-nav a.active {
+  background: var(--color-primary);
+  color: var(--color-primary-ink);
+  font-weight: 700;
+}
+
 .auto-label {
   display: flex;
   align-items: center;
@@ -1178,6 +1207,412 @@ code {
   color: var(--color-primary);
 }
 
+.banner.error {
+  border-left-color: var(--color-error);
+  color: var(--color-error);
+}
+
+.banner.success {
+  border-left-color: var(--color-success);
+  color: var(--color-success);
+}
+
+/* --- config viewer page --- */
+
+.config-frame {
+  min-height: calc(100vh - clamp(24px, 5vw, 80px));
+}
+
+.config-hero {
+  background: var(--color-panel);
+  padding: clamp(28px, 5vw, 48px) var(--space-6);
+}
+
+.config-kicker {
+  color: var(--color-primary);
+  display: block;
+  font-family: var(--font-mono);
+  font-size: var(--font-size-2xs);
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  margin-bottom: var(--space-2);
+  text-transform: uppercase;
+}
+
+.config-hero h2 {
+  font-family: var(--font-sans);
+  font-size: clamp(28px, 4vw, var(--font-size-hero));
+  letter-spacing: -0.03em;
+  line-height: 1.1;
+  margin-bottom: var(--space-3);
+}
+
+.config-hero p {
+  color: var(--color-text-secondary);
+  font-family: var(--font-sans);
+  max-width: 76ch;
+}
+
+.config-warning b {
+  color: var(--color-text);
+}
+
+.config-stack {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--grid-line);
+  background: var(--color-border-strong);
+}
+
+.config-agent {
+  background: var(--color-panel);
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding: var(--space-6);
+}
+
+.config-agent-head {
+  align-items: flex-start;
+  display: flex;
+  gap: var(--space-4);
+  justify-content: space-between;
+  margin-bottom: var(--space-4);
+}
+
+.config-agent-head h3 {
+  font-family: var(--font-sans);
+  font-size: var(--font-size-xl);
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+  margin: 0 0 var(--space-1);
+}
+
+.config-agent-head p {
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-2xs);
+  margin: 0;
+}
+
+.config-agent-badge {
+  background: var(--color-panel-2);
+  border: 1px solid var(--color-border-strong);
+  color: var(--color-text-secondary);
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: var(--font-size-2xs);
+  letter-spacing: 0.04em;
+  padding: 3px 10px;
+}
+
+.config-agent-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.config-agent-empty {
+  color: var(--color-text-muted);
+  font-family: var(--font-sans);
+  margin: 0;
+}
+
+.config-kv {
+  border: 1px solid var(--color-border-strong);
+  display: grid;
+  gap: 1px;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.config-kv > div {
+  background: var(--color-panel-2);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  padding: var(--space-2) var(--space-3);
+}
+
+.config-kv dt {
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-2xs);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.config-kv dd {
+  font-family: var(--font-mono);
+  font-size: var(--font-size-sm);
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.config-kv-detail {
+  color: var(--color-text-muted);
+}
+
+.config-facts {
+  display: grid;
+  gap: 1px;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.config-facts li {
+  background: var(--color-panel-2);
+  border: 1px solid var(--color-line);
+  display: flex;
+  gap: var(--space-2);
+  justify-content: space-between;
+  min-width: 0;
+  padding: 6px var(--space-3);
+}
+
+.config-facts li span {
+  color: var(--color-text-muted);
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: var(--font-size-xs);
+}
+
+.config-facts li b {
+  font-family: var(--font-mono);
+  font-size: var(--font-size-xs);
+  font-weight: 500;
+  overflow-wrap: anywhere;
+  text-align: right;
+}
+
+.config-table-wrap {
+  border: 1px solid var(--color-border-strong);
+  overflow-x: auto;
+}
+
+.config-table {
+  border-collapse: collapse;
+  width: 100%;
+}
+
+.config-table th {
+  background: var(--color-panel-2);
+  border-bottom: 1px solid var(--color-border-strong);
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-2xs);
+  letter-spacing: 0.08em;
+  padding: 6px var(--space-3);
+  text-align: left;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.config-table td {
+  border-bottom: 1px solid var(--color-line);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-xs);
+  max-width: 34ch;
+  overflow: hidden;
+  padding: 6px var(--space-3);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.config-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.config-models {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.config-model-group {
+  align-items: baseline;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.config-model-provider {
+  color: var(--color-text-muted);
+  flex: 0 0 220px;
+  font-family: var(--font-mono);
+  font-size: var(--font-size-xs);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.config-chips {
+  display: flex;
+  flex: 1 1 240px;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+}
+
+.chip {
+  align-items: baseline;
+  background: var(--color-panel-2);
+  border: 1px solid var(--color-line);
+  display: inline-flex;
+  font-family: var(--font-mono);
+  font-size: var(--font-size-xs);
+  gap: 6px;
+  padding: 3px 8px;
+}
+
+.chip i {
+  color: var(--color-text-muted);
+  font-style: normal;
+  font-size: var(--font-size-2xs);
+}
+
+.config-files-toggle {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  color: var(--color-text-secondary);
+  display: inline-flex;
+  font-family: var(--font-mono);
+  font-size: var(--font-size-xs);
+  gap: 6px;
+  letter-spacing: 0.04em;
+  padding: 0;
+  text-transform: uppercase;
+}
+
+.config-files-toggle:hover {
+  color: var(--color-primary);
+}
+
+.config-files-toggle svg {
+  transition: transform 0.15s ease;
+}
+
+.config-files-toggle.open svg {
+  transform: rotate(180deg);
+}
+
+.config-files-list {
+  border-top: 1px dashed var(--color-border-strong);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin-top: var(--space-3);
+  padding-top: var(--space-3);
+}
+
+.config-file {
+  background: var(--color-panel-2);
+  border: 1px solid var(--color-line);
+  padding: var(--space-3);
+}
+
+.config-file-missing {
+  opacity: 0.6;
+}
+
+.config-file-head {
+  align-items: baseline;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-3);
+  margin-bottom: var(--space-2);
+}
+
+.config-file-head b {
+  font-family: var(--font-sans);
+  font-size: var(--font-size-sm);
+}
+
+.config-file-name {
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-2xs);
+}
+
+.config-file-note {
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-xs);
+  margin: 0;
+}
+
+.config-meta {
+  display: grid;
+  gap: 2px 12px;
+  grid-template-columns: max-content minmax(0, 3fr) max-content minmax(0, 2fr);
+  margin: 0 0 var(--space-2);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-2xs);
+}
+
+.config-meta > div {
+  display: flex;
+  gap: 6px;
+  min-width: 0;
+}
+
+.config-meta dt {
+  color: var(--color-text-muted);
+  flex: none;
+  text-transform: uppercase;
+}
+
+.config-meta dd {
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.config-preview {
+  border: 1px solid var(--color-border-strong);
+}
+
+.config-preview-head {
+  align-items: center;
+  background: var(--color-panel);
+  border-bottom: 1px solid var(--color-border-strong);
+  color: var(--color-text-muted);
+  display: flex;
+  font-family: var(--font-mono);
+  font-size: var(--font-size-2xs);
+  gap: var(--space-3);
+  justify-content: space-between;
+  padding: 5px var(--space-3);
+}
+
+.config-preview pre {
+  margin: 0;
+  max-height: 360px;
+  overflow: auto;
+  padding: var(--space-3);
+}
+
+.config-empty {
+  background: var(--color-panel);
+  color: var(--color-text-muted);
+  font-family: var(--font-sans);
+  padding: var(--space-6);
+}
+
+.config-loading {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.config-loading .skel {
+  height: 120px;
+}
+
 .foot {
   display: flex;
   flex-wrap: wrap;
@@ -1264,6 +1699,45 @@ code {
 
   .wrap {
     padding: 12px;
+  }
+
+  .masthead {
+    align-items: flex-start;
+    padding: var(--space-3);
+  }
+
+  .brand,
+  .head-actions {
+    width: 100%;
+  }
+
+  .head-actions {
+    gap: var(--space-2);
+  }
+
+  .fetch-meta {
+    margin-left: auto;
+  }
+
+  .config-hero,
+  .config-agent {
+    padding: var(--space-4);
+  }
+
+  .config-agent-head {
+    flex-direction: column;
+  }
+
+  .config-model-provider {
+    flex-basis: 100%;
+  }
+
+  .config-meta {
+    grid-template-columns: 1fr;
+  }
+
+  .config-meta > div {
+    grid-template-columns: max-content minmax(0, 1fr);
   }
 
   .cell,
