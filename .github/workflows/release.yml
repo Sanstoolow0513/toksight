@@ -1,10 +1,8 @@
 # Auto-release: push a v* tag that matches package.json's version.
 # The tag runs the full test matrix (Ubuntu + Windows, Node 20/22/24), then
-# publishes the package to npm and opens a GitHub Release with auto-generated
-# notes. npm's own lifecycle scripts do the heavy lifting on publish:
-#   prepublishOnly -> npm test
-#   prepack        -> web:ci + web:build (rebuilds web/out into the tarball)
-# One-time setup: add an NPM_TOKEN repository secret (npm automation token).
+# opens a GitHub Release with auto-generated notes.
+# npm publishing is deliberately NOT automated — run `npm publish` manually
+# when needed (its lifecycle scripts re-run the tests and rebuild web/out).
 
 name: Release
 
@@ -34,7 +32,7 @@ jobs:
       - run: npm test
 
   release:
-    name: npm publish + GitHub Release
+    name: GitHub Release
     needs: test
     runs-on: ubuntu-latest
     steps:
@@ -42,7 +40,6 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-          registry-url: https://registry.npmjs.org/
       - name: Guard - tag must match package.json version
         run: |
           pkg="v$(node -p "require('./package.json').version")"
@@ -50,10 +47,6 @@ jobs:
             echo "::error::tag $GITHUB_REF_NAME does not match package.json version $pkg"
             exit 1
           fi
-      - name: Publish to npm
-        run: npm publish
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:

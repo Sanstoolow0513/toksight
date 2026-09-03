@@ -184,14 +184,13 @@ cost (only OpenCode does).
 
 ## Release
 
-Versioning: bump `package.json` (+ keep `web/package.json` in sync), commit. Publishing is
-automated by `.github/workflows/release.yml`: push a `v*` tag **matching `package.json`'s
+Versioning: bump `package.json` (+ keep `web/package.json` in sync), commit. GitHub Releases
+are automated by `.github/workflows/release.yml`: push a `v*` tag **matching `package.json`'s
 version** (e.g. `git tag v0.4.0 && git push origin v0.4.0`) → test matrix (Ubuntu + Windows,
-Node 20/22/24) → tag/version guard → `npm publish` (lifecycle: `prepublishOnly` re-runs
-tests, `prepack` rebuilds `web/out` into the tarball) → GitHub Release with auto-generated
-notes. Requires the `NPM_TOKEN` repo secret (npm automation token); without it publish
-fails closed (no GitHub Release either). Never build `web/out` locally for a release —
-CI builds it fresh from the tag.
+Node 20/22/24) → tag/version guard → GitHub Release with auto-generated notes. npm
+publishing is deliberately NOT automated — `npm publish` stays a manual step (lifecycle:
+`prepublishOnly` re-runs tests, `prepack` rebuilds `web/out` into the tarball at pack time,
+so there is no need to build `web/out` by hand).
 
 ## Docs
 

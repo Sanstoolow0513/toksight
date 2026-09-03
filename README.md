@@ -275,16 +275,17 @@ The CLI itself keeps **zero runtime dependencies**; the dashboard's dependencies
 Releases are automated by [.github/workflows/release.yml](.github/workflows/release.yml):
 push a `v*` tag that matches `package.json`'s version and the workflow runs the full test
 matrix (Ubuntu + Windows, Node 20/22/24), verifies the tag against the package version,
-publishes to npm (the `prepublishOnly` / `prepack` scripts re-run the tests and rebuild
-`web/out` into the tarball), then opens a GitHub Release with auto-generated notes.
+then opens a GitHub Release with auto-generated notes.
 
 ```bash
 npm version minor             # bump package.json, commit and tag (v0.4.0)
 git push origin main v0.4.0   # the tag starts the release workflow
 ```
 
-Requires an `NPM_TOKEN` repository secret (an npm automation token). If the tag doesn't
-match the package version, or any test or the dashboard build fails, nothing is published.
+If the tag doesn't match the package version or any test fails, no release is created.
+Publishing to npm is intentionally manual — run `npm publish` yourself when needed (the
+`prepublishOnly` / `prepack` scripts re-run the tests and rebuild `web/out` into the
+tarball).
 
 ### Roadmap
 
