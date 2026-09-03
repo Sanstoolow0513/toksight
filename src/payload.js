@@ -11,7 +11,10 @@ const require = createRequire(import.meta.url);
 const pkg = require('../package.json');
 
 // `ctx` is what collectAll returns plus the parsed opts:
-// { entries, warnings, pricing, perClient, opts }.
+// { entries, warnings, pricing, perClient, opts }. Note the split: `entries`
+// is the post-filter list everything below aggregates from, while
+// perClient[].entries keeps each agent's unfiltered parse output — the
+// unfiltered view the `env` command and empty-state page render.
 export function buildPayload(ctx) {
   const { entries, warnings, pricing, opts } = ctx;
   const totals = agg.summarize(entries);

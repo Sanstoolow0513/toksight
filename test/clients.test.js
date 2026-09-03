@@ -175,6 +175,30 @@ test('kimi parser reads wire.jsonl usage records and state metadata', async () =
   assert.equal(orphan.title, null);
 });
 
+test('kimi parser warns when state.json exists but cannot be read', async () => {
+  const tmp = path.join(os.tmpdir(), `toksight-test-${Date.now()}-kimi-bad`);
+  const { mkdirSync, writeFileSync, rmSync } = await import('node:fs');
+  const session = path.join(tmp, 'sessions', 'wd', 'session_bad', 'agents', 'main');
+  mkdirSync(session, { recursive: true });
+  writeFileSync(path.join(tmp, 'sessions', 'wd', 'session_bad', 'state.json'), '{ not json');
+  writeFileSync(
+    path.join(session, 'wire.jsonl'),
+    JSON.stringify({ type: 'usage.record', time: 1788000001000, model: 'kimi-code/k3', usage: { inputOther: 10, output: 5 } }),
+  );
+  try {
+    const { entries, warnings } = await kimi.collect({ env: { KIMI_CODE_HOME: tmp }, home: os.homedir() });
+    // The usage record is still collected; only the metadata falls back.
+    assert.equal(entries.length, 1);
+    assert.equal(entries[0].sessionId, 'session_bad'); // directory fallback
+    assert.equal(entries[0].title, null);
+    assert.equal(warnings.length, 1);
+    assert.match(warnings[0], /^kimi: cannot read/);
+    assert.match(warnings[0], /state\.json/);
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
 test('zcode rollout parser splits cache reads from total prompt and skips empty', async () => {
   const { entries, warnings } = await zcode.collect({
     env: { ZCODE_HOME: path.join(fixtures, 'zcode') },

@@ -14,7 +14,7 @@ import { buildPayload } from './payload.js';
 const require = createRequire(import.meta.url);
 const pkg = require('../package.json');
 
-export function rangeLabel(opts, fmt) {
+function rangeLabel(opts, fmt) {
   if (opts.since == null && opts.until == null) return 'all time';
   const since = opts.since != null ? fmt.datetime(opts.since).slice(0, 10) : '…';
   const until = opts.until != null ? fmt.datetime(opts.until).slice(0, 10) : '…';
@@ -37,7 +37,7 @@ export function totalsSection(entries, opts, fmt) {
     `${fmt.dim('input')} ${fmt.tokens(t.inputTokens)} ${fmt.dim('· cache read')} ${fmt.tokens(t.cacheReadTokens)} ${fmt.dim('(' + fmt.pct(hit) + ' hit · write')} ${fmt.tokens(t.cacheWriteTokens)}${fmt.dim(') · output')} ${fmt.tokens(t.outputTokens)}`,
   );
   lines.push(`${fmt.dim('range:')} ${rangeLabel(opts, fmt)} ${fmt.dim('· clients:')} ${clientsLabel(opts)}`);
-  return { lines, totals: t };
+  return lines;
 }
 
 export function pricingModelsTable(entries, opts, fmt) {
@@ -139,8 +139,7 @@ export function renderCommand(ctx, fmt) {
   const { opts, entries, warnings, perClient, pricing } = ctx;
 
   const section = (title, table) => {
-    const { lines } = totalsSection(entries, opts, fmt);
-    for (const line of lines) console.log(line);
+    for (const line of totalsSection(entries, opts, fmt)) console.log(line);
     console.log('');
     console.log(fmt.bold(title));
     console.log(fmt.dim(table));
