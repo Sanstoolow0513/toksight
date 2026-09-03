@@ -12,7 +12,7 @@ local dashboard with a read-only agent configuration viewer (still no TUI).
 
 ## Commands
 
-- `node --test` (or `npm test`) — run the node:test suite (97 tests); uses per-client fixtures, no
+- `node --test` (or `npm test`) — run the node:test suite (100 tests); uses per-client fixtures, no
   network needed. Note: `node --test test/` with a directory arg fails with MODULE_NOT_FOUND on
   Node v24/Windows (the directory is treated as a module to load) — that's why the script passes
   no path; explicit file paths or a glob like `node --test "test/*.test.js"` also work.
@@ -68,7 +68,8 @@ src/webserver.js    zero-dep node:http server: static web/out + live /api/data a
                     defense — /api/config always, /api/data only when loopback-bound)
 src/format.js       ANSI tables & number formatting
 src/fsutils.js      walkFiles (returns { files, warnings }: root ENOENT is silent, other read
-                    failures warn), streaming readJsonl, readJson, pathExists
+                    failures warn) + walkFilesMany (multi-root merge shared by the
+                    claude/codex/kimi parsers), streaming readJsonl, readJson, pathExists
 web/                Next.js (App Router, JS, no Tailwind) dashboard + app/config/page.js,
                     statically exported to web/out and served by the CLI; app/page.js +
                     components/ (Heatmap,

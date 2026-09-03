@@ -1,6 +1,6 @@
 import os from 'node:os';
 import path from 'node:path';
-import { walkFiles, readJsonl, readJson } from '../fsutils.js';
+import { walkFilesMany, readJsonl, readJson } from '../fsutils.js';
 
 export const id = 'kimi';
 export const label = 'Kimi Code';
@@ -20,9 +20,9 @@ export function sourceRoots({ env = process.env, home = os.homedir() } = {}) {
 // session's state.json; agents within a session share it.
 export async function collect({ env, home, roots } = {}) {
   const scanRoots = roots ?? sourceRoots({ env, home });
-  const warnings = [];
   const entries = [];
   const stateCache = new Map();
+  const stateWarnings = []; // readState pushes as it discovers bad state.json files
 
   const readState = async (sessionDir) => {
     if (stateCache.has(sessionDir)) return stateCache.get(sessionDir);
@@ -35,20 +35,16 @@ export async function collect({ env, home, roots } = {}) {
       // unreadable file, malformed JSON — deserves a warning.
       state = null;
       if (err?.code !== 'ENOENT') {
-        warnings.push(`kimi: cannot read ${path.join(sessionDir, 'state.json')} (${err?.code || err?.message || err})`);
+        stateWarnings.push(`kimi: cannot read ${path.join(sessionDir, 'state.json')} (${err?.code || err?.message || err})`);
       }
     }
     stateCache.set(sessionDir, state);
     return state;
   };
 
-  const files = [];
-  for (const root of scanRoots) {
-    // Loop, not spread: see claude.js — large histories break `push(...)`.
-    const { files: found, warnings: rootWarnings } = await walkFiles(root, { filter: (name) => name === 'wire.jsonl' });
-    for (const f of found) files.push(f);
-    warnings.push(...rootWarnings);
-  }
+  const { files, warnings } = await walkFilesMany(scanRoots, {
+    filter: (name) => name === 'wire.jsonl',
+  });
 
   for (const file of files) {
     // .../sessions/<workspace>/<session>/agents/<agent>/wire.jsonl
@@ -89,5 +85,5 @@ export async function collect({ env, home, roots } = {}) {
     });
   }
 
-  return { entries, warnings };
+  return { entries, warnings: [...warnings, ...stateWarnings] };
 }

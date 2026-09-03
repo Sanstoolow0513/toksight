@@ -123,6 +123,42 @@ test('date filters exclude timestamp-less entries with a warning', async () => {
     const none = await collectAll({ ...BASE_OPTS, since: ts + 1000 }, { env, home });
     assert.equal(none.entries.length, 0);
     assert.equal(none.warnings.length, 1);
+    assert.match(none.warnings[0], /2 entries without a timestamp/);
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test('no-timestamp warning uses the singular for exactly one entry', async () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'toksight-cli-'));
+  const claudeProjects = path.join(tmp, 'claude', 'projects', 'ProjA');
+  fs.mkdirSync(claudeProjects, { recursive: true });
+  fs.writeFileSync(
+    path.join(claudeProjects, 'sess-x.jsonl'),
+    JSON.stringify({
+      type: 'assistant',
+      sessionId: 'sess-x',
+      message: {
+        id: 'msg_a',
+        model: 'claude-sonnet-4-5',
+        usage: { input_tokens: 70, output_tokens: 40 },
+      },
+    }),
+  );
+  const env = {
+    CLAUDE_CONFIG_DIR: path.join(tmp, 'claude'),
+    CODEX_HOME: path.join(tmp, 'codex'),
+    ZCODE_HOME: path.join(tmp, 'zcode'),
+    OPENCODE_PATH: path.join(tmp, 'opencode'),
+    KIMI_CODE_HOME: path.join(tmp, 'kimi'),
+    TOKSIGHT_CONFIG_DIR: path.join(tmp, 'config'),
+  };
+  try {
+    const ctx = await collectAll({ ...BASE_OPTS, until: Date.now() }, { env, home: path.join(tmp, 'home') });
+    assert.equal(ctx.entries.length, 0);
+    assert.deepEqual(ctx.warnings, [
+      '1 entry without a timestamp were excluded by --since/--until date filtering',
+    ]);
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true });
   }

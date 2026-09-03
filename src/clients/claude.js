@@ -1,6 +1,6 @@
 import os from 'node:os';
 import path from 'node:path';
-import { walkFiles, readJsonl } from '../fsutils.js';
+import { walkFilesMany, readJsonl } from '../fsutils.js';
 
 export const id = 'claude';
 export const label = 'Claude Code';
@@ -18,18 +18,12 @@ export function sourceRoots({ env = process.env, home = os.homedir() } = {}) {
 // with the largest usage so partials never undercount.
 export async function collect({ env, home, roots } = {}) {
   const scanRoots = roots ?? sourceRoots({ env, home });
-  const warnings = [];
   const entries = [];
   const seen = new Map(); // dedupe key -> index of the kept entry
 
-  const files = [];
-  for (const root of scanRoots) {
-    // Loop, not spread: walkFiles on a huge history can exceed the ~65k
-    // argument limit of `files.push(...)`.
-    const { files: found, warnings: rootWarnings } = await walkFiles(root, { filter: (name) => name.endsWith('.jsonl') });
-    for (const f of found) files.push(f);
-    warnings.push(...rootWarnings);
-  }
+  const { files, warnings } = await walkFilesMany(scanRoots, {
+    filter: (name) => name.endsWith('.jsonl'),
+  });
 
   for (const file of files) {
     await readJsonl(file, (o) => {

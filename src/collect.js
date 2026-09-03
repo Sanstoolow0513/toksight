@@ -61,7 +61,8 @@ export async function collectAll(opts, { env = process.env, home = os.homedir() 
     });
     // Silent exclusion would look like "no data" — say it instead.
     if (noTimestamp > 0) {
-      warnings.push(`${noTimestamp} entries without a timestamp were excluded by --since/--until date filtering`);
+      const noun = noTimestamp === 1 ? 'entry' : 'entries';
+      warnings.push(`${noTimestamp} ${noun} without a timestamp were excluded by --since/--until date filtering`);
     }
   }
 

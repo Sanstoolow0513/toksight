@@ -39,6 +39,20 @@ export async function walkFiles(dir, { maxDepth = 12, filter = () => true } = {}
   return { files: out, warnings };
 }
 
+// Scans several roots and merges the results. Files are looped, not spread,
+// into the shared list — `files.push(...found)` hits the ~65k argument limit
+// on machines with very large histories.
+export async function walkFilesMany(roots, opts = {}) {
+  const files = [];
+  const warnings = [];
+  for (const root of roots) {
+    const { files: found, warnings: rootWarnings } = await walkFiles(root, opts);
+    for (const f of found) files.push(f);
+    for (const w of rootWarnings) warnings.push(w);
+  }
+  return { files, warnings };
+}
+
 // Streams a JSONL file line by line; malformed lines yield `null` objects.
 export async function readJsonl(file, handler) {
   const rl = createInterface({

@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-import { walkFiles, pathExists, readJson, readJsonl } from '../src/fsutils.js';
+import { walkFiles, walkFilesMany, pathExists, readJson, readJsonl } from '../src/fsutils.js';
 
 function tmpTree(files) {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'toksight-fs-'));
@@ -46,6 +46,28 @@ test('walkFiles: walks nested dirs, applies the filter, returns sorted paths', a
     assert.deepEqual(warnings, []);
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test('walkFilesMany: merges roots, keeps per-root warnings, silent ENOENT', async () => {
+  const tmpA = tmpTree(['a.json', 'sub/b.json']);
+  const tmpB = tmpTree(['c.json']);
+  fs.writeFileSync(path.join(tmpB, 'blocker.txt'), 'x'); // tmpB/blocker.txt becomes a root that is a file
+  try {
+    const { files, warnings } = await walkFilesMany(
+      [tmpA, path.join(tmpB, 'blocker.txt'), path.join(tmpB, 'definitely-missing'), tmpB],
+      { filter: (name) => name.endsWith('.json') },
+    );
+    assert.deepEqual(files, [
+      path.join(tmpA, 'a.json'),
+      path.join(tmpA, 'sub', 'b.json'),
+      path.join(tmpB, 'c.json'),
+    ]);
+    assert.equal(warnings.length, 1);
+    assert.match(warnings[0], /cannot read directory/);
+  } finally {
+    fs.rmSync(tmpA, { recursive: true, force: true });
+    fs.rmSync(tmpB, { recursive: true, force: true });
   }
 });
 
