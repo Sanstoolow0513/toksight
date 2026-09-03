@@ -177,8 +177,8 @@ files replace secret-bearing values with `[REDACTED]`; Claude's `settings.json` 
 judged per variable name (`ANTHROPIC_BASE_URL` / `ANTHROPIC_MODEL` visible,
 `ANTHROPIC_API_KEY` hidden), so third-party relay setups stay readable. Project-level config and
 managed/enterprise policy files are out of scope. The configuration API accepts loopback clients
-only, even when `--host` exposes the statistics dashboard more broadly.
-
+with a localhost `Host` header only, even when `--host` exposes the statistics dashboard more
+broadly.
 
 ### Dashboard bundle
 
@@ -203,8 +203,8 @@ working.
 
 Options: `--port <n>` (default 4729), `--host <addr>` (default 127.0.0.1),
 `--no-open` (skip auto-opening the browser), `--api-only` (JSON API without the dashboard, used
-for UI development — run it alongside `npm run web:dev` in `web/`). Configuration transfer always
-requires a loopback client regardless of `--host`.
+for UI development — run it alongside `npm run web:dev` in `web/`). The configuration inventory
+endpoint is loopback-only regardless of `--host`.
 
 ### Cache hit rate
 
@@ -217,11 +217,9 @@ them to expose fresh input and keep this formula meaningful across agents.
 
 ## Privacy
 
-toksight is local-first: usage statistics only **read** session files on your machine and never
-send your data anywhere. The configuration page writes only when you explicitly import selected
-items, and backs up every existing destination first. Export/import data moves only between the
-local server and your browser. The single external network call is the anonymous LiteLLM pricing
-fetch; run `--offline` to disable even that.
+toksight is local-first: usage statistics and the configuration page only **read** local files on
+your machine — nothing is uploaded, and no agent configuration is ever modified. The single
+external network call is the anonymous LiteLLM pricing fetch; run `--offline` to disable even that.
 
 ## JSON output
 

@@ -12,7 +12,7 @@ local dashboard with a read-only agent configuration viewer (still no TUI).
 
 ## Commands
 
-- `node --test` (or `npm test`) — run the node:test suite (92 tests); uses per-client fixtures, no
+- `node --test` (or `npm test`) — run the node:test suite (97 tests); uses per-client fixtures, no
   network needed. Note: `node --test test/` with a directory arg fails with MODULE_NOT_FOUND on
   Node v24/Windows (the directory is treated as a module to load) — that's why the script passes
   no path; explicit file paths or a glob like `node --test "test/*.test.js"` also work.
@@ -63,7 +63,9 @@ src/agentconfigs.js read-only five-agent config viewer: fixed user-file allowlis
                     SUMMARIZERS + redacted raw previews; credential files probed for existence
                     only, never previewed
 src/webserver.js    zero-dep node:http server: static web/out + live /api/data and loopback-only
-                    read-only /api/config inventory (GET/HEAD only, no write endpoints)
+                    read-only /api/config inventory (GET/HEAD only, no write endpoints); both
+                    API routes validate the Host header against localhost names (DNS-rebinding
+                    defense — /api/config always, /api/data only when loopback-bound)
 src/format.js       ANSI tables & number formatting
 src/fsutils.js      walkFiles (returns { files, warnings }: root ENOENT is silent, other read
                     failures warn), streaming readJsonl, readJson, pathExists
@@ -169,11 +171,13 @@ cost (only OpenCode does).
   OpenCode data-dir `auth.json`, Kimi `credentials/`) are probed for existence and whitelisted
   facts ONLY (auth mode, key names, env-var names) — never previewed. Everything else gets
   `redactConfig`: JSON/JSONC parse to a tree (string-aware JSONC stripper, then per-key
-  redaction), TOML/text fall back to line redaction. `env` blocks are walked into per variable
+  redaction), TOML/text fall back to line redaction — quote-aware and multi-line-aware
+  (a sensitive value spanning `"""`/`'''` strings or unbalanced brackets suppresses its
+  continuation lines to the end of the preview). `env` blocks are walked into per variable
   name (SENSITIVE_CONTAINER excludes env deliberately) so Claude relay configs stay readable;
   `oauth`/`headers`/`credentials` containers collapse whole. Previews cap at 64 KB, files over
-  1 MB keep metadata only. `GET /api/config` requires loopback clients and rejects every other
-  method/path — there are no write endpoints at all.
+  1 MB keep metadata only. `GET /api/config` requires loopback clients with a localhost Host
+  header and rejects every other method/path — there are no write endpoints at all.
 - Windows compatibility matters (paths, fixtures use `C:\\...` directories); `pathExists`
   handles `ENOTDIR` for files.
 

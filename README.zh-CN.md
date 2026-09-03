@@ -167,9 +167,8 @@ OpenCode 自带的价格（`cost` 字段）会被直接采用。
 `apikey`）与 OAuth 状态。普通配置文件的原文预览会把密钥、令牌类值替换为 `[REDACTED]`：
 Claude `settings.json` 的 `env` 块按变量名逐项判断（`ANTHROPIC_BASE_URL`、
 `ANTHROPIC_MODEL` 可见，`ANTHROPIC_API_KEY` 隐藏），因此第三方中转配置仍具可读性。
-项目级配置、托管/企业策略文件不在扫描范围内。配置 API 仅限本机回环客户端访问，
-即使 `--host` 开放了统计仪表盘。
-
+项目级配置、托管/企业策略文件不在扫描范围内。配置 API 仅限本机回环客户端且要求
+localhost `Host` 头，即使 `--host` 开放了统计仪表盘。
 
 ### 仪表盘构建产物
 
@@ -191,7 +190,7 @@ npm run web:build
 
 参数：`--port <n>`（默认 4729）、`--host <addr>`（默认 127.0.0.1）、`--no-open`
 （不自动开浏览器）、`--api-only`（只开 JSON API，供 UI 开发——配合 `web/` 下的
-`npm run web:dev` 使用）。无论 `--host` 如何设置，配置页始终只允许回环客户端访问。
+`npm run web:dev` 使用）。无论 `--host` 如何设置，配置一览端点始终只允许回环客户端访问。
 
 ### 缓存命中率
 

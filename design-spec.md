@@ -152,7 +152,7 @@ Token 四类（ANSI 磷光）：`input #c9f24b`（lime）/ `cache-read #3ddc97`�
   “凭据文件：内容不显示。”缺失文件降透明度。
 - 风险条必须明确：凭据永不显示；预览中的敏感值已替换为 [REDACTED]；页面只读。图标仍只
   服务展开与语义状态（ChevronDown、ShieldAlert、RefreshCw、TriangleAlert）。
-- 数据由 `GET /api/config`（仅回环、仅 GET/HEAD）提供：每个 agent 带 `files` 元数据与
+- 数据由 `GET /api/config`（仅回环、仅 GET/HEAD、要求 localhost `Host` 头）提供：每个 agent 带 `files` 元数据与
   `summary`（defaultModel、auth、facts、providers、models、mcpServers）；摘要中的值同样
   过 `redactString`。
 
@@ -161,8 +161,6 @@ Token 四类（ANSI 磷光）：`input #c9f24b`（lime）/ `cache-read #3ddc97`�
 - **Loading**：骨架（`.skel` 脉冲）对齐 KPI 条 + 前两格形状。
 - **Empty**：单格 + Inbox 图标 + `toksight env` / `--client` / `--since` 提示。
 - **Error**：单格 + TriangleAlert + 失败原因与下一步 + 重试按钮。
-- **Config import**：读取包之前为空工作区；校验中禁用写入；目标已存在用 amber “将先备份”，
-  新目标用 green “将新建”；完成后刷新左侧清单。
 
 ## 8. Anti-patterns
 
