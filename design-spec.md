@@ -15,7 +15,7 @@
 
 ## 1. Design direction
 
-- **Product**: 本地优先的 AI coding agent token 用量仪表盘（`toksight web`）。数据只读本地会话文件，不出机器。
+- **Product**: 本地优先的 AI coding agent token 用量仪表盘（`toksight web`）及固定范围的配置迁移页。统计只读本地会话文件；只有用户确认导入时才写所选配置，且先备份旧文件。数据不出机器。
 - **Style family**: Brutalism 磷光终端工作表——CLI 工具的可视化延伸。页面是一张工作表
   （`.frame`，2px 实线外框、最大宽 1680px、页面留白包裹），内部区块以 2px 硬网格线分割；
   结构靠边框而非表面色差；无圆角、无阴影、无模糊、无渐变、无光晕。对比度极高，密度高。
@@ -105,16 +105,17 @@ Token 四类（ANSI 磷光）：`input #c9f24b`（lime）/ `cache-read #3ddc97`�
 ## 5. Icon system
 
 - **Set**: `lucide-react`（构建期依赖）。`strokeWidth={2}`，尺寸 14–18px。
-- 用途限定：**只用于操作与状态**——刷新按钮（RefreshCw）、警告/筛选条、空/错误态、
-  Agent 行展开箭头（ChevronDown）。标签、标题、数值不带图标。
+- 用途限定：**只用于操作与状态**——刷新按钮（RefreshCw）、导入/导出（FileUp / Download）、
+  成功/警告/筛选/空/错误态，以及展开箭头（ChevronDown）。标签、标题、数值不带图标。
 
 ## 6. Layout / information hierarchy
 
 1. **页面壳**：body 纯黑留白 → `.wrap` → `.frame`（2px 外框、mono 马赛克，纵向堆叠，
    子元素间 2px `--color-border-strong` 分隔）。
 2. **Masthead**（frame 首行，sticky、实底无模糊）：左 = lime 底黑字 mono logo chip
-   `toksight` + "上次抓取 …"（取 `generatedAt`，不宣称实时）；右 = 语言分段（方角，
-   选中 lime 反转）、自动刷新 checkbox、刷新按钮（方角，hover lime 反转，进行中图标旋转）。
+   `toksight` + 页面元信息；右 = 仪表盘/配置方角导航、语言分段（选中 lime 反转）与页面操作。
+   仪表盘元信息为“上次抓取 …”（取 `generatedAt`，不宣称实时），操作为自动刷新 checkbox +
+   刷新按钮（方角，hover lime 反转，进行中图标旋转）。
 3. 警告条 / 筛选提示条（语义色左边 4px 实条 + 边框，方角）。
 4. **KPI 条** `.kpis`（4 格，2px 分隔；≤900px 2×2）：累计 Tokens（lime 值，副行 请求·会话）、
    总费用（副行定价状态）、缓存命中率（**green 值**，副行缓存读 tokens）、活跃天数（副行
@@ -137,11 +138,31 @@ Token 四类（ANSI 磷光）：`input #c9f24b`（lime）/ `cache-read #3ddc97`�
 7. 命中率统计按每次请求归因（session 切模型会被拆分归入各模型，不误计）。最长会话按
    `activeMs` 排名，壁钟跨度只作副注。
 
+### `/config` 配置迁移页
+
+- 与仪表盘共享 `.wrap → .frame → masthead → footer` 壳和中英切换；不另起 SaaS 卡片视觉。
+- 顺序：标题/范围说明 → 密钥风险 warning banner → 上下两层 2px gap-grid。上层为“这台电脑
+  → 配置包”的导出区，下层为“配置包 → 这台电脑”的导入区；所有视口都保持单列，禁止把两项
+  主任务并排，以免路径、预览和状态需要跨列阅读。
+- 导出列按五个固定 Agent 分组。每个完整文件是一项：方形 checkbox、名称/格式、存在状态、
+  Windows 友好的可换行路径、大小/修改时间，以及可展开的 64 KB 脱敏预览。缺失、不可读或
+  超过 1 MB 的项不可勾选。
+- 导入列先选择 `.toksight-config.json`，服务端校验格式/白名单/校验和后才显示各项；每项标明
+  固定目标路径以及“将新建 / 将先备份”。导入前使用原生确认框，未勾选项不得改变。
+- 页面绝不渲染包内原始配置；只渲染服务端返回的脱敏预览。风险条必须明确：导出包保存原文，
+  可能包含密钥；hooks/MCP/插件也可能携带可执行命令，只导入可信包。图标仍只服务于上传、
+  下载、展开及语义状态。
+- 导入结果以 success banner 呈现；API/包错误用 error banner；无包状态用虚线工作区说明下一步。
+- 标题和说明必须使用“这台电脑 / 配置包 / 下载 / 写入”等具体对象与动作，不以孤立的“迁移”
+  概念代替操作方向；导出与导入是上下排列的两个独立动作，不暗示用户必须在同一页依次完成。
+
 ## 7. States
 
 - **Loading**：骨架（`.skel` 脉冲）对齐 KPI 条 + 前两格形状。
 - **Empty**：单格 + Inbox 图标 + `toksight env` / `--client` / `--since` 提示。
 - **Error**：单格 + TriangleAlert + 失败原因与下一步 + 重试按钮。
+- **Config import**：读取包之前为空工作区；校验中禁用写入；目标已存在用 amber “将先备份”，
+  新目标用 green “将新建”；完成后刷新左侧清单。
 
 ## 8. Anti-patterns
 

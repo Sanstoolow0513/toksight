@@ -146,6 +146,35 @@ OpenCode 自带的价格（`cost` 字段）会被直接采用。
 生效；页面支持手动刷新、30 秒自动刷新，以及顶栏 中文 / EN 切换（记在 `localStorage` 键
 `toksight-locale`，默认中文）。
 
+### Agent 配置迁移
+
+从仪表盘顶栏进入**配置**（或直接打开 `/config`），可以预览、按项导出及按项导入用户级
+Agent 配置。首版有意只支持以下固定文件：
+
+| Agent | 纳入的用户级配置 |
+|---|---|
+| ZCode | `%ZCODE_HOME%\v2\config.json`、`v2\setting.json`、`cli\config.json`（默认根目录 `%USERPROFILE%\.zcode`） |
+| Claude Code | `%CLAUDE_CONFIG_DIR%\settings.json`（默认 `%USERPROFILE%\.claude`） |
+| Codex CLI | `%CODEX_HOME%\config.toml`（默认 `%USERPROFILE%\.codex`） |
+| OpenCode | `%OPENCODE_CONFIG_DIR%\opencode.json` / `opencode.jsonc`（目录默认取 `%XDG_CONFIG_HOME%\opencode`，再回退 `%USERPROFILE%\.config\opencode`）；设置 `%OPENCODE_CONFIG%` 时覆盖对应 JSON/JSONC 项目 |
+| Kimi Code | `%KIMI_CODE_HOME%\config.toml`、`tui.toml`、`mcp.json`（默认 `%USERPROFILE%\.kimi-code`） |
+
+项目级设置、托管策略、会话/历史数据、`.env` 以及专用凭据/认证存储不会被此页面扫描。首版
+也不做逐字段编辑；每个可勾选项目就是一个完整文件。明确排除 ZCode `v2\credentials.json`、
+Claude `%USERPROFILE%\.claude.json`（混有状态/认证/MCP 数据）、Codex `auth.json`、OpenCode
+`%USERPROFILE%\.local\share\opencode\auth.json` 以及 Kimi 的凭据目录。
+
+导出结果是可直接检查的 `.toksight-config.json` 包，带校验和；清单不会额外写入源/目标绝对路径
+（原配置正文自身仍可能包含路径）。
+页面中的预览会隐藏常见敏感键值，但下载的配置包保留**原文件完整内容**，因此可能含 API key
+或 token；请按凭据的安全级别保管和传递。校验和只能发现意外损坏，并非数字签名；配置还可能
+定义 hooks、插件或 MCP 命令，因此只应导入可信来源的配置包。
+
+导入时，配置包不能指定写入位置：toksight 只会根据上面的固定白名单解析每个已选项目的目标。
+若目标已存在，先把它改名为 `<文件名>.backup-YYYYMMDDTHHMMSSZ`（重名时追加 `-2`、`-3`……），
+再放入新文件。多项导入会先准备完全部临时文件；任一项应用失败时，会尝试恢复全部备份。
+配置 API 仅同源、不开 CORS；即使通过 `--host` 对外开放统计仪表盘，也只允许回环客户端操作配置。
+
 ### 仪表盘构建产物
 
 npm 包已包含 `web/out/` 中预构建好的静态文件，安装后的用户可以直接启动：
@@ -164,9 +193,9 @@ npm run web:build
 执行 `npm pack` 或 `npm publish` 时会自动重新构建仪表盘。从源码运行且 `web/out/` 尚未构建
 时，`toksight web` 会在 `/` 显示构建指引页，`/api/data` 仍可正常使用。
 
-参数：`--port <n>`（默认 4729）、`--host <addr>`（默认 127.0.0.1，仅回环）、`--no-open`
+参数：`--port <n>`（默认 4729）、`--host <addr>`（默认 127.0.0.1）、`--no-open`
 （不自动开浏览器）、`--api-only`（只开 JSON API，供 UI 开发——配合 `web/` 下的
-`npm run web:dev` 使用）。
+`npm run web:dev` 使用）。无论 `--host` 如何设置，配置迁移始终要求回环客户端。
 
 ### 缓存命中率
 
@@ -178,8 +207,9 @@ npm run web:build
 
 ## 隐私
 
-toksight 是本地优先的：只**读取**你机器上的会话文件，绝不上传数据。唯一的网络请求是匿名的
-LiteLLM 价格拉取；`--offline` 可以连它也关掉。
+toksight 是本地优先的：用量统计只**读取**你机器上的会话文件，绝不上传数据。只有你在配置页
+明确导入所选项目时才会写文件，而且所有已存在的目标都会先备份。导入/导出数据只在本地服务器
+与浏览器之间传递。唯一的外部网络请求是匿名的 LiteLLM 价格拉取；`--offline` 可以连它也关掉。
 
 ## JSON 输出
 
@@ -214,6 +244,7 @@ src/args.js            命令行参数解析（--flag value / --flag=value）
 src/render.js          文本渲染（表格、摘要、警告）
 src/payload.js         --json / web API 的载荷契约
 src/dates.js           共享的本地时间日期工具（DST 安全）
+src/agentconfigs.js    固定范围的配置预览/导出/导入与备份事务
 src/pricing.js         内置价格表 + LiteLLM 缓存 + 用户覆盖
 src/aggregate.js       分组与合计
 src/webdata.js         网页仪表盘聚合（热力图、趋势、会话……）
@@ -222,7 +253,7 @@ src/format.js          ANSI 表格与数字格式化
 src/fsutils.js         walkFiles、readJsonl、readJson、pathExists
 src/clients/           每个 agent 一个解析器，归一化为统一数据结构
                        （共享 src/clients/sqlite.js 只读打开助手）
-web/                   Next.js 仪表盘（静态导出，由 CLI 托管）
+web/                   Next.js 仪表盘 + /config 页面（静态导出，由 CLI 托管）
 ```
 
 CLI 本体保持**零运行时依赖**；仪表盘的依赖只存在于 `web/package.json`，
@@ -231,6 +262,7 @@ CLI 本体保持**零运行时依赖**；仪表盘的依赖只存在于 `web/pac
 ### 路线图
 
 - [x] 网页仪表盘（`toksight web`，第二阶段）
+- [x] Agent 配置按项预览/导出/导入（`toksight web` → 配置）
 - [ ] TUI watch 模式
 - [ ] 更多客户端（Cursor、Windsurf、pi……）
 - [ ] `--export csv`、排行榜式分享

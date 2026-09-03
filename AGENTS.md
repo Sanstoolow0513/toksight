@@ -4,13 +4,14 @@
 
 `toksight` — a Node.js CLI (zero runtime dependencies, ESM only, Node >= 20) that tracks token
 usage, cost, and cache hit rate of AI coding agents by reading the local session files those
-agents already write. Local-first: it only reads; the sole network call is the LiteLLM pricing
+agents already write. Local-first: statistics only read; the explicit web config import is the
+sole write path and backs up existing targets first. The sole network call is the LiteLLM pricing
 fetch (skippable with `--offline`). Phase 1 (stats) is done; phase 2 adds the `toksight web`
-local dashboard (still no TUI).
+local dashboard and fixed-scope agent configuration transfer (still no TUI).
 
 ## Commands
 
-- `node --test` (or `npm test`) — run the node:test suite (78 tests); uses per-client fixtures, no
+- `node --test` (or `npm test`) — run the node:test suite (90 tests); uses per-client fixtures, no
   network needed. Note: `node --test test/` with a directory arg fails with MODULE_NOT_FOUND on
   Node v24/Windows (the directory is treated as a module to load) — that's why the script passes
   no path; explicit file paths or a glob like `node --test "test/*.test.js"` also work.
@@ -55,12 +56,16 @@ src/aggregate.js    grouping/totals (summarize, byModel/Day/Month/Session, cache
 src/webdata.js      web-dashboard aggregations over entries (heatmap, trend, trendByAgent,
                     hourly, today/last7Days/thisMonth, sessions w/ activeMs, longestSession)
                     — pure functions; day math imported from src/dates.js
-src/webserver.js    zero-dep node:http server: static web/out + live /api/data
+src/agentconfigs.js fixed five-agent user-config allowlist; redacted inventory, checksummed
+                    export bundles, selective transactional import with timestamped backups
+src/webserver.js    zero-dep node:http server: static web/out + live /api/data and loopback-only
+                    /api/config preview/export/import endpoints
 src/format.js       ANSI tables & number formatting
 src/fsutils.js      walkFiles (returns { files, warnings }: root ENOENT is silent, other read
                     failures warn), streaming readJsonl, readJson, pathExists
-web/                Next.js (App Router, JS, no Tailwind) dashboard, statically exported to
-                    web/out and served by the CLI; app/page.js + components/ (Heatmap,
+web/                Next.js (App Router, JS, no Tailwind) dashboard + app/config/page.js,
+                    statically exported to web/out and served by the CLI; app/page.js +
+                    components/ (Heatmap,
                     TrendChart with mix/agent step-after stacks, AgentsPanel, ModelBars with
                     hard-split cache bars, Bars; every chart tooltip is the shared components/Tip)
                     + lib/format.js + lib/i18n.js (zh-CN / en,
@@ -73,7 +78,7 @@ web/                Next.js (App Router, JS, no Tailwind) dashboard, statically 
                     deps in web/package.json). v6 layout: masthead → 4-cell KPI strip →
                     12-col .sheet (trend, heatmap, agent/model, hour/month/pace, sessions
                     table). Kept from v4: icons only for actions/states (RefreshCw,
-                    ChevronDown, warn/empty/error), no entrance choreography, no ambient
+                    ChevronDown, FileUp, Download, success/warn/empty/error), no entrance choreography, no ambient
                     glow, no "live" badge (nav shows last-fetch time from generatedAt),
                     categorical palette is brand-lime + slate-gray rank ramp (colorAt
                     encodes rank, not identity).
@@ -153,6 +158,15 @@ cost (only OpenCode does).
   TTL); binds 127.0.0.1 by default (never 0.0.0.0 by default); static assets under `web/out/_next/`
   are immutable-cached, everything else `no-cache`; path traversal is rejected (403); if
   `web/out/index.html` is missing, `/` serves the built-in setup page instead of failing.
+- **Config transfer scope/safety**: only user-level configuration for ZCode, Claude Code, Codex
+  CLI, OpenCode and Kimi Code is allowlisted in `src/agentconfigs.js`; never add project/managed
+  policy, `.env`, session/history or auth/credential stores implicitly. Inventory and imported
+  package previews are redacted, but exports intentionally preserve exact file contents and can
+  contain secrets. Bundle paths are never trusted: destinations come only from the allowlist and
+  injected env/home. Selective import prepares same-directory temp files, renames each existing
+  target to `.backup-<UTC timestamp>`, applies all items, and attempts a full rollback on failure.
+  Config APIs require loopback clients, JSON POSTs and same-origin/no-CORS access even when the
+  statistics server is bound more broadly.
 - Windows compatibility matters (paths, fixtures use `C:\\...` directories); `pathExists`
   handles `ENOTDIR` for files.
 

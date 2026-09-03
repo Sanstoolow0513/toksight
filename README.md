@@ -153,6 +153,40 @@ All filters (`--client`, `--since`, `--until`, `--today/--week/--month`) work fo
 the page offers a manual refresh, a 30s auto-refresh toggle, and a 中文 / EN language switch
 (stored in `localStorage` as `toksight-locale`, default Chinese).
 
+### Agent configuration transfer
+
+Open **Config** in the dashboard masthead (or `/config`) to preview, selectively export, and
+selectively import user-level agent configuration. This first version intentionally supports only
+these fixed files:
+
+| Agent | Included user configuration |
+|---|---|
+| ZCode | `%ZCODE_HOME%\v2\config.json`, `v2\setting.json`, `cli\config.json` (default root `%USERPROFILE%\.zcode`) |
+| Claude Code | `%CLAUDE_CONFIG_DIR%\settings.json` (default `%USERPROFILE%\.claude`) |
+| Codex CLI | `%CODEX_HOME%\config.toml` (default `%USERPROFILE%\.codex`) |
+| OpenCode | `%OPENCODE_CONFIG_DIR%\opencode.json` / `opencode.jsonc` (directory defaults to `%XDG_CONFIG_HOME%\opencode`, then `%USERPROFILE%\.config\opencode`); `%OPENCODE_CONFIG%` overrides the matching JSON/JSONC item when set |
+| Kimi Code | `%KIMI_CODE_HOME%\config.toml`, `tui.toml`, `mcp.json` (default `%USERPROFILE%\.kimi-code`) |
+
+Project settings, managed policy, session/history data, `.env`, and dedicated credential/auth
+stores are never scanned by this page. There is no field-by-field editor yet; each selectable item
+is one complete file. Notably excluded are ZCode `v2\credentials.json`, Claude `%USERPROFILE%\.claude.json`
+(mixed state/auth/MCP data), Codex `auth.json`, OpenCode `%USERPROFILE%\.local\share\opencode\auth.json`, and
+Kimi credential storage.
+
+Exports are inspectable `.toksight-config.json` bundles with checksums; the manifest does not add
+absolute source/destination paths (the unchanged configuration text can contain its own paths).
+The redacted previews hide common secret-bearing keys, but the downloaded bundle contains
+the **exact original file contents** and can therefore contain API keys or tokens. Store and share
+it as carefully as credentials. Checksums detect accidental damage; they are not signatures.
+Configuration can also define hooks, plugins or MCP commands, so import trusted bundles only.
+
+On import, the package cannot choose its destination: toksight resolves every selected item through
+the same fixed allowlist above. If a destination already exists, it is first renamed to
+`<name>.backup-YYYYMMDDTHHMMSSZ` (with `-2`, `-3`, … on collision), then the imported file is put in
+place. A multi-item import prepares all temporary files first and attempts to restore all backups
+if applying any item fails. Configuration APIs are same-origin, have no CORS access, and remain
+restricted to loopback clients even when `--host` exposes the statistics dashboard elsewhere.
+
 ### Dashboard bundle
 
 The npm package ships with the prebuilt static files in `web/out/`, so installed users can start
@@ -174,9 +208,10 @@ npm run web:build
 source checkout, `toksight web` serves a setup-instructions page at `/` while `/api/data` keeps
 working.
 
-Options: `--port <n>` (default 4729), `--host <addr>` (default 127.0.0.1, loopback only),
+Options: `--port <n>` (default 4729), `--host <addr>` (default 127.0.0.1),
 `--no-open` (skip auto-opening the browser), `--api-only` (JSON API without the dashboard, used
-for UI development — run it alongside `npm run web:dev` in `web/`).
+for UI development — run it alongside `npm run web:dev` in `web/`). Configuration transfer always
+requires a loopback client regardless of `--host`.
 
 ### Cache hit rate
 
@@ -189,9 +224,11 @@ them to expose fresh input and keep this formula meaningful across agents.
 
 ## Privacy
 
-toksight is local-first: it only **reads** session files on your machine and never sends your data
-anywhere. The single network call is the anonymous LiteLLM pricing fetch; run `--offline` to
-disable even that.
+toksight is local-first: usage statistics only **read** session files on your machine and never
+send your data anywhere. The configuration page writes only when you explicitly import selected
+items, and backs up every existing destination first. Export/import data moves only between the
+local server and your browser. The single external network call is the anonymous LiteLLM pricing
+fetch; run `--offline` to disable even that.
 
 ## JSON output
 
@@ -227,6 +264,7 @@ src/args.js            CLI argument parsing (--flag value / --flag=value)
 src/render.js          text rendering (tables, sections, warnings)
 src/payload.js         the --json / web API payload contract
 src/dates.js           shared local-time date helpers (DST-safe)
+src/agentconfigs.js    fixed-scope config preview/export/import + backup transaction
 src/pricing.js         built-in table + LiteLLM cache + user overrides
 src/aggregate.js       grouping/totals
 src/webdata.js         web-dashboard aggregations (heatmap, trend, sessions…)
@@ -235,7 +273,7 @@ src/format.js          ANSI tables & number formatting
 src/fsutils.js         walkFiles, readJsonl, readJson, pathExists
 src/clients/           one parser per agent, normalized to a common entry shape
                        (+ shared src/clients/sqlite.js read-only opener)
-web/                   Next.js dashboard (static export served by the CLI)
+web/                   Next.js dashboard + /config page (static export served by the CLI)
 ```
 
 The CLI itself keeps **zero runtime dependencies**; the dashboard's dependencies live only in
@@ -244,6 +282,7 @@ The CLI itself keeps **zero runtime dependencies**; the dashboard's dependencies
 ### Roadmap
 
 - [x] Web dashboard (`toksight web`, phase 2)
+- [x] Selective agent configuration preview/export/import (`toksight web` → Config)
 - [ ] TUI watch mode
 - [ ] More clients (Cursor, Windsurf, pi…)
 - [ ] `--export csv`, leaderboard-style sharing

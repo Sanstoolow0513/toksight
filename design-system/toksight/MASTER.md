@@ -11,7 +11,7 @@
 
 **Project:** toksight
 **Generated:** 2026-09-02 (aligned to design-spec.md v6)
-**Category:** Local-first CLI companion — AI coding-agent token / cost / cache dashboard
+**Category:** Local-first CLI companion — AI coding-agent token / cost / cache dashboard + fixed-scope configuration transfer
 **Design Dials:** Variance 8/10 (Bold / Asymmetric) | Motion 3/10 (Subtle) | Density 9/10 (Dense / Dashboard)
 
 ---
@@ -94,7 +94,7 @@ Hero KPI values: 34px mono 700.
 
 ## Component Specs
 
-Classes below are the ones in `web/app/globals.css`. Do not invent `.btn-primary` / `.card`.
+Classes below are the shared primitives in `web/app/globals.css`. Do not invent `.btn-primary` / `.card`.
 
 ### Buttons (`.btn`)
 
@@ -136,6 +136,24 @@ Not a floating card. Cells are tiles in a mosaic: parent (`.frame` / `.kpis` / `
 
 Square 14×14, `appearance: none`, 1px strong border. Checked = lime fill (the fill *is* the mark). No OS rounded checkbox.
 
+### Configuration transfer (`/config`)
+
+- Same `.wrap` / `.frame` / `.masthead` / `.foot` worksheet shell as the dashboard.
+- Masthead uses square `.top-nav` links for Dashboard / Config; active route is lime invert.
+- `.config-stack` is always a single-column 2px strong-border gap-grid: export is the upper layer,
+  import is the lower layer. Never place these two primary tasks side by side. `.config-pane` and
+  `.config-agent` are worksheet regions, not floating cards.
+- Labels state the concrete direction (`this computer → bundle` / `bundle → this computer`) and
+  use explicit download/write verbs instead of relying on the abstract idea of “transfer.”
+- A selectable unit is one complete allowlisted file. `.config-choice-box` is a square fill-only
+  checkbox. Status tags are square: green = found/create, amber = backup/oversize, red = unreadable.
+- Paths wrap instead of causing viewport overflow. Redacted text is in a bounded mono `<pre>`;
+  expand/collapse is an explicit ChevronDown action without added animation.
+- Export/import remain ordinary `.btn` controls; do not create a primary-button variant.
+- The warning banner must disclose that redacted previews are not the exported bytes: bundles can
+  contain credentials and command-bearing hook/MCP/plugin settings, so only trusted bundles should
+  be imported. Raw bundle contents are never rendered.
+
 ### Tooltip (`.tip`)
 
 Fixed, mouse-anchored, 1px strong border, panel fill, radius 0, no shadow, no blur. Shared `components/Tip.jsx` for every chart.
@@ -164,9 +182,10 @@ Fixed, mouse-anchored, 1px strong border, panel fill, radius 0, no shadow, no bl
 
 **Pattern Name:** Worksheet / operations dashboard (not a marketing landing)
 
-- **Section order:** masthead → optional banners → 4-cell KPI strip → 12-col sheet (trend 12, heatmap 12, agent 5 + model 7, hour 4 + month 4 + rhythm 4, sessions 12) → footer
+- **Dashboard order:** masthead → optional banners → 4-cell KPI strip → 12-col sheet (trend 12, heatmap 12, agent 5 + model 7, hour 4 + month 4 + rhythm 4, sessions 12) → footer
+- **Config order:** masthead → scope intro → credential warning → export/import gap-grid → footer
 - **Never** label telemetry as "live". Masthead shows last-fetch time from `generatedAt`.
-- **CTA:** refresh is a square invert button; language is a square segmented control.
+- **CTA:** actions are square invert buttons; language is a square segmented control.
 
 ---
 
@@ -186,7 +205,7 @@ Allowed (see spec §4); everything else is forbidden. `prefers-reduced-motion` z
 - ❌ Entrance choreography, number roll-up, grow-in bars/cells, breathing dots
 - ❌ "Live" badge or pulse on the nav
 - ❌ Rainbow categorical colors; rank is lime + gray
-- ❌ Decorative icons on labels / titles / values (icons = actions and states only: RefreshCw, ChevronDown, warn/empty/error)
+- ❌ Decorative icons on labels / titles / values (icons = actions and states only: RefreshCw, ChevronDown, FileUp, Download, success/warn/empty/error)
 - ❌ Inter / Fira / Inter-like "upgrades"; this app is Geist, mono-led
 - ❌ Google Fonts network import
 - ❌ Hiding unpriced models — footer must list them

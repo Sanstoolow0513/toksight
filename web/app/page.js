@@ -8,6 +8,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Inbox, RefreshCw, TriangleAlert, Filter } from 'lucide-react';
+import Link from 'next/link';
 import { fmtTokens, fmtCost, fmtPct, fmtDateTime, fmtDuration } from '@/lib/format';
 import Heatmap from '@/components/Heatmap';
 import TrendChart from '@/components/TrendChart';
@@ -229,6 +230,10 @@ export default function Page() {
         {data && <span className="fetch-meta">{tx('live', { time: fmtDateTime(data.generatedAt) })}</span>}
       </div>
       <div className="head-actions">
+        <nav className="top-nav" aria-label={tx('navAria')}>
+          <Link className="active" href="/" aria-current="page">{tx('navDashboard')}</Link>
+          <Link href="/config">{tx('navConfig')}</Link>
+        </nav>
         <LangSwitch locale={locale} onChange={setLocale} label={tx('langGroup')} />
         <label className="auto-label">
           <input type="checkbox" checked={auto} onChange={(e) => setAuto(e.target.checked)} />

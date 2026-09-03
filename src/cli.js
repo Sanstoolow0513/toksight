@@ -7,6 +7,7 @@ import { spawn } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { clients } from './clients/index.js';
+import { createAgentConfigService } from './agentconfigs.js';
 import { collectAll } from './collect.js';
 import { createFormatter } from './format.js';
 import { pathExists } from './fsutils.js';
@@ -30,7 +31,7 @@ Commands
   monthly       Usage grouped by month
   models        Usage grouped by model
   sessions      Top sessions by cost
-  web           Launch the local web dashboard (heatmap, sessions, charts)
+  web           Launch the local dashboard and agent config transfer page
   env           Show detected data sources and pricing state
   help          Show this help
 
@@ -52,7 +53,8 @@ Options
   --version        Print version
   --help           Print this help
 
-Data stays on your machine: toksight only reads local session files.
+Data stays on your machine: stats only read local session files. Config import
+writes only the explicitly selected agent settings after backing up old files.
 Pricing: built-in estimates, refreshed from LiteLLM (1h disk cache), overridable
 in ${path.join('<config>', 'toksight', 'pricing.json')} — see README.
 Inspired by tokscale.`;
@@ -101,6 +103,7 @@ async function runWeb(opts) {
     outDir,
     apiOnly: opts.apiOnly,
     getData,
+    configService: createAgentConfigService(),
   });
 
   const { url } = await server.start();
