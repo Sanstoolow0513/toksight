@@ -77,47 +77,113 @@ function redactedTree(value) {
   return out;
 }
 
+// Scan one line of a value: count brackets that sit outside quoted spans
+// and comments, and report the multi-line string delimiter (`"""`/`'''`)
+// the line ends inside, if any. `triple` is the delimiter the line starts
+// inside (null when it does not). Single-quote state never crosses a line —
+// an unterminated one-line string means a malformed file, and the next line
+// is a fresh statement.
+function scanValueLine(line, triple) {
+  let depth = 0;
+  let quote = null;
+  let i = 0;
+  while (i < line.length) {
+    const ch = line[i];
+    if (triple) {
+      if (ch === '\\') { i += 2; continue; }
+      if (line.startsWith(triple, i)) { triple = null; i += 3; continue; }
+      i += 1;
+      continue;
+    }
+    if (quote) {
+      if (ch === '\\') { i += 2; continue; }
+      if (ch === quote) quote = null;
+      i += 1;
+      continue;
+    }
+    if (ch === '"' || ch === "'") {
+      const delim = ch.repeat(3);
+      if (line.startsWith(delim, i)) { triple = delim; i += 3; continue; }
+      quote = ch;
+      i += 1;
+      continue;
+    }
+    if (ch === '#') break; // TOML comment
+    if (ch === '/' && line[i + 1] === '/') break; // JSONC comment
+    if (ch === '[' || ch === '{') depth += 1;
+    else if (ch === ']' || ch === '}') depth -= 1;
+    i += 1;
+  }
+  return { depth, triple };
+}
+
 function redactLines(content) {
   let sensitiveSection = false;
-  let sensitiveDepth = 0;
+  // Active while a sensitive value spans lines. `triple` is the open
+  // multi-line string delimiter — every content line is dropped whole,
+  // because it is pure secret. `depth` is the count of still-open brackets
+  // — lines are redacted in place until they close, quote-aware so a `]`
+  // inside a string does not end the value early. A value that never closes
+  // (a preview cut at PREVIEW_BYTES, or a malformed file) suppresses to the
+  // end of the preview.
+  let suppress = null;
 
   return content
     .split(/\r?\n/)
-    .map((line) => {
+    .flatMap((line) => {
+      if (suppress) {
+        const startedInString = Boolean(suppress.triple);
+        const scan = scanValueLine(line, suppress.triple);
+        suppress.triple = scan.triple;
+        suppress.depth += scan.depth;
+        if (startedInString) {
+          // String content, or the closing line (which may trail more
+          // secret) — drop it whole.
+          if (!scan.triple && suppress.depth <= 0) suppress = null;
+          return [];
+        }
+        if (!scan.triple && suppress.depth <= 0) suppress = null;
+        const assignment = line.replace(/^\s*(["']?[^"'=:\s]+["']?\s*[:=]\s*).*(,?)\s*$/, `$1"${REDACTED}"$2`);
+        if (assignment !== line) return [assignment];
+        if (/^\s*[}\]]\s*,?\s*$/.test(line) || /^\s*(?:\/\/|#|$)/.test(line)) return [line];
+        return [`${line.match(/^\s*/)?.[0] || ''}"${REDACTED}"${line.trimEnd().endsWith(',') ? ',' : ''}`];
+      }
+
       const section = line.match(/^\s*\[+([^\]]+)]+/);
       if (section) {
         sensitiveSection = section[1]
           .split('.')
           .some((part) => SENSITIVE_KEY.test(part) || SENSITIVE_CONTAINER.test(part.replace(/^['"]|['"]$/g, '')));
-        return line;
+        return [line];
       }
 
-      const keyMatch = line.match(/^\s*["']?([^"'=:\s]+)["']?\s*[:=]/);
+      // The optional leading `{`/`[` lets a first JSON key on the same line
+      // as its opening brace (`{"apiKey": …` in a malformed file) be seen.
+      const keyMatch = line.match(/^\s*[{\[]?\s*["']?([^"'=:\s]+)["']?\s*[:=]/);
       const key = keyMatch?.[1] || '';
-      const startsSensitiveObject = SENSITIVE_CONTAINER.test(key) && /[:=]\s*[\[{]/.test(line);
 
-      if (startsSensitiveObject) {
-        const opens = (line.match(/[\[{]/g) || []).length;
-        const closes = (line.match(/[\]}]/g) || []).length;
-        sensitiveDepth = Math.max(0, opens - closes);
-        return line.replace(/([:=]\s*)[\[{].*$/, `$1"${REDACTED}"${line.trimEnd().endsWith(',') ? ',' : ''}`);
+      if (keyMatch && (sensitiveSection || SENSITIVE_KEY.test(key) || SENSITIVE_CONTAINER.test(key))) {
+        // A value that stays open past this line (a multi-line string, or
+        // brackets that do not close) must suppress its continuation lines;
+        // a balanced value is rewritten in place either way.
+        const scan = scanValueLine(line.slice(keyMatch[0].length), null);
+        if (scan.triple || scan.depth > 0) {
+          suppress = { depth: scan.depth, triple: scan.triple };
+        }
+        return [line.replace(/([:=]\s*).*(,?)\s*$/, `$1"${REDACTED}"$2`)];
       }
 
-      if (sensitiveDepth > 0) {
-        sensitiveDepth += (line.match(/[\[{]/g) || []).length - (line.match(/[\]}]/g) || []).length;
-        const assignment = line.replace(/^\s*(["']?[^"'=:\s]+["']?\s*[:=]\s*).*(,?)\s*$/, `$1"${REDACTED}"$2`);
-        if (assignment !== line) return assignment;
-        if (/^\s*[}\]]\s*,?\s*$/.test(line) || /^\s*(?:\/\/|#|$)/.test(line)) return line;
-        return `${line.match(/^\s*/)?.[0] || ''}"${REDACTED}"${line.trimEnd().endsWith(',') ? ',' : ''}`;
-      }
-
-      if (sensitiveSection || SENSITIVE_KEY.test(key)) {
-        return line.replace(/([:=]\s*).*(,?)\s*$/, `$1"${REDACTED}"$2`);
+      if (!keyMatch && sensitiveSection) {
+        // A bare line inside a sensitive section: closers, comments and
+        // blanks pass; anything else is value content of a malformed
+        // statement and is redacted.
+        if (/^\s*[}\]]\s*,?\s*$/.test(line) || /^\s*(?:\/\/|#|$)/.test(line)) return [line];
+        return [`${line.match(/^\s*/)?.[0] || ''}"${REDACTED}"${line.trimEnd().endsWith(',') ? ',' : ''}`];
       }
 
       // Catch common bearer/key literals even when a format uses an unusual
       // key shape. Previews are for orientation; this errs on the safe side.
-      return redactString(line);
+      return [redactString(line)];
     })
     .join('\n');
 }

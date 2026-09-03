@@ -53,6 +53,9 @@ test('inventory covers the five agents with summaries, files and redacted previe
       '[providers."managed:kimi-code"]',
       'type = "kimi"',
       'base_url = "https://api.kimi.com/coding/v1"',
+      'api_key = """',
+      'kimi-multiline-secret',
+      '"""',
       '[models."kimi-code/k3"]',
       'provider = "managed:kimi-code"',
       'max_context_size = 1048576',
@@ -106,7 +109,9 @@ test('inventory covers the five agents with summaries, files and redacted previe
   assert.equal(kimiFact('factPermissionMode'), 'yolo');
   assert.equal(kimiFact('factRegion'), 'mainland-cn');
   assert.equal(kimi.summary.providers[0].name, 'managed:kimi-code');
-  assert.equal(kimi.summary.providers[0].apiKeySet, false);
+  // The fixture provider has an api_key: the summary flags it as set while
+  // the preview must hide it (checked via the sweep below).
+  assert.equal(kimi.summary.providers[0].apiKeySet, true);
   assert.equal(kimi.summary.models[0].contextTokens, 1048576);
 
   // ZCode: provider/models flattened from v2/config.json, oauth detected.
@@ -118,7 +123,7 @@ test('inventory covers the five agents with summaries, files and redacted previe
 
   // Secrets never appear anywhere in the serialized inventory.
   const json = JSON.stringify(inventory);
-  for (const secret of ['claude-secret', 'codex-token', 'opencode-secret', 'kimi-secret', 'zcode-secret', 'zcode-oauth-secret']) {
+  for (const secret of ['claude-secret', 'codex-token', 'opencode-secret', 'kimi-secret', 'kimi-multiline-secret', 'zcode-secret', 'zcode-oauth-secret']) {
     assert.ok(!json.includes(secret), `${secret} leaked into the inventory`);
   }
 });
@@ -215,4 +220,56 @@ test('redactConfig handles json, jsonc, toml and free text', () => {
   const text = redactConfig('export K=v\nhttps://user:pass@x.test/a?token=q\n', 'text');
   assert.match(text, /REDACTED/);
   assert.doesNotMatch(text, /pass@/);
+});
+
+test('redactConfig suppresses multi-line values under sensitive keys', () => {
+  // TOML multi-line basic and literal strings: continuation lines are value
+  // content, not statements — they must be dropped, not line-scrubbed.
+  for (const delim of ['"""', "'''"]) {
+    const toml = redactConfig(`[model_providers.relay]\napi_key = ${delim}\nSUPER-SECRET-VALUE-123\n${delim}\nbase_url = "https://x.test"\n`, 'toml');
+    assert.ok(!toml.includes('SUPER-SECRET-VALUE-123'), `${delim} string content leaked`);
+    assert.match(toml, /api_key = "\[REDACTED\]"/);
+    assert.match(toml, /base_url/);
+  }
+
+  // Multi-line arrays: every element line is redacted until the brackets close.
+  const array = redactConfig('api_key = [\n  "SECRET-1",\n  "SECRET-2",\n]\nmodel = "gpt-5"\n', 'toml');
+  assert.ok(!array.includes('SECRET-1') && !array.includes('SECRET-2'));
+  assert.match(array, /api_key = "\[REDACTED\]"/);
+  assert.match(array, /model = "gpt-5"/);
+
+  // A triple string nested inside an array stays suppressed until both close.
+  const nested = redactConfig('api_key = [ """\nsecret-inside-array\n""" ]\nmodel = "gpt-5"\n', 'toml');
+  assert.ok(!nested.includes('secret-inside-array'));
+  assert.match(nested, /model = "gpt-5"/);
+
+  // A value that never closes (preview cut at PREVIEW_BYTES, mid-write file)
+  // suppresses to the end of the preview.
+  for (const input of ['api_key = """\nunterminated-secret\nstill-secret\n', 'api_key = [\n  "unterminated",\n']) {
+    const out = redactConfig(input, 'toml');
+    assert.ok(!out.includes('unterminated-secret') && !out.includes('still-secret') && !out.includes('unterminated'));
+  }
+
+  // Malformed JSON falls back to line redaction — the first key may share its
+  // line with the opening brace, and the array may still be open.
+  const malformed = redactConfig('{\n"apiKey": ["plain-secret-value",\n"another-secret",', 'json');
+  assert.ok(!malformed.includes('plain-secret-value') && !malformed.includes('another-secret'));
+  const malformedSameLine = redactConfig('{"apiKey": ["plain-secret-value",\n"another-secret",', 'json');
+  assert.ok(!malformedSameLine.includes('plain-secret-value') && !malformedSameLine.includes('another-secret'));
+
+  // Brackets inside quoted strings must not end container suppression early.
+  const quoted = redactConfig('headers = {\n  "X": "a]b",\n  "Y": "plain-secret"\n}\nmodel = "gpt-5"\n', 'toml');
+  assert.ok(!quoted.includes('plain-secret'));
+  assert.match(quoted, /model = "gpt-5"/);
+
+  // Bare content lines inside a sensitive section are redacted.
+  const bare = redactConfig('[secrets]\nbare-secret-line\nother = 1\n', 'toml');
+  assert.ok(!bare.includes('bare-secret-line'));
+
+  // Readability: multi-line values under NON-sensitive keys stay intact.
+  const readable = redactConfig('description = """\nreadable multi-line text\n"""\nmodels = [\n  "a",\n  "b",\n]\napi_key = "k"\n', 'toml');
+  assert.match(readable, /readable multi-line text/);
+  assert.match(readable, /"a"/);
+  assert.match(readable, /"b"/);
+  assert.doesNotMatch(readable, /= "k"/);
 });
