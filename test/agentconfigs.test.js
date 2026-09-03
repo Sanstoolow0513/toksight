@@ -128,6 +128,17 @@ test('inventory covers the five agents with summaries, files and redacted previe
   }
 });
 
+test('claude auth detail names the env var that is actually set', async () => {
+  // ANTHROPIC_AUTH_TOKEN relays (no ANTHROPIC_API_KEY) must not be reported
+  // as ANTHROPIC_API_KEY.
+  const home = tempHome();
+  write(path.join(home, '.claude', 'settings.json'), JSON.stringify({ env: { ANTHROPIC_AUTH_TOKEN: 'auth-token-secret', ANTHROPIC_BASE_URL: 'https://relay.example.test' } }));
+  const inventory = await createAgentConfigService({ env: {}, home }).inspect();
+  assert.deepEqual(findAgent(inventory, 'claude').summary.auth, { method: 'envKey', detail: 'ANTHROPIC_AUTH_TOKEN' });
+  // The token itself never appears in the inventory.
+  assert.ok(!JSON.stringify(inventory).includes('auth-token-secret'));
+});
+
 test('credential files report metadata but never produce a preview', async () => {
   const home = tempHome();
   write(path.join(home, '.codex', 'auth.json'), JSON.stringify({ auth_mode: 'apikey', OPENAI_API_KEY: 'codex-secret', tokens: { access_token: 't' } }));

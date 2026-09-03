@@ -10,7 +10,7 @@
 
 import os from 'node:os';
 import path from 'node:path';
-import { open, readdir, readFile, stat } from 'node:fs/promises';
+import { readdir, readFile, stat } from 'node:fs/promises';
 
 import { parseToml } from './toml.js';
 
@@ -39,15 +39,6 @@ const SENSITIVE_KEY = /(?:^key$|^token$|^access$|^refresh$|api[_-]?key|access[_-
 // ANTHROPIC_MODEL), so env is walked into and redacted per key — that is what
 // keeps Claude's third-party endpoint/model settings readable.
 const SENSITIVE_CONTAINER = /^(?:headers?|custom[_-]?headers?|oauth|credentials?|secrets?)$/i;
-
-export class AgentConfigError extends Error {
-  constructor(message, { code = 'CONFIG_UNREADABLE', status = 400 } = {}) {
-    super(message);
-    this.name = 'AgentConfigError';
-    this.code = code;
-    this.status = status;
-  }
-}
 
 // ---------------------------------------------------------------------------
 // Redaction
@@ -378,17 +369,6 @@ function fileDefs({ env, home }) {
 // ---------------------------------------------------------------------------
 // Per-file inspection
 
-async function readHead(filePath, bytes) {
-  const handle = await open(filePath, 'r');
-  try {
-    const buffer = Buffer.alloc(bytes);
-    const { bytesRead } = await handle.read(buffer, 0, bytes, 0);
-    return buffer.subarray(0, bytesRead).toString('utf8');
-  } finally {
-    await handle.close();
-  }
-}
-
 function missingFile(def) {
   return {
     file: {
@@ -520,7 +500,7 @@ async function summarizeClaude({ data }) {
   const auth = creds?.exists
     ? { method: 'oauth', detail: '.claude/.credentials.json' }
     : apiKeyEnv
-      ? { method: 'envKey', detail: 'ANTHROPIC_API_KEY' }
+      ? { method: 'envKey', detail: env.ANTHROPIC_API_KEY ? 'ANTHROPIC_API_KEY' : 'ANTHROPIC_AUTH_TOKEN' }
       : state.oauthAccount
         ? { method: 'oauth', detail: '.claude.json' }
         : null;

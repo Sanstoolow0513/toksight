@@ -124,8 +124,6 @@ const tables = {
     footUnpriced: '未定价模型（按 0 计费）：{models}',
     footLocal: 'toksight v{version} · 本地运行，只读本地会话文件',
     footTimezone: '时区 {tz}',
-  
-    docTitle: 'toksight · AI agent token 用量仪表盘',
     cfgDocTitle: 'toksight · Agent 配置一览',
     cfgMeta: '固定白名单 · 5 个 Agent',
     cfgKicker: 'Agent 配置 / 只读',
@@ -339,8 +337,6 @@ const tables = {
     footUnpriced: 'Unpriced models (counted as $0): {models}',
     footLocal: 'toksight v{version} · runs locally, reads local session files only',
     footTimezone: 'Timezone {tz}',
-  
-    docTitle: 'toksight · AI agent token usage dashboard',
     cfgDocTitle: 'toksight · Agent configuration',
     cfgMeta: 'Fixed allowlist · 5 agents',
     cfgKicker: 'Agent configuration / read-only',

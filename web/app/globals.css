@@ -1228,8 +1228,7 @@ code {
   padding: clamp(28px, 5vw, 48px) var(--space-6);
 }
 
-.config-kicker,
-.config-step {
+.config-kicker {
   color: var(--color-primary);
   display: block;
   font-family: var(--font-mono);
