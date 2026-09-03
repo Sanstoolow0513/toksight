@@ -5,7 +5,7 @@ import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 
-import { createWebServer, isLoopbackAddress } from '../src/webserver.js';
+import { createWebServer, isLocalHostHeader, isLoopbackAddress } from '../src/webserver.js';
 
 const payload = { tool: 'toksight', totals: { totalTokens: 42 }, warnings: [] };
 
@@ -18,6 +18,26 @@ test('configuration endpoint loopback check accepts only local addresses', () =>
   assert.equal(isLoopbackAddress('192.168.1.10'), false);
   assert.equal(isLoopbackAddress('::ffff:192.168.1.10'), false);
   assert.equal(isLoopbackAddress(undefined), false);
+});
+
+test('Host header check accepts only localhost names with or without a port', () => {
+  assert.equal(isLocalHostHeader('localhost'), true);
+  assert.equal(isLocalHostHeader('localhost:4729'), true);
+  assert.equal(isLocalHostHeader('127.0.0.1'), true);
+  assert.equal(isLocalHostHeader('127.0.0.1:4729'), true);
+  assert.equal(isLocalHostHeader('LOCALHOST:4729'), true);
+  assert.equal(isLocalHostHeader('[::1]:4729'), true);
+  assert.equal(isLocalHostHeader('[::1]'), true);
+  assert.equal(isLocalHostHeader('[::ffff:127.0.0.1]:4729'), true);
+  // A rebinder's domain — resolves to 127.0.0.1 but is not a localhost name.
+  assert.equal(isLocalHostHeader('evil.example'), false);
+  assert.equal(isLocalHostHeader('evil.example:4729'), false);
+  assert.equal(isLocalHostHeader('192.168.1.10:4729'), false);
+  assert.equal(isLocalHostHeader('localhost.evil.example'), false);
+  assert.equal(isLocalHostHeader('::1'), true); // bare IPv6, several colons, no port
+  assert.equal(isLocalHostHeader(undefined), false);
+  assert.equal(isLocalHostHeader(''), false);
+  assert.equal(isLocalHostHeader('[::1'), false); // unterminated bracket
 });
 
 async function withServer(opts, fn) {
@@ -130,6 +150,67 @@ test('configuration API reports a missing service and inspect failures', async (
     const failed = await fetch(`${url}/api/config`);
     assert.equal(failed.status, 500);
     assert.deepEqual(await failed.json(), { error: 'disk on fire', code: 'CONFIG_ERROR' });
+  });
+});
+
+// Raw socket, not fetch: fetch always sends the real origin as Host, so a
+// forged Host header (what a DNS-rebinding page produces) needs hand-written
+// requests. Returns the raw response bytes.
+function rawRequest(port, request) {
+  return new Promise((resolve, reject) => {
+    const sock = net.connect(port, '127.0.0.1');
+    let raw = '';
+    sock.on('error', reject);
+    sock.on('connect', () => sock.write(request));
+    sock.on('data', (d) => {
+      raw += d.toString('latin1');
+    });
+    sock.on('close', () => resolve(raw));
+    sock.setTimeout(5000, () => sock.destroy(new Error('raw request timed out')));
+  });
+}
+
+test('API endpoints reject a forged Host header (DNS rebinding)', async () => {
+  const configService = { async inspect() { return { agents: [], warnings: [] }; } };
+  await withServer({ configService }, async (url) => {
+    const port = Number(new URL(url).port);
+    const get = (path, host) => `GET ${path} HTTP/1.1\r\nHost: ${host}\r\nConnection: close\r\n\r\n`;
+
+    // A rebinding page: remoteAddress is 127.0.0.1, but the Host the browser
+    // was tricked into requesting is the attacker's domain.
+    for (const [path, host] of [['/api/config', 'evil.example'], ['/api/data', 'evil.example']]) {
+      const raw = await rawRequest(port, get(path, host));
+      assert.ok(raw.startsWith('HTTP/1.1 403'), `${path} with foreign Host must 403, got: ${raw.split('\r\n')[0]}`);
+      assert.match(raw, /HOST_NOT_ALLOWED/);
+    }
+
+    // Localhost Hosts keep working, port or not.
+    for (const [path, host] of [
+      ['/api/config', '127.0.0.1'], ['/api/config', `localhost:${port}`],
+      ['/api/data', '127.0.0.1'], ['/api/data', `localhost:${port}`],
+    ]) {
+      const raw = await rawRequest(port, get(path, host));
+      assert.ok(raw.startsWith('HTTP/1.1 200'), `${path} with Host ${host} must 200, got: ${raw.split('\r\n')[0]}`);
+    }
+  });
+});
+
+test('a deliberately exposed server keeps serving /api/data to foreign Hosts', async () => {
+  // --host 0.0.0.0 is an explicit opt-in to serve the LAN; the Host check
+  // would only break that. /api/config stays strict regardless.
+  const configService = { async inspect() { return { agents: [], warnings: [] }; } };
+  await withServer({ host: '0.0.0.0', configService }, async (url) => {
+    const port = Number(new URL(url).port);
+    const get = (path, host) => `GET ${path} HTTP/1.1\r\nHost: ${host}\r\nConnection: close\r\n\r\n`;
+
+    const data = await rawRequest(port, get('/api/data', 'server.lan.example'));
+    assert.ok(data.startsWith('HTTP/1.1 200'), `exposed /api/data must serve, got: ${data.split('\r\n')[0]}`);
+
+    const config = await rawRequest(port, get('/api/config', 'evil.example'));
+    assert.ok(config.startsWith('HTTP/1.1 403'), `/api/config must stay Host-strict even on 0.0.0.0, got: ${config.split('\r\n')[0]}`);
+
+    const localConfig = await rawRequest(port, get('/api/config', `localhost:${port}`));
+    assert.ok(localConfig.startsWith('HTTP/1.1 200'), `/api/config from localhost must serve, got: ${localConfig.split('\r\n')[0]}`);
   });
 });
 

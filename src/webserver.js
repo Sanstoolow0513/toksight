@@ -73,6 +73,27 @@ export function isLoopbackAddress(address) {
   return false;
 }
 
+// A DNS-rebinding page passes the remoteAddress check (its domain resolves
+// to 127.0.0.1), so API requests also carry a Host the browser believes it
+// is talking to. Requiring that Host to be a loopback name makes the
+// rebinder's foreign origin fail the check.
+export function isLocalHostHeader(hostHeader) {
+  if (!hostHeader) return false;
+  let host = hostHeader.trim().toLowerCase();
+  // [::1]:4729 — strip the port before touching the bracketed address.
+  if (host.startsWith('[')) {
+    const close = host.indexOf(']');
+    if (close === -1) return false;
+    host = host.slice(1, close);
+  } else {
+    const colon = host.lastIndexOf(':');
+    // A bare IPv6 address has several colons but no port; host:port has
+    // exactly one.
+    if (colon !== -1 && host.indexOf(':') === colon) host = host.slice(0, colon);
+  }
+  return host === 'localhost' || isLoopbackAddress(host);
+}
+
 function sendJson(res, status, payload, method = 'GET', extraHeaders = {}) {
   res.writeHead(status, { ...JSON_HEADERS, ...extraHeaders });
   res.end(method === 'HEAD' ? undefined : JSON.stringify(payload));
@@ -163,7 +184,18 @@ export function createWebServer({
       return;
     }
 
+    // DNS-rebinding defense: a foreign page whose domain resolves to
+    // 127.0.0.1 is still remoteAddress-loopback, but its Host header is not.
+    const localHostHeader = isLocalHostHeader(req.headers.host);
+
     if (pathname === '/api/data') {
+      // Loopback-bound servers (the default) reject foreign Host headers;
+      // a user who deliberately binds --host 0.0.0.0 exposes the dashboard
+      // to the LAN on purpose, so the Host check would only break that.
+      if (isLoopbackAddress(host) && !localHostHeader) {
+        sendJson(res, 403, { error: 'requests with a foreign Host header are not accepted', code: 'HOST_NOT_ALLOWED' }, req.method);
+        return;
+      }
       if (req.method !== 'GET' && req.method !== 'HEAD') {
         sendJson(res, 405, { error: 'method not allowed', code: 'METHOD_NOT_ALLOWED' }, req.method, { allow: 'GET, HEAD' });
         return;
@@ -181,6 +213,10 @@ export function createWebServer({
     if (pathname === '/api/config' || pathname.startsWith('/api/config/')) {
       if (!isLoopbackAddress(req.socket.remoteAddress)) {
         sendJson(res, 403, { error: 'configuration endpoint is only available from this machine', code: 'LOOPBACK_ONLY' }, req.method);
+        return;
+      }
+      if (!localHostHeader) {
+        sendJson(res, 403, { error: 'configuration endpoint requires a localhost Host header', code: 'HOST_NOT_ALLOWED' }, req.method);
         return;
       }
       if (!configService) {
