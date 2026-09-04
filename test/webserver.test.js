@@ -516,14 +516,50 @@ test('early-rejected writes drain the body before answering', async () => {
 
   await withServer({ configService, transferService }, async (url) => {
     const { port } = new URL(url);
-    // Raw socket (not fetch): the 415 fires before the body is read, and the
-    // server must drain the in-flight body so the client reliably receives
-    // the full JSON error instead of a mid-upload connection reset.
-    const raw = await rawRequest(
-      port,
-      'POST /api/config/import HTTP/1.1\r\nHost: localhost\r\nContent-Type: text/plain\r\nx-toksight-action: import\r\nContent-Length: 11\r\nConnection: close\r\n\r\nhello world',
-    );
-    assert.ok(raw.startsWith('HTTP/1.1 415'), `expected 415, got: ${raw.split('\r\n')[0]}`);
-    assert.match(raw, /UNSUPPORTED_MEDIA_TYPE/);
+    // Raw socket (not fetch), body sent in TWO parts: the 415 fires on the
+    // content-type before the body is read, and drainBody must hold the
+    // answer until the request stream ends. The `early` flag records any
+    // response bytes that arrive BEFORE the declared body is complete — a
+    // server answering mid-upload (no drain) sets it, no matter how fast
+    // the connection then closes; timing alone cannot distinguish the two
+    // servers on loopback, because the early answer is still a complete
+    // 415 that satisfies every response-shape assertion.
+    const head = 'POST /api/config/import HTTP/1.1\r\nHost: localhost\r\nContent-Type: text/plain\r\nx-toksight-action: import\r\nContent-Length: 6000\r\nConnection: close\r\n\r\n';
+    let early = null;
+    const response = await new Promise((resolve, reject) => {
+      const sock = net.connect(Number(port), '127.0.0.1');
+      let raw = '';
+      let bodyComplete = false;
+      const fail = (err) => {
+        sock.destroy();
+        reject(err instanceof Error ? err : new Error(String(err)));
+      };
+      sock.on('error', fail);
+      sock.on('data', (d) => {
+        raw += d.toString('latin1');
+        if (!bodyComplete && early == null) early = raw;
+      });
+      sock.on('close', () => resolve(raw));
+      sock.setTimeout(8000, () => fail(new Error('raw request timed out')));
+      sock.on('connect', () => {
+        // Head + the first 100 of the 6000 declared body bytes.
+        sock.write(head + 'x'.repeat(100));
+        setTimeout(() => {
+          // Ample time for a mid-upload answer to have landed; from here on,
+          // the body is complete and response bytes are legitimate.
+          bodyComplete = true;
+          sock.write('x'.repeat(5900));
+          sock.end();
+        }, 200);
+      });
+    });
+    // Drain pin: a draining server must show ZERO response bytes while the
+    // declared body is still incomplete.
+    assert.ok(early == null, `server answered before the body was drained: ${early?.split('\r\n')[0]}`);
+    assert.ok(response.startsWith('HTTP/1.1 415'), `expected 415, got: ${response.split('\r\n')[0]}`);
+    assert.match(response, /UNSUPPORTED_MEDIA_TYPE/);
+    // The response arrived COMPLETE — chunked terminator included — not as a
+    // mid-upload connection reset that cuts the JSON error short.
+    assert.ok(response.endsWith('0\r\n\r\n'), `response not fully received: ${JSON.stringify(response.slice(-20))}`);
   });
 });

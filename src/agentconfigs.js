@@ -368,6 +368,12 @@ export function fileDefs({ env, home }) {
 
 // ---------------------------------------------------------------------------
 // Per-file inspection
+//
+// The `file` objects below carry a `kind` field (straight from the allowlist,
+// 'config' | 'secret') — the authoritative classification the dashboard now
+// filters on. The older `previewable` boolean is kept for payload
+// compatibility only (false = secret OR any error state, so its meaning has
+// drifted from `kind`); treat it as deprecated in favor of `kind`.
 
 function missingFile(def) {
   return {

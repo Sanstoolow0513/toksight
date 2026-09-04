@@ -421,3 +421,23 @@ test('apply reports duplicate-entry warnings like the plan does', async () => {
   assert.equal(warnings.length, 1);
   assert.match(warnings[0], /duplicate/);
 });
+
+test('a failed backup step reports no backup path (commit-on-success)', async () => {
+  const { home, configRoot, svc } = setup();
+  const target = path.join(home, '.claude', 'settings.json');
+  write(target, '{"model":"old-value"}');
+  // Occupying <config>/backups with a plain file makes the backup's mkdir
+  // throw (ENOTDIR on POSIX and Windows): the backup step itself fails
+  // before any copy lands, so the failure row must not promise a restore
+  // path that doesn't exist on disk.
+  write(path.join(configRoot, 'backups'), 'not a directory');
+
+  const { results } = await svc.applyImport(bundleOf([entry()]));
+  const row = results[0];
+  assert.equal(row.status, 'failed');
+  assert.ok(row.error);
+  assert.equal(row.backupPath, null);
+  // The target was never touched, and no temp file leaked next to it.
+  assert.equal(read(target), '{"model":"old-value"}');
+  assert.equal(fs.readdirSync(path.join(home, '.claude')).some((name) => name.includes('toksight-tmp')), false);
+});

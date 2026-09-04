@@ -95,6 +95,24 @@ function evalEntry(defById, entry) {
   return { ok: true, reason: null, def, content: entry.content };
 }
 
+// Shared disk-level target check for planImport and applyImport: lstat
+// (never stat) so a symlinked target is BLOCKED instead of followed —
+// applyImport's rename replaces the target's own directory entry, which
+// would silently destroy the link (reading through one, as export does,
+// stays safe). `existing` is the lstat info of a regular-file target, or
+// null for a fresh/missing one. plan and apply MUST refuse the same
+// targets, or the preview would lie about what the write will do — this
+// single helper is what keeps them in lockstep.
+async function inspectTarget(def) {
+  let info;
+  try {
+    info = await lstat(def.path);
+  } catch {
+    info = null; // fresh target — plain write, no backup needed
+  }
+  return { existing: info, blocked: Boolean(info && !info.isFile()) };
+}
+
 export function createAgentTransferService({ env = process.env, home = os.homedir() } = {}) {
   const ctx = { env, home };
   const defs = fileDefs(ctx);
@@ -235,16 +253,8 @@ export function createAgentTransferService({ env = process.env, home = os.homedi
         }
 
         row.targetPath = def.path;
-        // lstat, not stat: applyImport's rename replaces the target's own
-        // directory entry, so a symlinked target would silently lose the
-        // link — the preview flags it as blocked instead of offering it.
-        let info;
-        try {
-          info = await lstat(def.path);
-        } catch {
-          info = null; // fresh target — plain write, no backup needed
-        }
-        if (info && !info.isFile()) {
+        const { existing: info, blocked } = await inspectTarget(def);
+        if (blocked) {
           row.reason = 'target-not-file';
           plan.push(row);
           continue;
@@ -292,23 +302,21 @@ export function createAgentTransferService({ env = process.env, home = os.homedi
         let tmp = null;
         try {
           // Backup pass: copy the current file aside before anything touches
-          // the target path. lstat (not stat): rename below replaces the
-          // target's own directory entry, so a symlinked target would
-          // silently LOSE the link — refuse those instead.
-          let info;
-          try {
-            info = await lstat(def.path);
-          } catch {
-            info = null; // fresh target — plain write, no backup needed
+          // the target path. inspectTarget's lstat check refuses symlinks
+          // (and anything else that is not a regular file).
+          const { existing: info, blocked } = await inspectTarget(def);
+          if (blocked) {
+            results.push({ id, agentId: def.agentId, status: 'failed', reason: 'target-not-file', targetPath: def.path, backupPath: null, error: `${def.path} exists and is not a regular file (symlinks are refused to protect them)` });
+            continue;
           }
           if (info) {
-            if (!info.isFile()) {
-              results.push({ id, agentId: def.agentId, status: 'failed', reason: 'target-not-file', targetPath: def.path, backupPath: null, error: `${def.path} exists and is not a regular file (symlinks are refused to protect them)` });
-              continue;
-            }
-            backupPath = backupPathFor(def);
-            await mkdir(path.dirname(backupPath), { recursive: true });
-            await copyFile(def.path, backupPath);
+            // Commit-on-success: the backup path is only surfaced after the
+            // copy actually landed on disk — a backup step that itself failed
+            // must not promise a restore path that doesn't exist.
+            const candidate = backupPathFor(def);
+            await mkdir(path.dirname(candidate), { recursive: true });
+            await copyFile(def.path, candidate);
+            backupPath = candidate;
           }
 
           // Atomic replace: write a sibling temp file, then rename over the
