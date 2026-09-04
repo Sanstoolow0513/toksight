@@ -373,7 +373,7 @@ function missingFile(def) {
   return {
     file: {
       id: def.id, agentId: def.agentId, label: def.label, fileName: def.fileName,
-      format: def.format, path: def.path, exists: false, size: 0, modifiedAt: null,
+      format: def.format, kind: def.kind, path: def.path, exists: false, size: 0, modifiedAt: null,
       previewable: def.kind !== 'secret', preview: null, truncated: false, error: null,
     },
     data: { exists: false },
@@ -398,7 +398,7 @@ async function inspectOne(def, warnings) {
 
   const file = {
     id: def.id, agentId: def.agentId, label: def.label, fileName: def.fileName,
-    format: def.format, path: def.path, exists: true, size: info.size,
+    format: def.format, kind: def.kind, path: def.path, exists: true, size: info.size,
     modifiedAt: info.mtime.toISOString(), truncated: info.size > PREVIEW_BYTES, error: null,
   };
   const data = { exists: true };

@@ -2,7 +2,10 @@ export const DEFAULT_LOCALE = 'zh-CN';
 export const LOCALE_KEY = 'toksight-locale';
 export const LOCALES = ['zh-CN', 'en'];
 
-const tables = {
+// Exported for the key-parity test (test/i18n.test.js): zh-CN and en must
+// carry exactly the same key set, or t()'s fallback would silently show
+// Chinese strings to EN users (and vice versa).
+export const tables = {
   'zh-CN': {
     docTitle: 'toksight · AI agent token 用量仪表盘',
     navAria: '主导航',
@@ -165,6 +168,7 @@ const tables = {
     cfgXferExportDone: '已导出 {n} 个文件到 toksight-agent-configs.json。',
     cfgXferCopied: '已复制 {n} 个文件的 bundle JSON 到剪贴板。',
     cfgXferCopyFail: '复制到剪贴板失败——请改用下载。',
+    cfgXferWarnSuffix: '（注意：{n} 项被跳过：{list}）',
     cfgXferWorking: '处理中…',
     cfgXferDownload: '下载 bundle',
     cfgXferCopy: '复制 JSON',
@@ -202,7 +206,6 @@ const tables = {
     cfgSkipOversize: '内容超过 1 MB',
     cfgSkipTargetNotFile: '目标位置被占用',
     cfgSkipNotSelected: '未勾选',
-    cfgSkipDuplicate: '重复条目',
     cfgItemZcodeProviders: '服务商与模型',
     cfgItemZcodeSettings: '应用设置',
     cfgItemZcodePlugins: 'CLI 插件设置',
@@ -427,6 +430,7 @@ const tables = {
     cfgXferExportDone: 'Exported {n} files to toksight-agent-configs.json.',
     cfgXferCopied: 'Copied a bundle of {n} files to the clipboard.',
     cfgXferCopyFail: 'Copy to clipboard failed — use the download instead.',
+    cfgXferWarnSuffix: ' (note: {n} skipped: {list})',
     cfgXferWorking: 'Working…',
     cfgXferDownload: 'Download bundle',
     cfgXferCopy: 'Copy JSON',
@@ -464,7 +468,6 @@ const tables = {
     cfgSkipOversize: 'Content over 1 MB',
     cfgSkipTargetNotFile: 'Target blocked',
     cfgSkipNotSelected: 'Not selected',
-    cfgSkipDuplicate: 'Duplicate entry',
     cfgItemZcodeProviders: 'Providers and models',
     cfgItemZcodeSettings: 'Application settings',
     cfgItemZcodePlugins: 'CLI plugin settings',

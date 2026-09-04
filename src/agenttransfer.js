@@ -8,7 +8,8 @@
 //            each entry's target path on THIS machine (the bundle's recorded
 //            source paths are informational only, never write targets).
 //   apply  — backs up any existing target file, then atomically replaces it
-//            (temp file + rename). Backups land in
+//            (temp file + rename; symlinked targets are refused so the link
+//            itself is never replaced). Backups land in
 //            <config>/toksight/backups/<agentId>/<fileName>.<timestamp>.
 //
 // The bundle is plain JSON (text configs travel as strings), so it can be
@@ -19,7 +20,7 @@
 
 import os from 'node:os';
 import path from 'node:path';
-import { copyFile, mkdir, readFile, rename, stat, writeFile } from 'node:fs/promises';
+import { copyFile, lstat, mkdir, readFile, rename, stat, unlink, writeFile } from 'node:fs/promises';
 import { randomBytes } from 'node:crypto';
 
 import { MAX_READ_BYTES, fileDefs } from './agentconfigs.js';
@@ -30,9 +31,6 @@ export const BUNDLE_VERSION = 1;
 // Per-file content cap on import, kept equal to the export-side read cap so a
 // bundle can always round-trip what toksight itself produced.
 export const MAX_CONTENT_BYTES = MAX_READ_BYTES;
-
-// Skip reasons shared by plan/apply results (mapped to UI text via i18n).
-export const SKIP_REASONS = ['secret', 'unknown-id', 'malformed', 'no-content', 'oversize', 'target-not-file', 'not-selected', 'duplicate'];
 
 const pad = (n) => String(n).padStart(2, '0');
 
@@ -106,6 +104,43 @@ export function createAgentTransferService({ env = process.env, home = os.homedi
     return path.join(configDir({ env, home }), 'backups', def.agentId, `${sanitizeName(def.fileName)}.${timestamp(now)}`);
   }
 
+  // Shared first pass for planImport and applyImport: validates the bundle
+  // shape, dedupes repeated ids (first entry wins, later duplicates become
+  // warnings) and evaluates every entry against the allowlist without
+  // touching the disk. Keeping this pass in one place is what keeps the
+  // preview and the write run agreeing on skip reasons as they evolve.
+  // `agentId`/`fileName` prefer the allowlist definition and fall back to a
+  // STRING-checked entry field — a non-string value in a hostile bundle is
+  // never passed through.
+  function prepareEntries(bundle, { selected } = {}) {
+    const { error, files } = validateBundleShape(bundle);
+    if (error) return { error, warnings: [], prepared: [] };
+    const selectedSet = selected == null ? null : new Set(selected.map(String));
+    const warnings = [];
+    const seen = new Set();
+    const prepared = [];
+    for (const entry of files) {
+      const result = evalEntry(defById, entry);
+      const id = typeof entry?.id === 'string' ? entry.id : '(missing id)';
+      if (seen.has(id)) {
+        warnings.push(`${id}: duplicate bundle entry; only the first one is used`);
+        continue;
+      }
+      seen.add(id);
+      const def = result.def;
+      prepared.push({
+        id,
+        entry,
+        result,
+        def,
+        agentId: def ? def.agentId : typeof entry?.agentId === 'string' ? entry.agentId : null,
+        fileName: def ? def.fileName : typeof entry?.fileName === 'string' ? entry.fileName : null,
+        included: Boolean(result.ok) && (!selectedSet || selectedSet.has(id)),
+      });
+    }
+    return { error: null, warnings, prepared };
+  }
+
   return {
     // Collects the currently existing allowlisted config files into a bundle.
     // `agents`/`files` are optional id filters (array or comma-separated
@@ -123,6 +158,9 @@ export function createAgentTransferService({ env = process.env, home = os.homedi
 
         let info;
         try {
+          // stat (follows symlinks) on purpose: reading THROUGH a link is
+          // safe and useful (dotfile managers symlink configs); only the
+          // import side refuses links, where rename would replace the link.
           info = await stat(def.path);
         } catch {
           continue; // not installed / never configured — nothing to bundle
@@ -132,7 +170,7 @@ export function createAgentTransferService({ env = process.env, home = os.homedi
           continue;
         }
         if (info.size > MAX_READ_BYTES) {
-          warnings.push(`${def.id}: ${def.path} is larger than 1 MB; skipped`);
+          warnings.push(`${def.id}: ${def.path} is larger than ${MAX_READ_BYTES / 1024 / 1024} MB; skipped`);
           continue;
         }
         let raw;
@@ -169,28 +207,15 @@ export function createAgentTransferService({ env = process.env, home = os.homedi
     // written. `selected` (optional array of ids) narrows the import set;
     // entries outside it come back as skipped/not-selected.
     async planImport(bundle, { selected } = {}) {
-      const { error, files } = validateBundleShape(bundle);
+      const { error, warnings, prepared } = prepareEntries(bundle, { selected });
       if (error) return { error, plan: [] };
-      const selectedSet = selected == null ? null : new Set(selected.map(String));
-      const warnings = [];
       const plan = [];
-      const seen = new Set();
 
-      for (const entry of files) {
-        const result = evalEntry(defById, entry);
-        const id = typeof entry?.id === 'string' ? entry.id : '(missing id)';
-        if (seen.has(id)) {
-          warnings.push(`${id}: duplicate bundle entry; only the first one is used`);
-          continue;
-        }
-        seen.add(id);
-
-        const def = result.def;
-        const included = Boolean(result.ok) && (!selectedSet || selectedSet.has(id));
+      for (const { id, agentId, fileName, entry, result, def, included } of prepared) {
         const row = {
           id,
-          agentId: def ? def.agentId : typeof entry?.agentId === 'string' ? entry.agentId : null,
-          fileName: def ? def.fileName : typeof entry?.fileName === 'string' ? entry.fileName : null,
+          agentId,
+          fileName,
           format: def ? def.format : null,
           contentBytes: result.ok ? Buffer.byteLength(result.content, 'utf8') : null,
           sourcePath: typeof entry?.path === 'string' ? entry.path : null,
@@ -203,20 +228,19 @@ export function createAgentTransferService({ env = process.env, home = os.homedi
           reason: result.reason,
         };
 
-        if (result.ok && !included) {
-          row.reason = 'not-selected';
-          plan.push(row);
-          continue;
-        }
-        if (!result.ok) {
+        if (!included) {
+          if (result.ok) row.reason = 'not-selected';
           plan.push(row);
           continue;
         }
 
         row.targetPath = def.path;
+        // lstat, not stat: applyImport's rename replaces the target's own
+        // directory entry, so a symlinked target would silently lose the
+        // link — the preview flags it as blocked instead of offering it.
         let info;
         try {
-          info = await stat(def.path);
+          info = await lstat(def.path);
         } catch {
           info = null; // fresh target — plain write, no backup needed
         }
@@ -229,6 +253,8 @@ export function createAgentTransferService({ env = process.env, home = os.homedi
           row.existing = true;
           row.existingSize = info.size;
           row.existingModifiedAt = info.mtime.toISOString();
+          // Informational only: this stamp is computed fresh here and never
+          // matches the one applyImport generates at actual write time.
           row.backupPath = backupPathFor(def);
         }
         row.action = 'write';
@@ -239,43 +265,45 @@ export function createAgentTransferService({ env = process.env, home = os.homedi
 
     // Executes an import: backs up each existing target file, then atomically
     // replaces it. Per-file failures are reported in the results and never
-    // abort the remaining files.
+    // abort the remaining files. There is deliberately no cross-request
+    // locking: this is a single-user, loopback-only tool and the dashboard
+    // serializes imports behind its busy flag — two racing apply calls could
+    // at worst collide on a millisecond backup name (last writer wins).
     async applyImport(bundle, { selected } = {}) {
-      const { error, files } = validateBundleShape(bundle);
+      const { error, warnings, prepared } = prepareEntries(bundle, { selected });
       if (error) return { error, results: [] };
-      const selectedSet = selected == null ? null : new Set(selected.map(String));
       const results = [];
-      const seen = new Set();
 
-      for (const entry of files) {
-        const result = evalEntry(defById, entry);
-        const id = typeof entry?.id === 'string' ? entry.id : '(missing id)';
-        if (seen.has(id)) continue; // plan already warned; first entry wins
-        seen.add(id);
-
+      for (const { id, agentId, result, included } of prepared) {
         if (!result.ok) {
-          results.push({ id, agentId: entry?.agentId ?? null, status: 'skipped', reason: result.reason, targetPath: null, backupPath: null, error: null });
+          results.push({ id, agentId, status: 'skipped', reason: result.reason, targetPath: null, backupPath: null, error: null });
           continue;
         }
-        if (selectedSet && !selectedSet.has(id)) {
-          results.push({ id, agentId: result.def.agentId, status: 'skipped', reason: 'not-selected', targetPath: null, backupPath: null, error: null });
+        if (!included) {
+          results.push({ id, agentId, status: 'skipped', reason: 'not-selected', targetPath: null, backupPath: null, error: null });
           continue;
         }
 
         const def = result.def;
+        // Tracked OUTSIDE the try so the failure path knows what already
+        // happened: which backup exists on disk, and which temp file needs
+        // best-effort cleanup.
+        let backupPath = null;
+        let tmp = null;
         try {
           // Backup pass: copy the current file aside before anything touches
-          // the target path.
-          let backupPath = null;
+          // the target path. lstat (not stat): rename below replaces the
+          // target's own directory entry, so a symlinked target would
+          // silently LOSE the link — refuse those instead.
           let info;
           try {
-            info = await stat(def.path);
+            info = await lstat(def.path);
           } catch {
-            info = null;
+            info = null; // fresh target — plain write, no backup needed
           }
           if (info) {
             if (!info.isFile()) {
-              results.push({ id, agentId: def.agentId, status: 'failed', reason: 'target-not-file', targetPath: def.path, backupPath: null, error: `${def.path} exists and is not a regular file` });
+              results.push({ id, agentId: def.agentId, status: 'failed', reason: 'target-not-file', targetPath: def.path, backupPath: null, error: `${def.path} exists and is not a regular file (symlinks are refused to protect them)` });
               continue;
             }
             backupPath = backupPathFor(def);
@@ -287,16 +315,22 @@ export function createAgentTransferService({ env = process.env, home = os.homedi
           // target. A crash mid-write can leave a stray temp file but never a
           // truncated config.
           await mkdir(path.dirname(def.path), { recursive: true });
-          const tmp = `${def.path}.toksight-tmp-${randomBytes(4).toString('hex')}`;
+          tmp = `${def.path}.toksight-tmp-${randomBytes(4).toString('hex')}`;
           await writeFile(tmp, result.content, 'utf8');
           await rename(tmp, def.path);
+          tmp = null; // the rename consumed it — nothing left to clean up
 
           results.push({ id, agentId: def.agentId, status: 'written', reason: null, targetPath: def.path, backupPath, error: null });
         } catch (err) {
-          results.push({ id, agentId: def.agentId, status: 'failed', reason: null, targetPath: def.path, backupPath: null, error: String(err?.message || err) });
+          // Best-effort cleanup: a failed write must not leave its sibling
+          // temp file behind in the agent's config directory.
+          if (tmp) await unlink(tmp).catch(() => {});
+          // A backup that already happened is surfaced on the failure row —
+          // the user may need to restore from it by hand.
+          results.push({ id, agentId: def.agentId, status: 'failed', reason: null, targetPath: def.path, backupPath, error: String(err?.message || err) });
         }
       }
-      return { error: null, results, warnings: [] };
+      return { error: null, results, warnings };
     },
   };
 }

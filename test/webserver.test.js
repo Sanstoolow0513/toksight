@@ -476,3 +476,54 @@ test('start() rejects with a friendly error when the port is taken', async () =>
     await assert.rejects(() => second.start(), /already in use/);
   });
 });
+
+test('the config gates fire in order: cross-site beats method and content-type', async () => {
+  const configService = { async inspect() { return { agents: [], warnings: [] }; } };
+  const transferService = {
+    async exportBundle() { return { bundle: { format: 'x', files: [] }, warnings: [] }; },
+    async planImport() { return { error: null, plan: [], warnings: [] }; },
+    async applyImport() { return { error: null, results: [], warnings: [] }; },
+  };
+
+  await withServer({ configService, transferService }, async (url) => {
+    // text/plain (would be 415) + cross-site: the Fetch-Metadata gate fires
+    // first, so a foreign page always sees CROSS_SITE_NOT_ALLOWED.
+    const res = await fetch(`${url}/api/config/import`, {
+      method: 'POST',
+      headers: { 'content-type': 'text/plain', 'sec-fetch-site': 'cross-site' },
+      body: 'x',
+    });
+    assert.equal(res.status, 403);
+    assert.equal((await res.json()).code, 'CROSS_SITE_NOT_ALLOWED');
+
+    // Direct cross-site cases for the transfer routes (previously only the
+    // inventory endpoint had one) — including a GET against an import route,
+    // which pins that cross-site is checked before the 405.
+    for (const route of ['/api/config/export', '/api/config/import/preview', '/api/config/import']) {
+      const hit = await fetch(`${url}${route}`, { headers: { 'sec-fetch-site': 'cross-site' } });
+      assert.equal(hit.status, 403, route);
+      assert.equal((await hit.json()).code, 'CROSS_SITE_NOT_ALLOWED');
+    }
+  });
+});
+
+test('early-rejected writes drain the body before answering', async () => {
+  const configService = { async inspect() { return { agents: [], warnings: [] }; } };
+  const transferService = {
+    async planImport() { throw new Error('must not be reached'); },
+    async applyImport() { throw new Error('must not be reached'); },
+  };
+
+  await withServer({ configService, transferService }, async (url) => {
+    const { port } = new URL(url);
+    // Raw socket (not fetch): the 415 fires before the body is read, and the
+    // server must drain the in-flight body so the client reliably receives
+    // the full JSON error instead of a mid-upload connection reset.
+    const raw = await rawRequest(
+      port,
+      'POST /api/config/import HTTP/1.1\r\nHost: localhost\r\nContent-Type: text/plain\r\nx-toksight-action: import\r\nContent-Length: 11\r\nConnection: close\r\n\r\nhello world',
+    );
+    assert.ok(raw.startsWith('HTTP/1.1 415'), `expected 415, got: ${raw.split('\r\n')[0]}`);
+    assert.match(raw, /UNSUPPORTED_MEDIA_TYPE/);
+  });
+});

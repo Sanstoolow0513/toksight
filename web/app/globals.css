@@ -285,6 +285,15 @@ code {
   cursor: default;
 }
 
+/* Primary action variant: the destructive "Import N files" confirm button.
+   Static brand-lime fill (same values .btn:hover uses), so hovering a
+   primary button is a no-op rather than a jump. */
+.btn-primary {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: var(--color-primary-ink);
+}
+
 @keyframes spin {
   to {
     transform: rotate(360deg);
@@ -1734,7 +1743,6 @@ code {
   margin: 0;
 }
 
-.config-xfer-file[style*="opacity"],
 .config-xfer-file:has(input:disabled) {
   opacity: 0.55;
 }
