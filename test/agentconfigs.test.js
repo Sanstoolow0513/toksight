@@ -284,3 +284,24 @@ test('redactConfig suppresses multi-line values under sensitive keys', () => {
   assert.match(readable, /"b"/);
   assert.doesNotMatch(readable, /= "k"/);
 });
+
+test('file entries carry kind; credential files stay secret in every state', async () => {
+  const home = tempHome();
+  write(path.join(home, '.claude', 'settings.json'), '{}');
+  // A credential path occupied by a directory: stat succeeds, the read path
+  // degrades to an error state — the exact shape that used to leak into the
+  // export checklist via the previewable heuristic.
+  fs.mkdirSync(path.join(home, '.claude', '.credentials.json'), { recursive: true });
+
+  const inventory = await createAgentConfigService({ env: {}, home }).inspect();
+  const files = inventory.agents.flatMap((agent) => agent.files);
+  assert.ok(files.length > 0);
+  for (const file of files) {
+    assert.ok(file.kind === 'config' || file.kind === 'secret', `${file.id} must carry its allowlist kind`);
+  }
+  assert.equal(findItem(inventory, 'claude.settings').kind, 'config');
+  const creds = findItem(inventory, 'claude.credentials');
+  assert.equal(creds.kind, 'secret');
+  assert.equal(creds.exists, true);
+  assert.equal(creds.error, 'not a regular file');
+});

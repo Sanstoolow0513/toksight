@@ -197,7 +197,9 @@ between machines:
 - **Scope**: imports only accept allowlisted **config** files from the bundle — unknown and
   credential entries are always skipped, and write targets are resolved from THIS machine's
   allowlist (the source paths recorded in the bundle are informational only), so a bundle cannot
-  write anywhere outside the known config files.
+  write anywhere outside the known config files. Symlinked targets are refused (the import would
+  replace the link itself, not the file it points at); a failed write leaves no temp file behind
+  and reports the backup it already made.
 - **Security**: export/import endpoints require loopback clients + a localhost `Host` header
   like the inventory, plus a browser `Sec-Fetch-Site` check; import endpoints additionally
   require `application/json` + a dedicated request header (a foreign web page cannot forge

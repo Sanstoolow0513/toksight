@@ -19,7 +19,6 @@ const REASON_KEYS = {
   oversize: 'cfgSkipOversize',
   'target-not-file': 'cfgSkipTargetNotFile',
   'not-selected': 'cfgSkipNotSelected',
-  duplicate: 'cfgSkipDuplicate',
 };
 
 async function responseJson(res) {
@@ -33,16 +32,43 @@ async function responseJson(res) {
   return body;
 }
 
-// Config files only: credential files are `previewable === false` without an
-// error (the server also refuses to bundle them, so this only shapes the UI).
+// Config files only, and only healthy ones: credential entries (kind
+// 'secret') never join the checklist regardless of their state, and an entry
+// in an error state cannot be bundled anyway (the server would skip it with
+// a warning). The server also refuses to bundle credentials, so this only
+// shapes the UI.
 function configFileGroups(agents) {
   return (agents || []).map((agent) => ({
     agent,
-    files: (agent.files || []).filter((file) => file.previewable !== false || file.error),
+    files: (agent.files || []).filter((file) => file.kind === 'config' && !file.error),
   }));
 }
 
-export default function TransferPanel({ agents, locale, tx, onImported }) {
+// Server-side skip warnings (oversize/unreadable/not-a-regular-file files on
+// export, duplicate bundle entries on preview/apply) ride along the JSON
+// response — attach them to the success banner instead of dropping them.
+function bannerWithWarnings(tx, base, warnings) {
+  if (!warnings?.length) return base;
+  return {
+    kind: base.kind === 'ok' ? 'warn' : base.kind,
+    text: `${base.text}${tx('cfgXferWarnSuffix', { n: warnings.length, list: warnings.join(' ; ') })}`,
+  };
+}
+
+// Parses bundle text into { parsed } or { error: 'bad-json' | 'bad-bundle' }.
+// One parser, two callers: validateBundleText (validation-only messages) and
+// previewImport (the parse whose result is previewed and later written).
+function parseBundleText(text) {
+  try {
+    const parsed = JSON.parse(text);
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) return { parsed };
+    return { error: 'bad-bundle' };
+  } catch {
+    return { error: 'bad-json' };
+  }
+}
+
+export default function TransferPanel({ agents, tx, onImported }) {
   const [tab, setTab] = useState('export');
   const [message, setMessage] = useState(null); // { kind: 'ok' | 'warn' | 'error', text }
   const [busy, setBusy] = useState(false);
@@ -97,7 +123,11 @@ export default function TransferPanel({ agents, locale, tx, onImported }) {
       anchor.download = 'toksight-agent-configs.json';
       anchor.click();
       URL.revokeObjectURL(url);
-      setMessage({ kind: 'ok', text: tx('cfgXferExportDone', { n: bundle.files?.length ?? 0 }) });
+      setMessage(bannerWithWarnings(
+        tx,
+        { kind: 'ok', text: tx('cfgXferExportDone', { n: bundle.files?.length ?? 0 }) },
+        bundle.warnings,
+      ));
     } catch (err) {
       setMessage({ kind: 'error', text: String(err?.message || err) });
     } finally {
@@ -115,7 +145,11 @@ export default function TransferPanel({ agents, locale, tx, onImported }) {
     try {
       const bundle = await fetchExport();
       await navigator.clipboard.writeText(JSON.stringify(bundle, null, 2));
-      setMessage({ kind: 'ok', text: tx('cfgXferCopied', { n: bundle.files?.length ?? 0 }) });
+      setMessage(bannerWithWarnings(
+        tx,
+        { kind: 'ok', text: tx('cfgXferCopied', { n: bundle.files?.length ?? 0 }) },
+        bundle.warnings,
+      ));
     } catch (err) {
       setMessage({ kind: 'error', text: err?.message?.includes('clipboard') ? tx('cfgXferCopyFail') : String(err?.message || err) });
     } finally {
@@ -124,36 +158,49 @@ export default function TransferPanel({ agents, locale, tx, onImported }) {
   }
 
   // --- import ---
+  // Single source of truth for a previewed import: the exact text the bundle
+  // was parsed from (`text`), the parsed bundle that was sent to the server
+  // (`bundle`) and the plan the server returned for it (`plan`). The plan
+  // never exists apart from the bundle it was computed from, and any textarea
+  // edit that diverges from `text` drops the whole preview — so preview/apply
+  // structurally cannot act on a snapshot that no longer matches the screen.
   const [bundleText, setBundleText] = useState('');
-  const [bundle, setBundle] = useState(null);
-  const [plan, setPlan] = useState(null);
+  const [preview, setPreview] = useState(null); // { text, bundle, plan } | null
   const [selected, setSelected] = useState(() => new Set());
   const [results, setResults] = useState(null);
   const fileInput = useRef(null);
+  const plan = preview?.plan ?? null;
+
+  // Every text change funnels through here: keep the text, and as soon as it
+  // diverges from the preview's snapshot, drop the preview and everything
+  // derived from it (selected rows, apply results).
+  function setImportText(text) {
+    setBundleText(text);
+    if (preview && text !== preview.text) {
+      setPreview(null);
+      setSelected(new Set());
+      setResults(null);
+    }
+  }
 
   function resetImport() {
     setBundleText('');
-    setBundle(null);
-    setPlan(null);
+    setPreview(null);
     setSelected(new Set());
     setResults(null);
   }
 
-  function acceptBundleText(text, label) {
-    resetImport();
-    setBundleText(text);
-    let parsed;
-    try {
-      parsed = JSON.parse(text);
-    } catch {
-      setMessage({ kind: 'error', text: tx('cfgXferBadJson') });
+  // Parse-button / file-pick / blur path: validation only. It checks the text
+  // and reports the outcome; the bundle an import later executes always comes
+  // from previewImport's own parse of the current text (what you previewed is
+  // what you write), so this path stores nothing.
+  function validateBundleText(text, label) {
+    setImportText(text);
+    const { parsed, error } = parseBundleText(text);
+    if (error) {
+      setMessage({ kind: 'error', text: tx(error === 'bad-json' ? 'cfgXferBadJson' : 'cfgXferBadBundle') });
       return;
     }
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-      setMessage({ kind: 'error', text: tx('cfgXferBadBundle') });
-      return;
-    }
-    setBundle(parsed);
     setMessage(label ? { kind: 'ok', text: tx('cfgXferLoaded', { name: label, n: parsed.files?.length ?? 0 }) } : null);
   }
 
@@ -162,7 +209,7 @@ export default function TransferPanel({ agents, locale, tx, onImported }) {
     event.target.value = '';
     if (!file) return;
     try {
-      acceptBundleText(await file.text(), file.name);
+      validateBundleText(await file.text(), file.name);
     } catch (err) {
       setMessage({ kind: 'error', text: String(err?.message || err) });
     }
@@ -178,8 +225,17 @@ export default function TransferPanel({ agents, locale, tx, onImported }) {
   }
 
   async function previewImport() {
-    if (!bundle) {
+    const text = bundleText;
+    if (!text.trim()) {
       setMessage({ kind: 'error', text: tx('cfgXferNoBundle') });
+      return;
+    }
+    // Parse the CURRENT text unconditionally: what gets previewed is exactly
+    // what is on screen, and the same parse result is what runImport later
+    // writes — there is no stored parse that could have gone stale.
+    const { parsed, error } = parseBundleText(text);
+    if (error) {
+      setMessage({ kind: 'error', text: tx(error === 'bad-json' ? 'cfgXferBadJson' : 'cfgXferBadBundle') });
       return;
     }
     setBusy(true);
@@ -189,16 +245,22 @@ export default function TransferPanel({ agents, locale, tx, onImported }) {
       const data = await responseJson(await fetch('/api/config/import/preview', {
         method: 'POST',
         headers: { 'content-type': 'application/json', 'x-toksight-action': 'import-preview' },
-        body: JSON.stringify({ bundle }),
+        body: JSON.stringify({ bundle: parsed }),
       }));
       if (data.error) {
         setMessage({ kind: 'error', text: data.error });
         return;
       }
-      setPlan(data.plan);
+      setPreview({ text, bundle: parsed, plan: data.plan });
       setSelected(new Set(data.plan.filter((row) => row.action === 'write').map((row) => row.id)));
       const writable = data.plan.filter((row) => row.action === 'write').length;
-      setMessage(writable ? { kind: 'ok', text: tx('cfgXferPlanReady', { n: writable }) } : { kind: 'warn', text: tx('cfgXferNoWrite') });
+      setMessage(bannerWithWarnings(
+        tx,
+        writable
+          ? { kind: 'ok', text: tx('cfgXferPlanReady', { n: writable }) }
+          : { kind: 'warn', text: tx('cfgXferNoWrite') },
+        data.warnings,
+      ));
     } catch (err) {
       setMessage({ kind: 'error', text: String(err?.message || err) });
     } finally {
@@ -207,8 +269,12 @@ export default function TransferPanel({ agents, locale, tx, onImported }) {
   }
 
   async function runImport() {
-    if (!bundle || !plan) return;
-    const ids = plan.filter((row) => row.action === 'write' && selected.has(row.id)).map((row) => row.id);
+    if (!preview) {
+      setMessage({ kind: 'warn', text: tx('cfgXferNoBundle') });
+      return;
+    }
+    const { bundle, plan: rows } = preview;
+    const ids = rows.filter((row) => row.action === 'write' && selected.has(row.id)).map((row) => row.id);
     if (!ids.length) {
       setMessage({ kind: 'warn', text: tx('cfgXferNoWrite') });
       return;
@@ -228,9 +294,13 @@ export default function TransferPanel({ agents, locale, tx, onImported }) {
       setResults(data.results);
       const failed = data.results.filter((row) => row.status === 'failed').length;
       const written = data.results.filter((row) => row.status === 'written').length;
-      setMessage(failed
-        ? { kind: 'error', text: tx('cfgXferImportPartial', { written, failed }) }
-        : { kind: 'ok', text: tx('cfgXferImportDone', { written }) });
+      setMessage(bannerWithWarnings(
+        tx,
+        failed
+          ? { kind: 'error', text: tx('cfgXferImportPartial', { written, failed }) }
+          : { kind: 'ok', text: tx('cfgXferImportDone', { written }) },
+        data.warnings,
+      ));
       if (written > 0) onImported?.();
     } catch (err) {
       setMessage({ kind: 'error', text: String(err?.message || err) });
@@ -316,21 +386,22 @@ export default function TransferPanel({ agents, locale, tx, onImported }) {
           <div className="config-xfer-import-input">
             <textarea
               value={bundleText}
-              onChange={(event) => setBundleText(event.target.value)}
-              onBlur={() => bundleText && !bundle && acceptBundleText(bundleText)}
+              onChange={(event) => setImportText(event.target.value)}
+              onBlur={() => bundleText && !preview && validateBundleText(bundleText)}
               placeholder={tx('cfgXferPasteHint')}
               rows={4}
               spellCheck={false}
+              disabled={busy}
             />
             <div className="config-xfer-actions">
               <button className="btn" type="button" onClick={() => fileInput.current?.click()} disabled={busy}>
                 <FileUp size={14} strokeWidth={2} aria-hidden="true" />
                 {tx('cfgXferPickFile')}
               </button>
-              <button className="btn" type="button" onClick={() => acceptBundleText(bundleText)} disabled={busy || !bundleText.trim()}>
+              <button className="btn" type="button" onClick={() => validateBundleText(bundleText)} disabled={busy || !bundleText.trim()}>
                 {tx('cfgXferParse')}
               </button>
-              <button className="btn" type="button" onClick={previewImport} disabled={busy || !bundle}>
+              <button className="btn" type="button" onClick={previewImport} disabled={busy || !bundleText.trim()}>
                 {tx('cfgXferPreview')}
               </button>
               <input ref={fileInput} type="file" accept=".json,application/json" onChange={onPickFile} hidden />
@@ -391,7 +462,7 @@ export default function TransferPanel({ agents, locale, tx, onImported }) {
               <b>{tx('cfgXferResultTitle')}</b>
               <ul>
                 {results.map((row) => (
-                  <li key={row.id} className={`xfer-${row.status}`}>
+                  <li key={row.id}>
                     <span>{row.id}</span>
                     {row.status === 'written' && <span className="tag tag-ok">{tx('cfgXferWritten')}</span>}
                     {row.status === 'skipped' && <span className="tag">{tx(REASON_KEYS[row.reason] || 'cfgXferSkipped')}</span>}

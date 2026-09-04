@@ -176,9 +176,29 @@ export function readJsonBody(req, limitBytes) {
       resolve(body);
     });
     req.on('error', (err) => {
-      if (overflow) return;
-      reject(err);
+      // Overflow already doomed the request — settle with THAT error (the
+      // meaningful 413) so the promise can never hang when the stream errors
+      // mid-drain.
+      reject(overflow ?? err);
     });
+  });
+}
+
+// Best-effort body drain for requests that get rejected before their body
+// was read (405/415/403/503): answering mid-upload can surface as a
+// connection reset instead of the JSON error on some clients, which is why
+// the 413 path deliberately drains first — this extends the same behavior to
+// every early rejection. Idempotent and safe on any request: finished or
+// destroyed streams return immediately. Like the 413 drain, there is no
+// timeout — the server is loopback-only, so no remote party can hold it
+// open with a slow body.
+export function drainBody(req) {
+  if (req?.readableEnded || req?.destroyed) return Promise.resolve();
+  return new Promise((resolve) => {
+    req.on('end', resolve);
+    req.on('close', resolve);
+    req.on('error', resolve);
+    req.resume();
   });
 }
 
@@ -318,6 +338,7 @@ export function createWebServer({
         return;
       }
       if (!configService) {
+        await drainBody(req); // consume an in-flight body before answering
         sendJson(res, 503, { error: 'configuration service is unavailable', code: 'CONFIG_UNAVAILABLE' }, req.method);
         return;
       }
@@ -325,6 +346,7 @@ export function createWebServer({
       // Read-only inventory: GET/HEAD only, never a request body.
       if (pathname === '/api/config') {
         if (req.method !== 'GET' && req.method !== 'HEAD') {
+          await drainBody(req);
           sendJson(res, 405, { error: 'method not allowed', code: 'METHOD_NOT_ALLOWED' }, req.method, { allow: 'GET, HEAD' });
           return;
         }
@@ -341,10 +363,12 @@ export function createWebServer({
       // Content-Disposition so the dashboard can offer it as a download.
       if (pathname === '/api/config/export') {
         if (req.method !== 'GET' && req.method !== 'HEAD') {
+          await drainBody(req);
           sendJson(res, 405, { error: 'method not allowed', code: 'METHOD_NOT_ALLOWED' }, req.method, { allow: 'GET, HEAD' });
           return;
         }
         if (!transferService) {
+          await drainBody(req);
           sendJson(res, 503, { error: 'transfer service is unavailable', code: 'TRANSFER_UNAVAILABLE' }, req.method);
           return;
         }
@@ -376,10 +400,12 @@ export function createWebServer({
       if (pathname === '/api/config/import/preview' || pathname === '/api/config/import') {
         const isPreview = pathname === '/api/config/import/preview';
         if (req.method !== 'POST') {
+          await drainBody(req);
           sendJson(res, 405, { error: 'method not allowed', code: 'METHOD_NOT_ALLOWED' }, req.method, { allow: 'POST' });
           return;
         }
         if (!transferService) {
+          await drainBody(req);
           sendJson(res, 503, { error: 'transfer service is unavailable', code: 'TRANSFER_UNAVAILABLE' }, req.method);
           return;
         }
@@ -412,6 +438,11 @@ export function createWebServer({
           if (status >= 500) {
             logger?.warn?.(`toksight web: ${pathname} failed: ${err?.message || err}`);
           }
+          // 415/403 fire before the body is read (and 400s after it was);
+          // draining is idempotent, and it guarantees the client reliably
+          // receives this JSON error instead of a mid-upload connection
+          // reset.
+          await drainBody(req);
           sendJson(res, status, { error: String(err?.message || err), code: err?.code || 'TRANSFER_ERROR' }, req.method);
         }
         return;

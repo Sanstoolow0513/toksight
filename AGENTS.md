@@ -13,7 +13,7 @@ web` local dashboard with the agent configuration viewer/transfer (still no TUI)
 
 ## Commands
 
-- `node --test` (or `npm test`) — run the node:test suite (100 tests); uses per-client fixtures, no
+- `node --test` (or `npm test`) — run the node:test suite (131 tests); uses per-client fixtures, no
   network needed. Note: `node --test test/` with a directory arg fails with MODULE_NOT_FOUND on
   Node v24/Windows (the directory is treated as a module to load) — that's why the script passes
   no path; explicit file paths or a glob like `node --test "test/*.test.js"` also work.
@@ -65,11 +65,18 @@ src/agentconfigs.js read-only five-agent config viewer: fixed user-file allowlis
                     only, never previewed. fileDefs() is exported and reused by agenttransfer
 src/agenttransfer.js config bundle export/import — the ONLY write path in toksight. Export
                     packs existing allowlisted kind:'config' files (never credentials) into one
-                    JSON bundle (unredacted: migration needs real values). planImport validates
+                    JSON bundle (unredacted: migration needs real values; stat follows symlinks
+                    — reading through a link is safe). planImport validates
                     a bundle against the same allowlist (unknown/credential ids skipped,
                     per-file 1 MB cap) and resolves targets on THIS machine; applyImport backs
                     up existing targets to <config>/toksight/backups/<agentId>/<file>.<ts>
-                    then atomically replaces (temp file + rename). Bundle source paths are
+                    then atomically replaces (temp file + rename). Both passes use lstat and
+                    REFUSE symlinked targets (rename would replace the link itself), sharing
+                    prepareEntries (validate → dedupe → evalEntry) and inspectTarget (the
+                    lstat refusal check) so preview and write can never disagree on what is
+                    blocked. A failed write best-effort-unlinks its temp file, and a failure
+                    row only reports a backup that actually landed on disk (commit-on-success).
+                    Bundle source paths are
                     informational only — never write targets
 src/webserver.js    zero-dep node:http server: static web/out + live /api/data and loopback-only
                     /api/config endpoints (inventory GET, export GET, import preview/apply POST
@@ -78,7 +85,11 @@ src/webserver.js    zero-dep node:http server: static web/out + live /api/data a
                     --host is non-loopback) and reject Sec-Fetch-Site: cross-site; import POSTs
                     additionally require application/json + a matching x-toksight-action
                     header (both force a CORS preflight this server never answers, so foreign
-                    pages cannot fire writes), with a 10 MB body cap (drain-then-413)
+                    pages cannot fire writes), with a 10 MB body cap. Past those gates, every
+                    early rejection drains the request body before answering (drain-then-413
+                    extended to 405/415/403/503) so local clients see the JSON error, not a
+                    connection reset; the loopback/Host/cross-site gates themselves fire
+                    before any drain on purpose — a foreign client's body is never read
 src/format.js       ANSI tables & number formatting
 src/fsutils.js      walkFiles (returns { files, warnings }: root ENOENT is silent, other read
                     failures warn) + walkFilesMany (multi-root merge shared by the

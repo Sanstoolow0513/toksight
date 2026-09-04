@@ -110,7 +110,7 @@ function FileCard({ file, locale, tx }) {
           <pre>{file.preview}</pre>
         </div>
       )}
-      {file.exists && file.preview == null && !file.error && file.previewable === false && (
+      {file.exists && file.preview == null && !file.error && file.kind === 'secret' && (
         <p className="config-file-note">{tx('cfgCredentialNote')}</p>
       )}
     </article>
@@ -357,7 +357,7 @@ export default function ConfigPage() {
           )}
         </div>
 
-        <TransferPanel agents={inventory?.agents} locale={locale} tx={tx} onImported={load} />
+        <TransferPanel agents={inventory?.agents} tx={tx} onImported={load} />
 
         <footer className="foot">
           <span>{tx('cfgFootScope')}</span>

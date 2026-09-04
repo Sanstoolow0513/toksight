@@ -368,12 +368,18 @@ export function fileDefs({ env, home }) {
 
 // ---------------------------------------------------------------------------
 // Per-file inspection
+//
+// The `file` objects below carry a `kind` field (straight from the allowlist,
+// 'config' | 'secret') — the authoritative classification the dashboard now
+// filters on. The older `previewable` boolean is kept for payload
+// compatibility only (false = secret OR any error state, so its meaning has
+// drifted from `kind`); treat it as deprecated in favor of `kind`.
 
 function missingFile(def) {
   return {
     file: {
       id: def.id, agentId: def.agentId, label: def.label, fileName: def.fileName,
-      format: def.format, path: def.path, exists: false, size: 0, modifiedAt: null,
+      format: def.format, kind: def.kind, path: def.path, exists: false, size: 0, modifiedAt: null,
       previewable: def.kind !== 'secret', preview: null, truncated: false, error: null,
     },
     data: { exists: false },
@@ -398,7 +404,7 @@ async function inspectOne(def, warnings) {
 
   const file = {
     id: def.id, agentId: def.agentId, label: def.label, fileName: def.fileName,
-    format: def.format, path: def.path, exists: true, size: info.size,
+    format: def.format, kind: def.kind, path: def.path, exists: true, size: info.size,
     modifiedAt: info.mtime.toISOString(), truncated: info.size > PREVIEW_BYTES, error: null,
   };
   const data = { exists: true };

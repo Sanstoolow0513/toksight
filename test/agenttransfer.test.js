@@ -301,3 +301,143 @@ test('importing the same bundle twice produces distinct backups', async () => {
     assert.equal(path.dirname(result.backupPath), path.join(configRoot, 'backups', 'claude'));
   }
 });
+
+// ---------------------------------------------------------------------------
+// Failure hygiene (PR #8 review follow-ups)
+
+test('a failed write cleans up its temp file and reports the created backup', async () => {
+  const { home, configRoot, svc } = setup();
+  const target = path.join(home, '.claude', 'settings.json');
+  const dir = path.join(home, '.claude');
+  write(target, '{"model":"old-value"}');
+  // Force the write to fail per platform: on Windows a read-only target
+  // makes rename fail with EPERM; on POSIX an unwritable parent directory
+  // makes writeFile fail with EACCES. Both scenarios back up the existing
+  // target BEFORE the failing step, then hit the catch.
+  if (process.platform === 'win32') {
+    fs.chmodSync(target, 0o444);
+  } else {
+    fs.chmodSync(dir, 0o555);
+  }
+  try {
+    const { results } = await svc.applyImport(bundleOf([entry()]));
+    const row = results[0];
+    assert.equal(row.status, 'failed');
+    assert.ok(row.error);
+    // The backup happened before the failure and is reported on the row.
+    assert.ok(row.backupPath.startsWith(path.join(configRoot, 'backups', 'claude')));
+    assert.equal(read(row.backupPath), '{"model":"old-value"}');
+    // The target was never replaced, and no temp file leaked next to it.
+    assert.equal(read(target), '{"model":"old-value"}');
+    assert.equal(fs.readdirSync(dir).some((name) => name.includes('toksight-tmp')), false);
+  } finally {
+    fs.chmodSync(target, 0o644);
+    if (process.platform !== 'win32') fs.chmodSync(dir, 0o755);
+  }
+});
+
+test('plan and apply refuse to write through a symlinked target', async (t) => {
+  const { home, svc } = setup();
+  const real = path.join(home, 'real-settings.json');
+  write(real, '{"model":"old"}');
+  const dir = path.join(home, '.claude');
+  fs.mkdirSync(dir, { recursive: true });
+  const link = path.join(dir, 'settings.json');
+  try {
+    fs.symlinkSync(real, link);
+  } catch (err) {
+    t.skip(`symlinks unavailable here (${err?.code || err})`);
+    return;
+  }
+
+  // rename replaces the target's own directory entry, so a symlinked target
+  // must never be offered for writing — the plan flags it as blocked.
+  const { plan } = await svc.planImport(bundleOf([entry()]));
+  assert.equal(plan[0].action, 'skip');
+  assert.equal(plan[0].reason, 'target-not-file');
+
+  const { results } = await svc.applyImport(bundleOf([entry()]));
+  assert.equal(results[0].status, 'failed');
+  assert.equal(results[0].reason, 'target-not-file');
+
+  // The link itself is untouched and still resolves to the real file.
+  assert.equal(fs.lstatSync(link).isSymbolicLink(), true);
+  assert.equal(read(link), '{"model":"old"}');
+  assert.equal(fs.readdirSync(dir).some((name) => name.includes('toksight-tmp')), false);
+});
+
+test('import targets resolve under relocated agent homes', async () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'toksight-transfer-env-'));
+  const configRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'toksight-transfer-config-'));
+  const env = {
+    TOKSIGHT_CONFIG_DIR: configRoot,
+    ZCODE_HOME: path.join(home, 'z'),
+    CLAUDE_CONFIG_DIR: path.join(home, 'c'),
+    CODEX_HOME: path.join(home, 'x'),
+    KIMI_CODE_HOME: path.join(home, 'k'),
+    OPENCODE_CONFIG_DIR: path.join(home, 'oc'),
+  };
+  const svc = createAgentTransferService({ env, home });
+
+  const { plan } = await svc.planImport(bundleOf([
+    entry(),
+    entry({ id: 'codex.config', content: 'x = 1' }),
+    entry({ id: 'kimi.config', content: 'x = 1' }),
+    entry({ id: 'zcode.providers', content: '{}' }),
+    entry({ id: 'opencode.config-json', content: '{}' }),
+  ]));
+  const target = Object.fromEntries(plan.map((row) => [row.id, row.targetPath]));
+  assert.equal(target['claude.settings'], path.join(env.CLAUDE_CONFIG_DIR, 'settings.json'));
+  assert.equal(target['codex.config'], path.join(env.CODEX_HOME, 'config.toml'));
+  assert.equal(target['kimi.config'], path.join(env.KIMI_CODE_HOME, 'config.toml'));
+  assert.equal(target['zcode.providers'], path.join(env.ZCODE_HOME, 'v2', 'config.json'));
+  assert.equal(target['opencode.config-json'], path.join(env.OPENCODE_CONFIG_DIR, 'opencode.json'));
+});
+
+test('bundle entries carrying unknown extra fields import fine (forward compat)', async () => {
+  const { home, svc } = setup();
+  const { results } = await svc.applyImport(bundleOf([
+    { ...entry(), checksum: 'abc', futureField: { nested: ['deep'] } },
+  ]));
+  assert.equal(results[0].status, 'written');
+  assert.equal(read(path.join(home, '.claude', 'settings.json')), JSON.stringify({ model: 'claude-haiku-4.5' }));
+});
+
+test('export warns when an allowlisted path is not a regular file', async () => {
+  const { home, svc } = setup();
+  fs.mkdirSync(path.join(home, '.codex', 'config.toml'), { recursive: true });
+  const { bundle, warnings } = await svc.exportBundle();
+  assert.deepEqual(bundle.files, []);
+  assert.equal(warnings.length, 1);
+  assert.match(warnings[0], /codex\.config.*not a regular file/);
+});
+
+test('apply reports duplicate-entry warnings like the plan does', async () => {
+  const { home, svc } = setup();
+  const { results, warnings } = await svc.applyImport(bundleOf([entry({ content: 'first' }), entry({ content: 'second' })]));
+  assert.equal(results.length, 1);
+  assert.equal(results[0].status, 'written');
+  assert.equal(read(path.join(home, '.claude', 'settings.json')), 'first');
+  assert.equal(warnings.length, 1);
+  assert.match(warnings[0], /duplicate/);
+});
+
+test('a failed backup step reports no backup path (commit-on-success)', async () => {
+  const { home, configRoot, svc } = setup();
+  const target = path.join(home, '.claude', 'settings.json');
+  write(target, '{"model":"old-value"}');
+  // Occupying <config>/backups with a plain file makes the backup's mkdir
+  // throw (ENOTDIR on POSIX and Windows): the backup step itself fails
+  // before any copy lands, so the failure row must not promise a restore
+  // path that doesn't exist on disk.
+  write(path.join(configRoot, 'backups'), 'not a directory');
+
+  const { results } = await svc.applyImport(bundleOf([entry()]));
+  const row = results[0];
+  assert.equal(row.status, 'failed');
+  assert.ok(row.error);
+  assert.equal(row.backupPath, null);
+  // The target was never touched, and no temp file leaked next to it.
+  assert.equal(read(target), '{"model":"old-value"}');
+  assert.equal(fs.readdirSync(path.join(home, '.claude')).some((name) => name.includes('toksight-tmp')), false);
+});
