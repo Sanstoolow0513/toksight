@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { ChevronDown, RefreshCw, ShieldAlert, TriangleAlert } from 'lucide-react';
 import { DEFAULT_LOCALE, readStoredLocale, t, writeStoredLocale } from '@/lib/i18n';
 import { fmtTokens } from '@/lib/format';
+import TransferPanel from '@/components/TransferPanel';
 
 const ITEM_KEYS = {
   'zcode.providers': 'cfgItemZcodeProviders',
@@ -355,6 +356,8 @@ export default function ConfigPage() {
             <div className="config-empty">{tx('cfgLoadEmpty')}</div>
           )}
         </div>
+
+        <TransferPanel agents={inventory?.agents} locale={locale} tx={tx} onImported={load} />
 
         <footer className="foot">
           <span>{tx('cfgFootScope')}</span>

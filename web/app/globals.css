@@ -1613,6 +1613,213 @@ code {
   height: 120px;
 }
 
+/* Status tags (config file states, import plan/result rows). */
+.tag {
+  background: var(--color-panel-2);
+  border: 1px solid var(--color-line);
+  color: var(--color-text-muted);
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: var(--font-size-2xs);
+  letter-spacing: 0.04em;
+  padding: 2px 8px;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.tag-ok {
+  border-color: var(--color-success);
+  color: var(--color-success);
+}
+
+.tag-warn {
+  border-color: var(--color-warning);
+  color: var(--color-warning);
+}
+
+.tag-error {
+  border-color: var(--color-error);
+  color: var(--color-error);
+}
+
+/* Bundle export / import panel. Same mosaic grammar as the agent cards. */
+.config-transfer {
+  background: var(--color-panel);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+  padding: var(--space-6);
+}
+
+.config-transfer-head {
+  align-items: flex-start;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+  justify-content: space-between;
+}
+
+.config-transfer-head .config-kicker {
+  margin-bottom: var(--space-1);
+}
+
+.config-transfer-head h2 {
+  font-family: var(--font-sans);
+  font-size: var(--font-size-xl);
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+  margin: 0 0 var(--space-2);
+}
+
+.config-transfer-head p {
+  color: var(--color-text-muted);
+  font-family: var(--font-sans);
+  font-size: var(--font-size-sm);
+  max-width: 62ch;
+  margin: 0;
+}
+
+.config-transfer-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.config-xfer-files {
+  border: 1px solid var(--color-border-strong);
+  display: grid;
+  gap: 1px;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+}
+
+.config-xfer-agent {
+  background: var(--color-panel-2);
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  padding: var(--space-3);
+}
+
+.config-xfer-agent-label {
+  align-items: baseline;
+  display: flex;
+  gap: var(--space-2);
+  margin-bottom: var(--space-1);
+}
+
+.config-xfer-agent-label b {
+  font-family: var(--font-sans);
+  font-size: var(--font-size-sm);
+}
+
+.config-xfer-agent-label span {
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-2xs);
+}
+
+.config-xfer-file {
+  align-items: baseline;
+  cursor: pointer;
+  display: flex;
+  gap: var(--space-2);
+  padding: 4px 0 4px 6px;
+}
+
+.config-xfer-file input {
+  accent-color: var(--color-primary);
+  flex: none;
+  margin: 0;
+}
+
+.config-xfer-file[style*="opacity"],
+.config-xfer-file:has(input:disabled) {
+  opacity: 0.55;
+}
+
+.config-xfer-file-name {
+  font-family: var(--font-mono);
+  font-size: var(--font-size-xs);
+  overflow-wrap: anywhere;
+}
+
+.config-xfer-actions {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-3);
+}
+
+.config-xfer-import-input {
+  border: 1px solid var(--color-border-strong);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-3);
+}
+
+.config-xfer-import-input textarea {
+  background: var(--color-panel-2);
+  border: 1px solid var(--color-line);
+  color: var(--color-text);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-xs);
+  min-height: 84px;
+  padding: var(--space-2);
+  resize: vertical;
+  width: 100%;
+}
+
+.config-xfer-import-input textarea:focus {
+  border-color: var(--color-primary);
+  outline: none;
+}
+
+.config-xfer-results {
+  border: 1px solid var(--color-border-strong);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+}
+
+.config-xfer-results > b {
+  font-family: var(--font-sans);
+  font-size: var(--font-size-sm);
+}
+
+.config-xfer-results ul {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.config-xfer-results li {
+  align-items: baseline;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px var(--space-3);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-xs);
+  min-width: 0;
+  padding: 3px 0;
+}
+
+.config-xfer-results li span {
+  overflow-wrap: anywhere;
+}
+
+.config-xfer-results li code {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-2xs);
+  overflow-wrap: anywhere;
+}
+
 .foot {
   display: flex;
   flex-wrap: wrap;

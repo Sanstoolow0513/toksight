@@ -103,7 +103,7 @@ test('serves the prebuilt dashboard from outDir and 404s missing assets', async 
   });
 });
 
-test('configuration API is a read-only loopback inventory', async () => {
+test('configuration inventory is a read-only loopback endpoint', async () => {
   const calls = [];
   const configService = {
     async inspect() {
@@ -119,19 +119,198 @@ test('configuration API is a read-only loopback inventory', async () => {
     assert.equal(inventory.headers.get('cache-control'), 'no-store');
     assert.deepEqual(await inventory.json(), { agents: [{ id: 'codex', files: [], summary: {} }], warnings: [] });
 
-    // Write attempts and sub-paths are rejected outright — there is no
-    // transfer API to abuse, so nothing but GET inspect ever runs.
+    // The inventory itself never accepts a body: POST is a 405 no matter
+    // what transfer services exist.
     const posted = await fetch(`${url}/api/config`, { method: 'POST', body: '{}' });
     assert.equal(posted.status, 405);
     assert.equal((await posted.json()).code, 'METHOD_NOT_ALLOWED');
 
-    const subPath = await fetch(`${url}/api/config/export`);
-    assert.equal(subPath.status, 404);
-    const imported = await fetch(`${url}/api/config/import`, { method: 'POST', body: '{}' });
-    assert.equal(imported.status, 404);
+    // Unknown sub-paths stay 404 (no transfer service registered here).
+    const stray = await fetch(`${url}/api/config/nope`);
+    assert.equal(stray.status, 404);
   });
 
   assert.deepEqual(calls, [['inspect']]);
+});
+
+test('transfer endpoints exist and are gated on their service', async () => {
+  const configService = { async inspect() { return { agents: [], warnings: [] }; } };
+
+  await withServer({ configService }, async (url) => {
+    const exported = await fetch(`${url}/api/config/export`);
+    assert.equal(exported.status, 503);
+    assert.equal((await exported.json()).code, 'TRANSFER_UNAVAILABLE');
+
+    const preview = await fetch(`${url}/api/config/import/preview`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-toksight-action': 'import-preview' },
+      body: JSON.stringify({ bundle: { format: 'x' } }),
+    });
+    assert.equal(preview.status, 503);
+    assert.equal((await preview.json()).code, 'TRANSFER_UNAVAILABLE');
+
+    const imported = await fetch(`${url}/api/config/import`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-toksight-action': 'import' },
+      body: JSON.stringify({ bundle: { format: 'x' } }),
+    });
+    assert.equal(imported.status, 503);
+    assert.equal((await imported.json()).code, 'TRANSFER_UNAVAILABLE');
+  });
+});
+
+test('export endpoint streams the bundle with a download disposition', async () => {
+  const configService = { async inspect() { return { agents: [], warnings: [] }; } };
+  const calls = [];
+  const transferService = {
+    async exportBundle(opts) {
+      calls.push(opts);
+      return {
+        bundle: { format: 'toksight-agent-config-bundle', version: 1, files: [{ id: 'claude.settings' }] },
+        warnings: ['big file skipped'],
+      };
+    },
+  };
+
+  await withServer({ configService, transferService }, async (url) => {
+    const res = await fetch(`${url}/api/config/export?agents=claude&files=claude.settings`);
+    assert.equal(res.status, 200);
+    assert.match(res.headers.get('content-disposition'), /attachment; filename="toksight-agent-configs\.json"/);
+    assert.equal(res.headers.get('cache-control'), 'no-store');
+    const body = await res.json();
+    assert.equal(body.format, 'toksight-agent-config-bundle');
+    assert.deepEqual(body.files, [{ id: 'claude.settings' }]);
+    assert.deepEqual(body.warnings, ['big file skipped']);
+  });
+
+  assert.deepEqual(calls, [{ agents: 'claude', files: 'claude.settings' }]);
+});
+
+test('import endpoints enforce method, content-type and action header', async () => {
+  const configService = { async inspect() { return { agents: [], warnings: [] }; } };
+  const transferService = {
+    async planImport() { return { error: null, plan: [], warnings: [] }; },
+    async applyImport() { return { error: null, results: [], warnings: [] }; },
+  };
+  const calls = [];
+  const recording = {
+    ...transferService,
+    async planImport(bundle, opts) { calls.push(['plan', bundle, opts]); return transferService.planImport(bundle, opts); },
+    async applyImport(bundle, opts) { calls.push(['apply', bundle, opts]); return transferService.applyImport(bundle, opts); },
+  };
+
+  await withServer({ configService, transferService: recording }, async (url) => {
+    // GET is not a thing on the import endpoints.
+    const got = await fetch(`${url}/api/config/import`);
+    assert.equal(got.status, 405);
+    assert.equal((await got.json()).code, 'METHOD_NOT_ALLOWED');
+
+    // text/plain (the no-preflight CSRF shape) is rejected before the body
+    // is even read, and never reaches the service.
+    const plain = await fetch(`${url}/api/config/import`, { method: 'POST', body: '{}' });
+    assert.equal(plain.status, 415);
+    assert.equal((await plain.json()).code, 'UNSUPPORTED_MEDIA_TYPE');
+
+    // JSON content type without the action header is rejected too.
+    const noHeader = await fetch(`${url}/api/config/import`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ bundle: {} }),
+    });
+    assert.equal(noHeader.status, 403);
+    assert.equal((await noHeader.json()).code, 'ACTION_HEADER_REQUIRED');
+
+    // Wrong action value for the endpoint.
+    const wrongAction = await fetch(`${url}/api/config/import/preview`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-toksight-action': 'import' },
+      body: JSON.stringify({ bundle: {} }),
+    });
+    assert.equal(wrongAction.status, 403);
+    assert.equal((await wrongAction.json()).code, 'ACTION_HEADER_REQUIRED');
+
+    // Not JSON at all.
+    const badJson = await fetch(`${url}/api/config/import`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-toksight-action': 'import' },
+      body: 'not json',
+    });
+    assert.equal(badJson.status, 400);
+    assert.equal((await badJson.json()).code, 'BAD_JSON');
+
+    // Malformed request body shape (bundle must be an object).
+    const badShape = await fetch(`${url}/api/config/import`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-toksight-action': 'import' },
+      body: JSON.stringify({ bundle: 'nope' }),
+    });
+    assert.equal(badShape.status, 400);
+    assert.equal((await badShape.json()).code, 'BAD_REQUEST');
+
+    // selected must be an array of strings.
+    const badSelected = await fetch(`${url}/api/config/import/preview`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-toksight-action': 'import-preview' },
+      body: JSON.stringify({ bundle: { format: 'toksight-agent-config-bundle', version: 1, files: [] }, selected: 42 }),
+    });
+    assert.equal(badSelected.status, 400);
+    assert.equal((await badSelected.json()).code, 'BAD_REQUEST');
+
+    // A well-formed request reaches the service with bundle + selected.
+    const bundle = { format: 'toksight-agent-config-bundle', version: 1, files: [] };
+    const ok = await fetch(`${url}/api/config/import/preview`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-toksight-action': 'import-preview' },
+      body: JSON.stringify({ bundle, selected: ['claude.settings'] }),
+    });
+    assert.equal(ok.status, 200);
+    assert.deepEqual(await ok.json(), { error: null, plan: [], warnings: [] });
+  });
+
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0][0], 'plan');
+  assert.deepEqual(calls[0][1], { format: 'toksight-agent-config-bundle', version: 1, files: [] });
+  assert.deepEqual(calls[0][2], { selected: ['claude.settings'] });
+});
+
+test('cross-site browser requests to the config API are rejected', async () => {
+  const configService = { async inspect() { return { agents: [], warnings: [] }; } };
+
+  await withServer({ configService }, async (url) => {
+    const crossSite = await fetch(`${url}/api/config`, {
+      headers: { 'sec-fetch-site': 'cross-site' },
+    });
+    assert.equal(crossSite.status, 403);
+    assert.equal((await crossSite.json()).code, 'CROSS_SITE_NOT_ALLOWED');
+
+    // same-origin and none pass; absence (curl / Node fetch) passes — the
+    // happy-path tests elsewhere in this file rely on that.
+    for (const site of ['same-origin', 'none']) {
+      const ok = await fetch(`${url}/api/config`, { headers: { 'sec-fetch-site': site } });
+      assert.equal(ok.status, 200);
+    }
+  });
+});
+
+test('import request bodies are capped', async () => {
+  const configService = { async inspect() { return { agents: [], warnings: [] }; } };
+  let reached = false;
+  const transferService = {
+    async planImport() { reached = true; return { error: null, plan: [], warnings: [] }; },
+    async applyImport() { reached = true; return { error: null, results: [], warnings: [] }; },
+  };
+
+  await withServer({ configService, transferService }, async (url) => {
+    const big = 'x'.repeat(11 * 1024 * 1024);
+    const res = await fetch(`${url}/api/config/import`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-toksight-action': 'import' },
+      body: JSON.stringify({ bundle: { content: big } }),
+    });
+    assert.equal(res.status, 413);
+    assert.equal((await res.json()).code, 'BODY_TOO_LARGE');
+    assert.equal(reached, false);
+  });
 });
 
 test('configuration API reports a missing service and inspect failures', async () => {

@@ -1,8 +1,9 @@
 // Minimal zero-dependency HTTP server for `toksight web`.
 // Serves the prebuilt static dashboard from web/out and a live JSON API at
-// /api/data plus the read-only agent configuration inventory at /api/config.
-// The data API re-collects on every request, so a browser refresh always
-// reflects the latest session files.
+// /api/data plus the agent configuration endpoints at /api/config: the
+// read-only inventory, the bundle export, and the (preview → apply) import —
+// the only write path in toksight. The data API re-collects on every request,
+// so a browser refresh always reflects the latest session files.
 
 import http from 'node:http';
 import { isIP } from 'node:net';
@@ -94,6 +95,93 @@ export function isLocalHostHeader(hostHeader) {
   return host === 'localhost' || isLoopbackAddress(host);
 }
 
+// Fetch-Metadata check: modern browsers stamp every request with
+// Sec-Fetch-Site. same-origin (dashboard → API) and none (address bar,
+// bookmarks) are fine; cross-site means a foreign page initiated the request.
+// Non-browser clients (curl, Node's fetch) do not send the header at all —
+// absence passes, they already cleared the loopback gate.
+export function isCrossSiteRequest(req) {
+  const site = req?.headers?.['sec-fetch-site'];
+  if (site == null) return false;
+  const value = String(site).toLowerCase();
+  return value !== 'same-origin' && value !== 'none';
+}
+
+// Body cap for import requests. The export side never bundles a file above
+// 1 MB, so 10 MB leaves comfortable room for a full five-agent bundle while
+// still bounding memory use.
+export const MAX_IMPORT_BYTES = 10 * 1024 * 1024;
+
+// Write-request gate: requires an application/json content type AND the
+// x-toksight-action header matching the endpoint's action. Both are
+// CORS-safelisted violations, so a browser enforces a preflight before the
+// request is ever sent — and with no CORS headers on this server the
+// preflight fails. A text/plain form POST (the classic no-preflight CSRF
+// shape) is rejected here outright.
+export function guardWriteRequest(req, action) {
+  const contentType = String(req?.headers?.['content-type'] || '').toLowerCase();
+  if (!contentType.startsWith('application/json')) {
+    const err = new Error('import requests must have content-type application/json');
+    err.status = 415;
+    err.code = 'UNSUPPORTED_MEDIA_TYPE';
+    throw err;
+  }
+  if (String(req?.headers?.['x-toksight-action'] || '') !== action) {
+    const err = new Error(`missing or wrong x-toksight-action header (expected "${action}")`);
+    err.status = 403;
+    err.code = 'ACTION_HEADER_REQUIRED';
+    throw err;
+  }
+}
+
+// Reads and JSON-parses a request body with a hard byte cap. On overflow the
+// remaining body is drained (chunks discarded, nothing buffered) and the
+// promise rejects at stream end — the route can then answer with a 413 that
+// reliably reaches the client. Draining rather than destroying the socket
+// avoids a race where the error response is cut off mid-flight; the server is
+// loopback-only anyway, so there is no remote attacker to DoS with a slow
+// body. Rejects with .status/.code attached for the right HTTP status.
+export function readJsonBody(req, limitBytes) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    let total = 0;
+    let overflow = null;
+    req.on('data', (chunk) => {
+      if (overflow) return; // keep draining past the cap, discard
+      total += chunk.length;
+      if (total > limitBytes) {
+        overflow = new Error(`request body exceeds ${limitBytes} bytes`);
+        overflow.status = 413;
+        overflow.code = 'BODY_TOO_LARGE';
+        chunks.length = 0; // nothing is kept from an oversized body
+        return;
+      }
+      chunks.push(chunk);
+    });
+    req.on('end', () => {
+      if (overflow) {
+        reject(overflow);
+        return;
+      }
+      let body;
+      try {
+        body = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+      } catch {
+        const err = new Error('request body is not valid JSON');
+        err.status = 400;
+        err.code = 'BAD_JSON';
+        reject(err);
+        return;
+      }
+      resolve(body);
+    });
+    req.on('error', (err) => {
+      if (overflow) return;
+      reject(err);
+    });
+  });
+}
+
 function sendJson(res, status, payload, method = 'GET', extraHeaders = {}) {
   res.writeHead(status, { ...JSON_HEADERS, ...extraHeaders });
   res.end(method === 'HEAD' ? undefined : JSON.stringify(payload));
@@ -105,6 +193,7 @@ export function createWebServer({
   outDir,
   getData,
   configService,
+  transferService,
   apiOnly = false,
   logger = console,
 } = {}) {
@@ -170,9 +259,11 @@ export function createWebServer({
   }
 
   async function handle(req, res) {
+    let url;
     let pathname;
     try {
-      pathname = decodeURIComponent(new URL(req.url, 'http://localhost').pathname);
+      url = new URL(req.url, 'http://localhost');
+      pathname = decodeURIComponent(url.pathname);
     } catch {
       res.writeHead(400, { 'content-type': 'text/plain; charset=utf-8' });
       res.end('bad request');
@@ -219,26 +310,114 @@ export function createWebServer({
         sendJson(res, 403, { error: 'configuration endpoint requires a localhost Host header', code: 'HOST_NOT_ALLOWED' }, req.method);
         return;
       }
+      // Fetch-Metadata defense (browsers send Sec-Fetch-Site; curl and
+      // Node's fetch do not, so absence passes): a cross-site browser request
+      // aimed at these endpoints is rejected regardless of anything else.
+      if (isCrossSiteRequest(req)) {
+        sendJson(res, 403, { error: 'cross-site requests are not accepted', code: 'CROSS_SITE_NOT_ALLOWED' }, req.method);
+        return;
+      }
       if (!configService) {
         sendJson(res, 503, { error: 'configuration service is unavailable', code: 'CONFIG_UNAVAILABLE' }, req.method);
         return;
       }
-      // Read-only by design: the inventory endpoint never accepts request
-      // bodies, so nothing but GET/HEAD ever reaches the config service.
-      if (pathname !== '/api/config') {
-        sendJson(res, 404, { error: 'not found', code: 'NOT_FOUND' }, req.method);
+
+      // Read-only inventory: GET/HEAD only, never a request body.
+      if (pathname === '/api/config') {
+        if (req.method !== 'GET' && req.method !== 'HEAD') {
+          sendJson(res, 405, { error: 'method not allowed', code: 'METHOD_NOT_ALLOWED' }, req.method, { allow: 'GET, HEAD' });
+          return;
+        }
+        try {
+          sendJson(res, 200, await configService.inspect(), req.method);
+        } catch (err) {
+          logger?.warn?.(`toksight web: /api/config failed: ${err?.message || err}`);
+          sendJson(res, 500, { error: String(err?.message || err), code: 'CONFIG_ERROR' }, req.method);
+        }
         return;
       }
-      if (req.method !== 'GET' && req.method !== 'HEAD') {
-        sendJson(res, 405, { error: 'method not allowed', code: 'METHOD_NOT_ALLOWED' }, req.method, { allow: 'GET, HEAD' });
+
+      // Bundle export: same GET semantics as the inventory, plus a
+      // Content-Disposition so the dashboard can offer it as a download.
+      if (pathname === '/api/config/export') {
+        if (req.method !== 'GET' && req.method !== 'HEAD') {
+          sendJson(res, 405, { error: 'method not allowed', code: 'METHOD_NOT_ALLOWED' }, req.method, { allow: 'GET, HEAD' });
+          return;
+        }
+        if (!transferService) {
+          sendJson(res, 503, { error: 'transfer service is unavailable', code: 'TRANSFER_UNAVAILABLE' }, req.method);
+          return;
+        }
+        try {
+          const { bundle, warnings } = await transferService.exportBundle({
+            agents: url.searchParams.get('agents') || undefined,
+            files: url.searchParams.get('files') || undefined,
+          });
+          sendJson(
+            res,
+            200,
+            { ...bundle, warnings },
+            req.method,
+            { 'content-disposition': 'attachment; filename="toksight-agent-configs.json"' },
+          );
+        } catch (err) {
+          logger?.warn?.(`toksight web: /api/config/export failed: ${err?.message || err}`);
+          sendJson(res, 500, { error: String(err?.message || err), code: 'TRANSFER_ERROR' }, req.method);
+        }
         return;
       }
-      try {
-        sendJson(res, 200, await configService.inspect(), req.method);
-      } catch (err) {
-        logger?.warn?.(`toksight web: /api/config failed: ${err?.message || err}`);
-        sendJson(res, 500, { error: String(err?.message || err), code: 'CONFIG_ERROR' }, req.method);
+
+      // Import endpoints — the only write path in toksight. Beyond the
+      // loopback/Host/Fetch-Metadata gates shared with the read side, a
+      // browser-initiated write requires a JSON content type AND the
+      // x-toksight-action header: both force a CORS preflight, and this
+      // server answers no preflight (no CORS headers at all), so a foreign
+      // page can never fire a state-changing request at it.
+      if (pathname === '/api/config/import/preview' || pathname === '/api/config/import') {
+        const isPreview = pathname === '/api/config/import/preview';
+        if (req.method !== 'POST') {
+          sendJson(res, 405, { error: 'method not allowed', code: 'METHOD_NOT_ALLOWED' }, req.method, { allow: 'POST' });
+          return;
+        }
+        if (!transferService) {
+          sendJson(res, 503, { error: 'transfer service is unavailable', code: 'TRANSFER_UNAVAILABLE' }, req.method);
+          return;
+        }
+        try {
+          guardWriteRequest(req, isPreview ? 'import-preview' : 'import');
+          const body = await readJsonBody(req, MAX_IMPORT_BYTES);
+          const bundle = body?.bundle;
+          if (!bundle || typeof bundle !== 'object' || Array.isArray(bundle)) {
+            sendJson(res, 400, { error: 'request body must be { bundle, selected? } with a bundle object', code: 'BAD_REQUEST' }, req.method);
+            return;
+          }
+          let selected;
+          if (body.selected != null) {
+            if (!Array.isArray(body.selected) || body.selected.some((entry) => typeof entry !== 'string')) {
+              sendJson(res, 400, { error: 'selected must be an array of file ids', code: 'BAD_REQUEST' }, req.method);
+              return;
+            }
+            selected = body.selected;
+          }
+          const result = isPreview
+            ? await transferService.planImport(bundle, { selected })
+            : await transferService.applyImport(bundle, { selected });
+          if (result.error) {
+            sendJson(res, 400, { error: result.error, code: 'BAD_BUNDLE' }, req.method);
+            return;
+          }
+          sendJson(res, 200, result, req.method);
+        } catch (err) {
+          const status = Number.isFinite(err?.status) ? err.status : 500;
+          if (status >= 500) {
+            logger?.warn?.(`toksight web: ${pathname} failed: ${err?.message || err}`);
+          }
+          sendJson(res, status, { error: String(err?.message || err), code: err?.code || 'TRANSFER_ERROR' }, req.method);
+        }
+        return;
       }
+
+      sendJson(res, 404, { error: 'not found', code: 'NOT_FOUND' }, req.method);
       return;
     }
 
