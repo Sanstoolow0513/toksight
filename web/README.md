@@ -3,8 +3,7 @@
 `toksight web` 的前端：一个 Next.js（App Router）静态导出应用，由 CLI 内置的零依赖
 HTTP 服务器（`src/webserver.js`）托管，数据来自同源的 `/api/data` 实时 JSON API。
 
-视觉规范见仓库根目录 `design-spec.md`（v6 Brutalism 磷光工作表）。
-`design-system/toksight/MASTER.md` 是该规范的投影，实现以 spec 为准。
+视觉规范见仓库根目录 `design-spec.md`（v6 Brutalism 磷光工作表），实现以 spec 为准。
 
 ## 使用
 

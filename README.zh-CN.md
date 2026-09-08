@@ -119,56 +119,50 @@ OpenCode 自带的价格（`cost` 字段）会被直接采用。
 （默认 `http://127.0.0.1:4729`）。只绑定本机回环地址，每次请求都重新聚合会话文件——
 数据不出你的机器。
 
-仪表盘为 Brutalism 磷光工作表（v6）：近黑底上的 2px 外框马赛克，格子以
-`--color-border-strong` 硬网格线分割，方角，数据排版用 Geist Mono。施工图是
-`design-spec.md`；`design-system/toksight/MASTER.md` 是它的投影（不是 skill 原始落盘）。
-粘性页眉（lime logo chip + 上次抓取时间）之后是筛选栏、4 格 KPI
-条、费用说明与周期比较，再是 12 列工作表——趋势、活动热力图、Agent/模型双栏、
-按小时/按月/活跃节奏、会话用量表。悬停为瞬时反转；仅保留的动效（行展开、你切换范围/
-维度时的图表重放）在 `prefers-reduced-motion` 下全部关闭。包含：
+仪表盘为 Brutalism 磷光工作表（v6）：近黑底、方角、硬网格线，数据排版用 Geist Mono；
+视觉施工图唯一以 `design-spec.md` 为准。粘性页眉（lime logo chip + 上次抓取时间）之后
+是筛选栏、4 格 KPI 条、费用说明与周期比较，再是 12 列工作表：趋势（先方向后细节）、
+活动热力图、Agent/模型、按小时/按月/活跃节奏、会话用量表。悬停为瞬时反转，动效全部
+遵守 `prefers-reduced-motion`。包含：
 
-- **网页筛选** — 全部可用数据 / 今天 / 近 7 天 / 近 30 天 / 本月 / 自定义日期，以及 Agent 选择。
-  应用后同时更新汇总、图表、模型和会话；筛选保存在页面 URL 中，刷新后保留。
-- **KPI 条** — 累计 tokens（lime，附请求 · 会话）、参考费用、缓存命中率（绿色）、活跃天数，
-  34px mono 大数字
-- **趋势格** — 7 / 30 / 90 天窗口 × 两种堆叠维度：按 token 构成（新输入 / 缓存读取 /
-  缓存写入 / 输出）或按 Agent；图形是按日阶梯堆叠实心带（不是光滑面积山）；图例可点选
-  隐藏序列；今日 / 近 7 天 / 近 30 天 / 本月方角汇总标签放在格头右侧
-- **所选时段** — 指定日期后，趋势与热力图覆盖该时段；超过 366 天时图表显示最后 366 天并注明，
-  汇总和比较仍覆盖完整选择。服务端日期按本机时区计算，非法日期（如 2 月 30 日）会被拒绝。
-- **参考费用说明** — 区分工具上报金额、用户价格覆盖、LiteLLM 与内置价格估算，展示有费用数据的请求比例、
-  未定价请求和实际用到缓存价格回退的请求数。参考费用不等于订阅账单或实际扣款，未定价也不代表免费。
-- **周期比较** — 所选时段与紧邻的等长本地日历周期比较；未指定开始日期时默认比较截止日之前最近 7 天。
-  展示费用、tokens、命中率和请求数变化，以及 Agent / Agent × 模型的变化贡献（按费用变化绝对值排序，最多 8 项）。
-  两期估算使用同次采集的价格；工具上报金额保留原值。本期未结束、记录缺失、无时间戳与缺失定价均有说明；
-  上期金额为 0 时不计算增长率。这些变化不衡量工作效率或模型质量。
-- **活动格** — GitHub 风格近 53 周每日热力网格（lime 强度 ramp），悬停可看单日明细
-- **Agent 分布格** — 各 Agent 份额条（tokens、费用、占比）与缓存命中率，点击行展开
-  该 Agent 的分模型命中率
-- **模型用量格** — 跨 Agent 汇总的模型排行；每根条内以绿色分段呈现缓存读取占比；
-  Agent × 模型明细表折叠保留
-- **按小时、按月、活跃节奏** — tokens 流向了哪个时段、哪个月；连续活跃、峰值日、
-  按*活跃时长*计的最长会话
-- **会话用量表** — 按 tokens 排名前 10（标题、tokens、请求、命中率、费用、开始时间、
-  活跃时长）
+- **网页筛选** — 全部数据 / 今天 / 近 7 天 / 近 30 天 / 本月 / 自定义日期，以及 Agent
+  选择；应用后汇总、图表、模型和会话同步更新，筛选保存在页面 URL 中，刷新后保留。
+- **KPI 条** — 累计 tokens（lime，附请求 · 会话）、参考费用、缓存命中率、活跃天数。
+- **趋势格** — 7 / 30 / 90 天窗口 × 两种堆叠（按 token 构成或按 Agent）的按日阶梯实心带；
+  图例可点选隐藏序列；格头右侧放今日 / 近 7 天 / 近 30 天 / 本月汇总标签。
+- **所选时段** — 指定日期后，趋势与热力图按所选时段重绘；超过 366 天时图表显示最后
+  366 天并注明，汇总和比较仍覆盖完整选择；服务端日期按本机时区计算，非法日期（如 2 月
+  30 日）会被拒绝。
+- **参考费用说明** — 区分工具上报金额、用户价格覆盖、LiteLLM 与内置价格估算，展示有费用
+  数据的请求比例、未定价请求和实际用到缓存价格回退的请求数。参考费用不等于订阅账单，
+  未定价也不代表免费。
+- **周期比较** — 所选时段与紧邻的等长本地日历周期比较（未指定开始日期时默认截止日之前
+  最近 7 天）；展示费用、tokens、命中率和请求数变化，以及 Agent / Agent × 模型贡献（按
+  费用变化绝对值排序，最多 8 项）；两期共用同一次采集的价格快照，工具上报金额保留原值；
+  未结束、缺失、无时间戳与缺失定价均有说明，上期为 0 时不计算增长率。不衡量工作效率或模型质量。
+- **活动热力图** — GitHub 风格近 53 周每日 tokens 网格（lime 强度 ramp），悬停看单日明细。
+- **Agent 分布** — 各 Agent 的 tokens/费用份额与命中率，点击行展开分模型命中率。
+- **模型用量** — 跨 Agent 汇总的模型排行；每根条把缓存读取（绿色）与新流量硬分两段；
+  Agent × 模型明细表折叠保留。
+- **按小时 / 按月 / 节奏** — tokens 在时段与月份上的分布、连续活跃、峰值日、按*活跃
+  时长*计的最长会话。
+- **会话用量表** — 按 tokens 排名前 10（标题、tokens、请求、命中率、费用、开始时间、活跃时长）。
 
-所有筛选参数（`--client`、`--since`、`--until`、`--today/--week/--month`）对 `web` 同样
-生效；页面支持手动刷新、30 秒自动刷新，以及顶栏 中文 / EN 切换（记在 `localStorage` 键
-`toksight-locale`，默认中文）。
-启动参数限定服务的可见范围，网页筛选只会进一步缩小；清除网页筛选不会取消启动限制。
-如果上期超出启动日期范围，页面会说明无法进行完整比较。
+启动参数（`--client`、`--since`、`--until`、`--today/--week/--month`）限定服务的可见
+范围，网页筛选只能在其内进一步缩小，清除网页筛选不会解除启动限制；若上期落在启动范围
+之外，页面会说明无法完整比较。另支持手动刷新、30 秒自动刷新开关与顶栏 中文 / EN 切换
+（`localStorage` 键 `toksight-locale`，默认中文）。
 
-API 也接受 `GET /api/data?client=claude&period=7d`。`period` 可为 `all`（默认）、`today`、
-`7d`、`30d`、`month` 或 `custom`；`custom` 必须同时给出 `since=YYYY-MM-DD&until=YYYY-MM-DD`。
-也可单独使用 `since` / `until`；日期与 `client` 沿用 CLI 口径，多个 Agent 用逗号分隔。
-预设周期不能同时传日期；未知、重复或无效参数返回 HTTP 400。
+API 也接受 `GET /api/data?client=claude&period=7d`。`period` 可为 `all`（默认）/ `today` /
+`7d` / `30d` / `month` / `custom`（须同时给出 `since` 与 `until`）；`since` / `until` 可单独
+使用；预设周期不能与显式日期混用；未知、重复或无效参数返回 HTTP 400。
 
 ### Agent 配置一览（只读 + 迁移）
 
 从仪表盘顶栏进入**配置**（或直接打开 `/config`），查看本机五个 Agent 的用户级配置摘要：
 默认模型、认证方式、服务商与端点、模型列表（含上下文长度）、权限/沙箱等关键设置，以及
-每项设置来自哪个文件。展开任意 Agent 可查看其配置文件的脱敏原文。页面底部的**导出、导入与恢复**
-面板是唯一的写入口：把配置收集成一个 JSON bundle 迁到别的机器，查看差异后导入，也可以恢复本机备份。
+每项设置来自哪个文件。展开任意 Agent 可查看其配置文件的脱敏原文。页面底部的
+**导出、导入与恢复**面板是唯一的写入口（详见下节）。
 
 读取范围（固定白名单，全部为用户级文件）：
 
@@ -184,12 +178,11 @@ API 也接受 `GET /api/data?client=claude&period=7d`。`period` 可为 `all`（
 `apikey`）与 OAuth 状态。普通配置文件的原文预览会把密钥、令牌类值替换为 `[REDACTED]`：
 Claude `settings.json` 的 `env` 块按变量名逐项判断（`ANTHROPIC_BASE_URL`、
 `ANTHROPIC_MODEL` 可见，`ANTHROPIC_API_KEY` 隐藏），因此第三方中转配置仍具可读性。
-项目级配置、托管/企业策略文件不在扫描范围内。配置 API 仅限本机回环客户端且要求
-localhost `Host` 头，即使 `--host` 开放了统计仪表盘。
+项目级配置、托管/企业策略文件不在扫描范围内。
 
 #### 配置导出、导入与恢复
 
-配置页底部的**导出、导入与恢复**面板用于在机器之间迁移 Agent 配置：
+三种操作，同一个面板：
 
 - **导出**：勾选要迁移的配置文件（凭据文件不在列表里，也永远不可导出），下载单个
   JSON bundle（`toksight-agent-configs.json`）或直接复制 JSON 文本粘贴到别处。bundle
@@ -206,39 +199,27 @@ localhost `Host` 头，即使 `--host` 开放了统计仪表盘。
 - **恢复备份**：在“恢复备份”查看最近 200 份可识别备份 → 预览恢复 → 确认恢复。
   恢复前也会备份当前文件，因此可以再恢复到恢复前的版本。列表只显示元数据，预览仍然脱敏。
   旧备份仅在能唯一确定目标时支持恢复；例如旧 ZCode 两种 `config.json` 备份无法区分时会被省略并提示。
-- **范围限制**：导入只接受 bundle 中属于固定白名单的**配置**文件——未知条目与凭据条目
-  一律跳过，写入路径按**本机**的白名单解析，bundle 里记录的来源路径仅供参考，因此一个
-  bundle 无法向白名单之外的任何位置写入。目标是符号链接时会被拒绝（替换的是链接本身而
-  不是它指向的文件）；写入失败时不残留临时文件，并回报已生成的备份路径。
-  skills、规则文件与插件资源不包含在 bundle 中。备份目录或备份文件为符号链接时拒绝自动恢复。
-- **安全**：导出 / 导入端点与配置一览一样仅限回环客户端 + localhost `Host` 头，额外再
-  校验浏览器 `Sec-Fetch-Site`；导入端点只接受 `application/json` + 专用请求头
-  （跨站网页无法伪造），请求体上限 10 MB。
+- **范围限制**：导入只接受属于固定白名单的**配置**文件——未知条目与凭据条目一律跳过，
+  写入路径按**本机**白名单解析（bundle 里记录的来源路径仅供参考），因此 bundle 无法向
+  白名单之外的任何位置写入；skills、规则文件与插件资源不包含在内。目标为符号链接时拒绝
+  （替换的是链接本身而非其指向的文件），备份目录/备份文件为符号链接时同样拒绝自动恢复。
+  写入失败不残留临时文件，只报告真正落盘的备份。
+- **安全**：所有配置端点仅限回环客户端 + localhost `Host` 头，并校验浏览器
+  `Sec-Fetch-Site`——即使 `--host` 开放了统计仪表盘；导入 POST 还要求
+  `application/json` + 专用请求头（跨站网页无法伪造），请求体上限 10 MB。
 
 ### 仪表盘构建产物
 
-npm 包已包含 `web/out/` 中预构建好的静态文件，安装后的用户可以直接启动：
+npm 包已包含 `web/out/` 中预构建好的静态文件——安装后直接 `toksight web` 即可，无需构建，
+也不运行 Next。从源码预览发布版页面（需 Node >=20.9；安装包的 CLI 仍支持 >=20）：
 
 ```bash
-toksight web
+npm run web:ci && npm run web:build && node bin/toksight.js web
 ```
 
-从源码预览发布版页面时，在仓库根目录安装锁定的网页依赖，再构建并启动：
-
-```bash
-npm run web:ci
-npm run web:build
-node bin/toksight.js web
-```
-
-执行 `npm pack` 或 `npm publish` 时会自动重新构建仪表盘。从源码运行且 `web/out/` 尚未构建
-时，`toksight web` 会在 `/` 显示构建指引页，`/api/data` 仍可正常使用。构建完成后刷新页面即可。
-`web:build` 只构建，不安装依赖；修改网页后需重新构建才能在此服务中看到更新。
-源码网页开发与构建需要 Node >=20.9（建议 Node 22 或 24）；安装包的 CLI 仍支持 Node >=20。
-
-参数：`--port <n>`（默认 4729）、`--host <addr>`（默认 127.0.0.1）、`--no-open`
-（不自动开浏览器）、`--api-only`（只开 JSON API，供手动分开启动前后端时使用）。
-无论 `--host` 如何设置，配置一览端点始终只允许回环客户端访问。
+`web/out/` 尚未构建时，`toksight web` 会在 `/` 显示构建指引页，`/api/data` 不受影响；
+`web:build` 只构建不安装依赖，改完前端需重新构建并刷新。`npm pack` / `npm publish`
+会自动重建仪表盘。
 
 ### 缓存命中率
 
@@ -280,66 +261,28 @@ entries 构建，`--client` / `--since` / `--until` 对它与其余切片一样�
 ```bash
 npm test              # node:test 套件 + 各客户端 fixture（无需联网）
 node bin/toksight.js  # 从源码直接运行
-npm run web:ci        # 按 web/package-lock.json 安装网页依赖
-npm run web:dev       # 同时启动 API 和前端，支持热更新
+npm run web:ci        # 按 web/package-lock.json 安装锁定的网页依赖
+npm run web:dev       # 同时启动 API（4729）和前端（3000），支持热更新
 ```
 
-打开 `http://127.0.0.1:3000`；API 默认在 `127.0.0.1:4729`，由前端代理。
-无需提前构建 `web/out/`，Ctrl+C 会一起关闭前后端；端口被占用会报错并关闭已启动的服务。
+打开 `http://127.0.0.1:3000`，无需提前构建 `web/out/`；Ctrl+C 一起关闭前后端，端口被占用
+会报错并关闭本命令启动的服务。`npm run web:dev -- --port 3001 --api-port 4730 --offline`
+可覆盖两个端口并关闭价格拉取。需要分开管理时，在仓库根目录用两个终端分别跑
+`node bin/toksight.js web --api-only` 与 `npm run web:dev:ui`（代理目标可用
+`TOKSIGHT_DEV_API` 覆盖，仅影响开发服务器，生产构建始终输出静态文件）。
+`web:install` 保留给需要更新网页依赖的开发者。
+
+CLI 本体保持**零运行时依赖**，仪表盘依赖只存在于 `web/package.json`，仅在（重新）构建
+`web/out/` 时需要。三条流程：会话文件 → 解析器 → `collectAll` → CLI 输出或 `/api/data`；
+配置文件 → 固定白名单 → 摘要与迁移服务 → `/api/config`；`web/` 源码 → Next 构建 →
+`web/out/` → CLI 内置 HTTP 服务器。逐模块说明见 [AGENTS.md](./AGENTS.md)。
 
 ```bash
-npm run web:dev -- --port 3001 --api-port 4730 --offline
+npm run check:package  # 打包并在临时目录离线安装，再验证页面、资源、API 与导入/恢复往返
 ```
 
-`--port` 指前端端口，`--api-port` 指 API 端口；`--offline` 关闭开发 API 的价格拉取。
-需要手动启动时，用两个终端分别运行 `node bin/toksight.js web --api-only` 和
-`npm run web:dev:ui`（均在仓库根目录）；此模式可用 `TOKSIGHT_DEV_API` 设置代理目标。
-该环境变量只影响开发服务器，生产构建始终输出静态文件。
-`web:install` 保留给需要通过 `npm install` 更新网页依赖的开发者。
-
-```
-bin/toksight.js        可执行入口
-src/cli.js             子命令分发、启动网页服务
-src/collect.js         CLI 与网页共享的采集、筛选、定价管线
-src/args.js            命令行参数解析（--flag value / --flag=value）
-src/render.js          文本渲染（表格、摘要、警告）
-src/payload.js         --json / web API 的载荷契约
-src/dates.js           共享的本地时间日期工具（DST 安全）
-src/agentconfigs.js    固定白名单配置读取与结构化摘要（含 src/toml.js TOML 解析）
-src/agenttransfer.js   配置 bundle 打包与导入（备份 + 原子替换，唯一写路径）
-src/config/           配置实现：files 白名单、redact 脱敏、inventory 读取、summaries 摘要、
-                      compare 差异、backups 备份索引、transfer 导出/导入；上述两个入口保留兼容导出
-src/pricing.js         内置价格表 + LiteLLM 缓存 + 用户覆盖
-src/aggregate.js       分组与合计
-src/webdata.js         网页仪表盘聚合（热力图、趋势、会话……）
-src/webservice.js      并发请求共享采集、每个请求独立筛选与构建网页载荷
-src/webquery.js        网页筛选校验与启动范围交集
-src/comparison.js      相邻日历周期比较与变化贡献
-src/costcoverage.js    工具上报 / 价格估算来源与缺失定价覆盖情况
-src/webserver.js       `toksight web` 的零依赖 HTTP 服务器
-src/format.js          ANSI 表格与数字格式化
-src/fsutils.js         walkFiles、readJsonl、readJson、pathExists
-src/clients/           每个 agent 一个解析器，归一化为统一数据结构
-                       （共享 src/clients/sqlite.js 只读打开助手）
-web/                   Next.js 仪表盘 + /config 页面（静态导出，由 CLI 托管）
-scripts/               源码开发启动、网页构建、安装包验证（不随 npm 包发布）
-```
-
-CLI 本体保持**零运行时依赖**；仪表盘的依赖只存在于 `web/package.json`，
-仅在（重新）构建 `web/out/` 时需要。
-
-三条流程分别是：会话文件 → 解析器 → `collectAll` → CLI 输出或 `/api/data`；
-配置文件 → 固定白名单 → 摘要与迁移服务 → `/api/config`；
-`web/` 源码 → Next 构建 → `web/out/` → CLI 内置 HTTP 服务器。
-Next 只用于源码开发和构建，安装后的网页不需要 Next 服务器。
-
-```bash
-npm run check:package  # 自动构建、打包、临时安装，再验证页面、资源和 API
-```
-
-此检查会安装锁定的网页依赖（首次需要网络），然后离线安装刚生成的包，使用临时 Agent
-数据验证首页、配置页、JS/CSS/字体、API 与导入/恢复往返流程，并清理临时安装；不会导入真实配置。
-PR 与 main 分支的 CI 会运行测试及 Ubuntu/Windows 安装包检查。
+仅安装锁定的网页依赖时需要网络；全程使用临时 Agent fixture，绝不导入真实配置，结束后
+自动清理。PR 与 main 分支的 CI 会在 Ubuntu/Windows 上运行测试与该检查。
 
 ### 发布
 

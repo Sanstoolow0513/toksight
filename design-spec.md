@@ -2,8 +2,7 @@
 
 > v6（2026-09）：推倒重来——视觉语言从"细腻暗色 SaaS"整体切换为 **Brutalism 磷光终端
 > 工作表**。风格方向来自 ui-ux-pro-max（variance 8 / motion 3 / density 9），但 **施工图
-> 以本文件为准**。`design-system/toksight/MASTER.md` 是本文件的投影（token / 组件 /
-> 反模式），禁止用 skill `--persist` 的泛 SaaS 模板（圆角、阴影、200ms 过渡、Google
+> 以本文件为准**，禁止用 skill `--persist` 的泛 SaaS 模板（圆角、阴影、200ms 过渡、Google
 > Fonts）覆盖。整页是一张带 2px 外框的马赛克工作表，区块之间用 2px 硬网格线分割
 > （gap + `--color-border-strong` 底色），方角、零圆角、零模糊、零阴影、零渐变；
 > Geist Mono 主导数据排版；配色为 ANSI 磷光系（lime 品牌色 + green/cyan/magenta/amber
@@ -23,7 +22,7 @@
 - **Hard constraints**: 只出深色；中英可切；根 CLI 零运行时依赖（dashboard 依赖只允许在
   `web/`，构建期）；原生 CSS（无 Tailwind / 组件库）；Windows 路径与中文 UI 必须可用。
 - **Locale**: primary `zh-CN`，secondary `en`，整页切换，localStorage `toksight-locale`。
-- **Fonts**: Geist Sans / Geist Mono（`geist` 本地打包，运行时不联网）。MASTER 与本文件
+- **Fonts**: Geist Sans / Geist Mono（`geist` 本地打包，运行时不联网）。与本文件
   使用同一套字体；禁止 Google Fonts `@import`。Mono 承载全部数据文本（标签、数值、表格、
   图表刻度、logo、会话名），Sans 只用于说明文字与正文。
 
