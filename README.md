@@ -127,17 +127,32 @@ The dashboard is a Brutalism phosphor worksheet (v6): a 2px-framed mosaic on a n
 page, cells split by hard `--color-border-strong` grid lines, square corners, Geist Mono for
 data. Construction spec is `design-spec.md`; `design-system/toksight/MASTER.md` is a
 projection of that spec (not a raw skill dump). A sticky masthead (lime logo chip +
-last-fetch time) leads a 4-cell KPI strip, then a 12-column sheet — trend first (direction
+last-fetch time) leads filters, a 4-cell KPI strip, cost details and period comparison, then a 12-column sheet — trend first (direction
 before detail), activity heatmap, agent/model split, hourly/monthly/pace, and a sessions
 table. Hover is instant invert; the few remaining motions (row expand, chart replay when
 *you* switch range or mode) are disabled under `prefers-reduced-motion`. It includes:
 
-- **KPI strip** — total tokens (lime, with requests · sessions), total cost, cache hit rate
+- **Dashboard filters** — all available data / today / last 7 days / last 30 days / this month /
+  custom dates, plus agent selection. Apply updates totals, charts, models and sessions together;
+  filters are stored in the page URL and survive reloads.
+- **KPI strip** — total tokens (lime, with requests · sessions), reference cost, cache hit rate
   (green), active days as 34px mono numbers
 - **Trend cell** — 7 / 30 / 90-day windows crossed with two stack modes: by token class (fresh
   input / cache reads / cache writes / output) or by agent; bands are per-day step-after
   solids (not a smooth mountain); legend chips toggle series; today / 7d / 30d / this-month
   square summary chips sit in the header
+- **Selected period** — date filters give the trend and heatmap the selected window. Charts show
+  the last 366 days for longer selections, with a notice; totals and comparison keep the full range.
+  Dates use the server machine's timezone; impossible dates such as February 30 are rejected.
+- **Reference cost details** — separate agent-reported amounts, user overrides, LiteLLM and
+  built-in estimates, with priced-request coverage, unpriced requests and requests actually using
+  fallback cache prices. Reference cost is not a subscription bill or actual charge; unpriced does not mean free.
+- **Period comparison** — compare the selection with the immediately preceding equal-length
+  local-calendar period. Without a start date, use the 7 days ending on the end date. Show cost,
+  tokens, cache hit rate and requests, with agent and agent × model contributions (up to 8 ranked
+  by absolute cost change). Both estimates use the same collection's prices; reported amounts
+  retain their original values. Incomplete periods, absent/undated records and missing pricing are
+  explained; a zero previous cost has no percentage change. This does not measure productivity or model quality.
 - **Activity cell** — a GitHub-style heatmap of daily token volume for the last ~53 weeks, with
   per-day tooltips and a lime intensity ramp
 - **Agent mix cell** — per-agent share bars (tokens, cost, share) with cache hit rate; click a
@@ -152,15 +167,23 @@ table. Hover is instant invert; the few remaining motions (row expand, chart rep
 All filters (`--client`, `--since`, `--until`, `--today/--week/--month`) work for `web` too, and
 the page offers a manual refresh, a 30s auto-refresh toggle, and a 中文 / EN language switch
 (stored in `localStorage` as `toksight-locale`, default Chinese).
+Startup filters bound the server's visible scope; dashboard filters only narrow it further.
+Clearing dashboard filters does not remove startup restrictions. If the previous period lies
+outside the startup date scope, the dashboard explains why a full comparison is unavailable.
+
+The API accepts `GET /api/data?client=claude&period=7d`. `period` can be `all` (default), `today`,
+`7d`, `30d`, `month` or `custom`; `custom` requires both `since=YYYY-MM-DD&until=YYYY-MM-DD`.
+`since` / `until` may also be used independently. Dates and comma-separated clients follow CLI
+semantics. Presets cannot be combined with explicit dates; unknown, duplicate or invalid options return HTTP 400.
 
 ### Agent configuration viewer (read-only + transfer)
 
 Open **Config** in the dashboard masthead (or `/config`) for a read-only summary of the five
 agents' user-level configuration: default model, auth method, providers and endpoints, the model
 list (with context sizes), key settings such as permissions/sandbox, and which file each setting
-comes from. Expanding an agent shows redacted raw previews of its files. The **Bundle & import**
-panel at the bottom of the page is the single write path: it packs configs into a JSON bundle to
-move between machines, and backs up existing files before an import replaces them.
+comes from. Expanding an agent shows redacted raw previews of its files. The **Export, import & restore**
+panel at the bottom of the page is the single write path: pack configs into a JSON bundle to
+move between machines, preview differences before import, or restore local backups.
 
 Files read (fixed allowlist, all user-level):
 
@@ -183,23 +206,39 @@ broadly.
 
 #### Config bundling & import
 
-The **Bundle & import** panel at the bottom of the config page migrates agent configuration
+The **Export, import & restore** panel at the bottom of the config page migrates agent configuration
 between machines:
 
 - **Export**: pick the config files to carry over (credential files never appear in the list and
   can never be bundled), then download a single JSON bundle (`toksight-agent-configs.json`) or
   copy the JSON text to paste it elsewhere. Bundled configs are **unredacted originals** (a
   migration needs the real values, including provider keys you configured) — store them safely.
-- **Import**: paste the bundle JSON or choose a file → **Preview** lists each file's write
-  target on this machine and whether it creates or replaces → confirm to run. Existing files are
+- **Import**: choosing a file parses and previews it automatically; pasted JSON uses
+  **Preview / refresh differences**. Review each local target and its new / modified / unchanged /
+  blocked status, with redacted line differences (up to 64 KB / 600 lines per side). Unchanged
+  files are skipped without a backup. Changes hidden by redaction or formatting are explained.
+  Confirm to apply. Existing files are
   backed up to `<config>/toksight/backups/<agent>/` before being atomically replaced
-  (temp file + rename — no half-written truncation).
+  (temp file + rename — no half-written truncation). Backup names include a timestamp and random
+  suffix; exclusive copying prevents subsequent imports from overwriting an existing backup.
+- **Preview validity**: the dashboard sends the target and source content revisions from its
+  preview. A changed revision refuses that file and requires another preview. Unreadable local
+  targets and targets over 1 MB are also refused. Absolute paths, environment references,
+  external commands and detectable syntax issues prompt manual review; paths are not rewritten,
+  programs are not installed, and successful migration does not guarantee a working setup.
+- **Restore backups**: open Restore backups to see the latest 200 recognized backups → preview
+  restore → confirm. Restoring backs up the current file first, so the restore itself can be
+  undone. Listings contain metadata only and previews remain redacted. Legacy backups are
+  supported only when their target is unambiguous; old ZCode backups for its two `config.json`
+  files are omitted with a warning when their destinations cannot be distinguished.
 - **Scope**: imports only accept allowlisted **config** files from the bundle — unknown and
   credential entries are always skipped, and write targets are resolved from THIS machine's
   allowlist (the source paths recorded in the bundle are informational only), so a bundle cannot
   write anywhere outside the known config files. Symlinked targets are refused (the import would
   replace the link itself, not the file it points at); a failed write leaves no temp file behind
   and reports the backup it already made.
+  Skills, rule files and plugin resources are outside the bundle. Symlinked backup directories
+  and backup files are refused for automatic restoration.
 - **Security**: export/import endpoints require loopback clients + a localhost `Host` header
   like the inventory, plus a browser `Sec-Fetch-Site` check; import endpoints additionally
   require `application/json` + a dedicated request header (a foreign web page cannot forge
@@ -214,21 +253,25 @@ it directly:
 toksight web
 ```
 
-When working from a source checkout, install the dashboard's build-only dependencies and build it
-once:
+To preview the production dashboard from a source checkout, install the locked web dependencies,
+build, and start from the repository root:
 
 ```bash
-npm run web:install
+npm run web:ci
 npm run web:build
+node bin/toksight.js web
 ```
 
 `npm pack` and `npm publish` rebuild the dashboard automatically. Until `web/out/` is built in a
 source checkout, `toksight web` serves a setup-instructions page at `/` while `/api/data` keeps
-working.
+working. Refresh the page after building.
+`web:build` builds only; it does not install dependencies. Rebuild after editing the frontend to
+see changes in this server. Source dashboard development/builds require Node >=20.9 (Node 22 or
+24 recommended); the installed CLI still supports Node >=20.
 
 Options: `--port <n>` (default 4729), `--host <addr>` (default 127.0.0.1),
-`--no-open` (skip auto-opening the browser), `--api-only` (JSON API without the dashboard, used
-for UI development — run it alongside `npm run web:dev` in `web/`). The configuration inventory
+`--no-open` (skip auto-opening the browser), `--api-only` (JSON API without the dashboard, for
+manually starting the frontend and backend separately). The configuration inventory
 endpoint is loopback-only regardless of `--host`.
 
 ### Cache hit rate
@@ -266,51 +309,94 @@ from `GET /api/data` on its own origin. Session rows carry both `durationMs` (ra
 and `activeMs` (inter-request gaps capped at 5 minutes); `longestSession` ranks by `activeMs`, so
 a session left open overnight no longer counts its idle hours.
 
+The web API additionally exposes `view` (server date, selectable agents and startup scope),
+`selection` (selected trends/heatmap, null without date filters), `costCoverage` (cost sources,
+unpriced and fallback-cache request counts), and `comparison` (current/previous periods, deltas
+and contributions, or an unavailable reason). Existing CLI `--json` fields are unchanged.
+
 ## Development
 
 ```bash
 npm test        # node:test suite with per-client fixtures (no network needed)
 node bin/toksight.js   # run from source
-npm run web:install # install dashboard build dependencies
-npm run web:dev # develop the dashboard UI (needs `toksight web --api-only` running)
+npm run web:ci  # install web dependencies from web/package-lock.json
+npm run web:dev # start the API and frontend together, with hot reload
 ```
+
+Open `http://127.0.0.1:3000`; the frontend proxies the API at `127.0.0.1:4729`.
+No `web/out/` build is needed. Ctrl+C stops both services; an occupied port reports an error
+and shuts down services started by the command.
+
+```bash
+npm run web:dev -- --port 3001 --api-port 4730 --offline
+```
+
+`--port` sets the frontend port, `--api-port` sets the API port, and `--offline` disables the
+development API's pricing fetch. To manage the services separately, run
+`node bin/toksight.js web --api-only` and `npm run web:dev:ui` in two terminals from the repository
+root. That mode accepts `TOKSIGHT_DEV_API` as its proxy target. This variable only affects the
+development server; production builds always emit static files.
+`web:install` remains available for developers updating web dependencies with `npm install`.
 
 ```
 bin/toksight.js        executable entry
-src/cli.js             command dispatch + collection pipeline (collectAll)
+src/cli.js             command dispatch and web service startup
+src/collect.js         shared CLI/web collection, filtering and pricing pipeline
 src/args.js            CLI argument parsing (--flag value / --flag=value)
 src/render.js          text rendering (tables, sections, warnings)
 src/payload.js         the --json / web API payload contract
 src/dates.js           shared local-time date helpers (DST-safe)
 src/agentconfigs.js    fixed-allowlist config reading + structured summaries (with src/toml.js TOML parsing)
 src/agenttransfer.js   config bundle export + import (backup-first atomic replace, the only write path)
+src/config/           implementation: files allowlist, redact, inventory, summaries, compare,
+                      backups and transfer; the two entry points above keep compatible exports
 src/pricing.js         built-in table + LiteLLM cache + user overrides
 src/aggregate.js       grouping/totals
 src/webdata.js         web-dashboard aggregations (heatmap, trend, sessions…)
+src/webservice.js      shared concurrent collection with independently filtered web payloads
+src/webquery.js        dashboard query validation and startup-scope intersection
+src/comparison.js      adjacent calendar-period comparison and contributions
+src/costcoverage.js    reported/estimated cost sources and missing-pricing coverage
 src/webserver.js       zero-dependency HTTP server for `toksight web`
 src/format.js          ANSI tables & number formatting
 src/fsutils.js         walkFiles, readJsonl, readJson, pathExists
 src/clients/           one parser per agent, normalized to a common entry shape
                        (+ shared src/clients/sqlite.js read-only opener)
 web/                   Next.js dashboard + /config page (static export served by the CLI)
+scripts/               source development, web build and package checks (not shipped in npm)
 ```
 
 The CLI itself keeps **zero runtime dependencies**; the dashboard's dependencies live only in
 `web/package.json` and are needed just to (re)build `web/out/`.
 
+The three flows are: session files → parsers → `collectAll` → CLI output or `/api/data`;
+configuration files → fixed allowlist → inventory/transfer services → `/api/config`;
+and `web/` source → Next build → `web/out/` → the CLI's HTTP server.
+Next is only used for source development and building; installed users do not run a Next server.
+
+```bash
+npm run check:package # build, pack, install temporarily, then check pages, assets and APIs
+```
+
+This installs locked web dependencies (network needed initially), installs the resulting package
+offline, checks both pages, JS/CSS/fonts, APIs and an import/restore round trip using temporary agent fixtures,
+then removes the temporary installation. It never imports real configuration. PR and main-branch
+CI run the tests and package checks on Ubuntu/Windows.
+
 ### Releasing
 
 Releases are automated by [.github/workflows/release.yml](.github/workflows/release.yml):
 push a `v*` tag that matches `package.json`'s version and the workflow runs the full test
-matrix (Ubuntu + Windows, Node 20/22/24), verifies the tag against the package version,
+matrix (Ubuntu + Windows, Node 20/22/24) and Ubuntu/Windows package checks, verifies the tag against the package version,
 then opens a GitHub Release with auto-generated notes.
 
 ```bash
-npm version minor             # bump package.json, commit and tag (v0.4.0)
-git push origin main v0.4.0   # the tag starts the release workflow
+# First update both package.json versions and their lockfiles, then commit
+git tag vX.Y.Z                # X.Y.Z must match package.json
+git push origin main vX.Y.Z   # the tag starts the release workflow
 ```
 
-If the tag doesn't match the package version or any test fails, no release is created.
+If the tag doesn't match the package version, or a test or package check fails, no release is created.
 Publishing to npm is intentionally manual — run `npm publish` yourself when needed (the
 `prepublishOnly` / `prepack` scripts re-run the tests and rebuild `web/out` into the
 tarball).

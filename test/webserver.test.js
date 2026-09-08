@@ -6,8 +6,56 @@ import os from 'node:os';
 import path from 'node:path';
 
 import { createWebServer, isLocalHostHeader, isLoopbackAddress } from '../src/webserver.js';
+import { createAgentConfigService } from '../src/agentconfigs.js';
+import { createAgentTransferService, BUNDLE_FORMAT } from '../src/agenttransfer.js';
 
 const payload = { tool: 'toksight', totals: { totalTokens: 42 }, warnings: [] };
+
+test('HTTP backup restore reuses guarded import with a redacted preview and stale-source checks', async () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'toksight-http-restore-'));
+  const env = { TOKSIGHT_CONFIG_DIR: path.join(home, 'toksight') };
+  const target = path.join(home, '.claude', 'settings.json');
+  fs.mkdirSync(path.dirname(target), { recursive: true });
+  fs.writeFileSync(target, '{"model":"original","apiKey":"never-preview-this"}');
+  const transferService = createAgentTransferService({ home, env });
+  await transferService.applyImport({ format: BUNDLE_FORMAT, version: 1, files: [{ id: 'claude.settings', content: '{"model":"new"}' }] });
+  try {
+    await withServer({ configService: createAgentConfigService({ home, env }), transferService }, async (url) => {
+      const listing = await fetch(`${url}/api/config/backups`);
+      assert.equal(listing.status, 200);
+      const { backups } = await listing.json();
+      assert.equal(backups.length, 1);
+      assert.equal(backups[0].content, undefined);
+      const { backupId } = backups[0];
+      const post = (route, body, headers = {}) => fetch(url + route, {
+        method: 'POST', headers: { 'content-type': 'application/json', 'x-toksight-action': route.endsWith('/preview') ? 'import-preview' : 'import', ...headers }, body: JSON.stringify(body),
+      });
+      const previewResponse = await post('/api/config/import/preview', { backupId });
+      assert.equal(previewResponse.status, 200);
+      const preview = await previewResponse.json();
+      assert.doesNotMatch(JSON.stringify(preview), /never-preview-this/);
+      const expected = { 'claude.settings': preview.plan[0].expected };
+      const restored = await post('/api/config/import', { backupId, expected });
+      assert.equal(restored.status, 200);
+      assert.equal((await restored.json()).results[0].status, 'written');
+      assert.match(fs.readFileSync(target, 'utf8'), /never-preview-this/);
+      fs.writeFileSync(backups[0].path, '{"model":"modified-backup"}');
+      const changed = await post('/api/config/import', { backupId, expected });
+      assert.equal((await changed.json()).results[0].reason, 'preview-changed');
+
+      for (const body of [{ backupId: '../outside' }, { backupId, bundle: {} }, { backupId, expected: { 'claude.settings': {} } }]) {
+        assert.equal((await post('/api/config/import/preview', body)).status, 400);
+      }
+      assert.equal((await post('/api/config/import', { backupId }, { 'x-toksight-action': '' })).status, 403);
+      assert.equal((await post('/api/config/import', { backupId }, { 'sec-fetch-site': 'cross-site' })).status, 403);
+      assert.equal((await fetch(`${url}/api/config/backups`, { headers: { 'sec-fetch-site': 'cross-site' } })).status, 403);
+      assert.equal((await post('/api/config/backups', {})).status, 405);
+      const head = await fetch(`${url}/api/config/backups`, { method: 'HEAD' });
+      assert.equal(head.status, 200);
+      assert.equal(await head.text(), '');
+    });
+  } finally { fs.rmSync(home, { recursive: true, force: true }); }
+});
 
 test('configuration endpoint loopback check accepts only local addresses', () => {
   assert.equal(isLoopbackAddress('127.0.0.1'), true);
@@ -357,7 +405,7 @@ test('API endpoints reject a forged Host header (DNS rebinding)', async () => {
 
     // A rebinding page: remoteAddress is 127.0.0.1, but the Host the browser
     // was tricked into requesting is the attacker's domain.
-    for (const [path, host] of [['/api/config', 'evil.example'], ['/api/data', 'evil.example']]) {
+    for (const [path, host] of [['/api/config', 'evil.example'], ['/api/config/backups', 'evil.example'], ['/api/data', 'evil.example']]) {
       const raw = await rawRequest(port, get(path, host));
       assert.ok(raw.startsWith('HTTP/1.1 403'), `${path} with foreign Host must 403, got: ${raw.split('\r\n')[0]}`);
       assert.match(raw, /HOST_NOT_ALLOWED/);

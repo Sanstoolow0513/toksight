@@ -13,16 +13,22 @@ web` local dashboard with the agent configuration viewer/transfer (still no TUI)
 
 ## Commands
 
-- `node --test` (or `npm test`) — run the node:test suite (131 tests); uses per-client fixtures, no
+- `node --test` (or `npm test`) — run the node:test suite; uses per-client fixtures, no
   network needed. Note: `node --test test/` with a directory arg fails with MODULE_NOT_FOUND on
   Node v24/Windows (the directory is treated as a module to load) — that's why the script passes
   no path; explicit file paths or a glob like `node --test "test/*.test.js"` also work.
 - `node bin/toksight.js` (or `npm run smoke`) — run the CLI from source against real agent data.
-- `npm run web:build` — build the dashboard's static export into `web/out/` (runs
-  `npm install && npm run build` inside `web/`; needs network the first time). Required once
+- `npm run web:ci` — install locked dashboard dependencies; needs network the first time.
+- `npm run web:build` — build and verify the dashboard's static export into `web/out/`;
+  does not install dependencies. Source web development/builds need Node >=20.9. Required once
   before `toksight web` shows the UI; until then `/` serves a setup page while `/api/data` works.
-- `npm run web:dev` — Next dev server for the dashboard; needs `node bin/toksight.js web
-  --api-only` running (default port 4729, proxied via `TOKSIGHT_DEV_API` in `web/next.config.mjs`).
+- `npm run web:dev` — starts the loopback API (4729) and Next dev server (3000) together;
+  accepts `-- --port <ui> --api-port <api> --offline`. Ctrl+C stops both, frontend exit closes
+  the API. `web:dev:ui` runs only Next for manual two-terminal development with `web --api-only`;
+  `TOKSIGHT_DEV_API` overrides its proxy. Production builds always export regardless of that env var.
+- `npm run check:package` — build/pack, install the tarball offline in a temp directory, start
+  its CLI with isolated agent fixtures, check both pages, static resources, APIs and a fixture-only import/restore round trip;
+  clean up afterward. CI and release gates run this on Ubuntu/Windows (Node 22).
 - No linter or typechecker is configured; plain JavaScript ESM throughout (no TypeScript).
 - The **root CLI keeps zero runtime deps** (`package-lock.json` only records the root package);
   dashboard dependencies live solely in `web/package.json` and are build-time only.
@@ -31,21 +37,34 @@ web` local dashboard with the agent configuration viewer/transfer (still no TUI)
 
 ```
 bin/toksight.js     executable entry, calls src/cli.js main()
-src/cli.js          command dispatch only: parse → help/version → web (runWeb single-flight
-                    getData) → collect → render; no collection or rendering lives here
+src/cli.js          command dispatch only: parse → help/version → web (runWeb starts services)
+                    → collect → render; no collection or rendering lives here
+scripts/            source-only development supervisor, build and installed-package verification;
+                    not included in the npm tarball. web-dev reuses cli.runWeb and owns its lifetime
 src/args.js         parseArgs (value options accept `--flag value` AND `--flag=value`;
                     `now` injectable for deterministic window tests)
 src/collect.js      collectAll — the collection pipeline shared by the CLI, --json and the
                     web API (pricing + clients + filters, env/home threaded for tests);
                     perClient rows carry { id, label, roots, entries } so renderers never
-                    re-ask the client registry or use process defaults
+                    re-ask the client registry or use process defaults; filterEntries is shared
+                    with web requests. reportedCosts is an internal WeakSet preserving original
+                    agent-reported cost provenance without adding fields to normalized entries
+src/webservice.js   createWebDataService: concurrent requests share only the unfiltered collection
+                    promise, then independently filter/build payloads; no settled snapshot cache
+src/webquery.js     validates period/client/since/until query parameters, intersects CLI startup
+                    scope (never widens it); invalid/duplicate parameters return HTTP 400
+src/comparison.js   adjacent equal-calendar-day comparison, client/model contributions and
+                    coverage; no percentage on zero baseline, explicit incomplete/no-record states
+src/costcoverage.js actual cost-source counts/amounts (reported/user/LiteLLM/builtin), unpriced and
+                    used cache-fallback counts. Shared price snapshot for both comparison periods
 src/render.js       all text rendering: renderCommand (per-command pages incl. env),
                     renderJson, tables, totals section, warnings, empty-state page
                     (prints the perClient roots actually scanned)
 src/payload.js      buildPayload — the user-facing --json contract (feeds both --json and the
                     web API); presentation-free data layer
 src/dates.js        the ONLY home for local-time date arithmetic (startOfDay/endOfDay/stepDay/
-                    startOfMonth/eachDay/dayKeyToTs/parseDateArg). endOfDay/--week/every day
+                    startOfMonth/eachDay/dayKeyToTs/parseDateArg/calendarDaysBetween). Invalid
+                    calendar dates are rejected, not normalized into another month. endOfDay/--week/every day
                     loop step local midnights — DST-safe, never blind `+24h`; do not
                     re-implement these elsewhere
 src/clients/        one parser per agent, registered in src/clients/index.js; shared
@@ -59,27 +78,28 @@ src/webdata.js      web-dashboard aggregations over entries (heatmap, trend, tre
                     hourly, today/last7Days/thisMonth, sessions w/ activeMs, longestSession)
                     — pure functions; day math imported from src/dates.js
 src/toml.js        tolerant TOML subset parser for agent configs ({ value, error }, never throws)
-src/agentconfigs.js read-only five-agent config viewer: fixed user-file allowlist, per-agent
-                    structured summary (default model, auth, providers, models, facts) built by
-                    SUMMARIZERS + redacted raw previews; credential files probed for existence
-                    only, never previewed. fileDefs() is exported and reused by agenttransfer
-src/agenttransfer.js config bundle export/import — the ONLY write path in toksight. Export
-                    packs existing allowlisted kind:'config' files (never credentials) into one
-                    JSON bundle (unredacted: migration needs real values; stat follows symlinks
-                    — reading through a link is safe). planImport validates
-                    a bundle against the same allowlist (unknown/credential ids skipped,
-                    per-file 1 MB cap) and resolves targets on THIS machine; applyImport backs
-                    up existing targets to <config>/toksight/backups/<agentId>/<file>.<ts>
-                    then atomically replaces (temp file + rename). Both passes use lstat and
-                    REFUSE symlinked targets (rename would replace the link itself), sharing
-                    prepareEntries (validate → dedupe → evalEntry) and inspectTarget (the
-                    lstat refusal check) so preview and write can never disagree on what is
-                    blocked. A failed write best-effort-unlinks its temp file, and a failure
-                    row only reports a backup that actually landed on disk (commit-on-success).
-                    Bundle source paths are
-                    informational only — never write targets
+src/agentconfigs.js compatibility exports for the read-only config service, fileDefs and redaction
+src/agenttransfer.js compatibility exports for the config transfer service and bundle constants
+src/config/         files.js: shared user-file allowlist and local target paths; limits.js: caps;
+                    parse.js/redact.js: parsing helpers and redaction; summaries.js: per-agent
+                    semantic summaries; inventory.js: read-only metadata and redacted previews
+                    (redact complete content BEFORE truncating, never truncate JSON before parsing).
+                    compare.js: bounded redacted line diff (64 KB/600 lines per side), exact-content
+                    revisions, shared target inspection and advisory migration notes. Unchanged
+                    configs skip writes/backups; unreadable/non-file/oversized targets are blocked.
+                    transfer.js: export, plan and apply; the ONLY config write path, reused by
+                    backup restoration. prepareEntries validates/dedupes/allowlists. UI applies
+                    carry expected target/source revisions; stale contents fail per-file before
+                    writing. Targets are rechecked before rename; legacy bundle-only API calls
+                    remain accepted. New files use mode 0600; replacements preserve permission bits.
+                    backups.js: exclusive backup copying and metadata-only listing (latest 200).
+                    New names include file id + timestamp + randomness to distinguish same-named
+                    ZCode files. Legacy names work only for unambiguous allowlist targets. Backup
+                    root/agent dirs and files refuse symlinks. Backup ids resolve against known
+                    agents and filename patterns, never arbitrary client paths. Failed writes
+                    clean temp files and only report backups that reached disk.
 src/webserver.js    zero-dep node:http server: static web/out + live /api/data and loopback-only
-                    /api/config endpoints (inventory GET, export GET, import preview/apply POST
+                    /api/config endpoints (inventory/backups GET, export GET, import preview/apply POST
                     — the only write routes). All /api/config routes validate the Host header
                     against localhost names (DNS-rebinding defense — always, even when
                     --host is non-loopback) and reject Sec-Fetch-Site: cross-site; import POSTs
@@ -99,7 +119,8 @@ web/                Next.js (App Router, JS, no Tailwind) dashboard + app/config
                     components/ (Heatmap, TrendChart with mix/agent step-after stacks,
                     AgentsPanel, ModelBars with hard-split cache bars, Bars, TransferPanel
                     (bundle export/import on /config — download/copy bundle, paste/pick file,
-                    server-side plan preview, apply with per-file results and backup paths);
+                    server-side redacted diff, unchanged skip, revision-checked apply, per-file results;
+                    config/RestorePanel lists and previews backups through the same import flow);
                     every chart tooltip is the shared components/Tip)
                     + lib/format.js + lib/i18n.js (zh-CN / en,
                     localStorage `toksight-locale`) + lib/palette.js; fluid layout + motion
@@ -108,7 +129,8 @@ web/                Next.js (App Router, JS, no Tailwind) dashboard + app/config
                     raw ui-ux-pro-max --persist output), Brutalism phosphor worksheet
                     (bg #060609, panel #0e0e15, 2px mosaic in --color-border-strong,
                     lime #c9f24b, radius 0), Geist fonts + lucide-react icons (build-time
-                    deps in web/package.json). v6 layout: masthead → 4-cell KPI strip →
+                    deps in web/package.json). v6 styling with dashboard filters, reference-cost
+                    details and calendar comparison around the 4-cell KPI strip and
                     12-col .sheet (trend, heatmap, agent/model, hour/month/pace, sessions
                     table). Kept from v4: icons only for actions/states (RefreshCw,
                     ChevronDown, FileUp, Download, success/warn/empty/error), no entrance choreography, no ambient
@@ -187,10 +209,17 @@ cost (only OpenCode does).
 - **Zero runtime dependencies**: do not add packages to the root CLI; use `node:` builtins.
   `web/` is the only place allowed to have dependencies (Next/React, build-time only).
 - **Web serving rules**: `toksight web` re-collects on every request (fresh data, no caching —
-  the single-flight in `runWeb` only dedupes CONCURRENT requests onto one collection run, no
+  the single-flight in `createWebDataService` only dedupes CONCURRENT requests onto one collection run, no
   TTL); binds 127.0.0.1 by default (never 0.0.0.0 by default); static assets under `web/out/_next/`
   are immutable-cached, everything else `no-cache`; path traversal is rejected (403); if
   `web/out/index.html` is missing, `/` serves the built-in setup page instead of failing.
+  `/api/data` accepts period=all/today/7d/30d/month/custom, client, since and until. Each response
+  applies the intersection with startup scope. All new web extras are additive: view, selection,
+  costCoverage and comparison. selection contains historical trend/heatmap rows (last 366 days
+  at most; totals/comparison remain complete), while legacy extras remain present. Without a
+  start date comparison uses seven days ending on the selected end date/today; if the previous
+  window is outside startup scope, comparison is unavailable. UI request cancellation/sequence
+  checks prevent stale results from replacing a newer filter; URL query preserves filter state.
 - **Config viewer scope/redaction**: the config page inventory is strictly read-only. Only
   user-level files for ZCode, Claude Code, Codex CLI, OpenCode and Kimi Code are allowlisted in
   `src/agentconfigs.js`; project/managed policy files are out of scope on purpose. Credential
@@ -209,11 +238,16 @@ cost (only OpenCode does).
 - **Import safety**: `POST /api/config/import[/preview]` is the single write path in toksight.
   Targets are resolved from THIS machine's allowlist only (a bundle's recorded paths are
   informational), each file is content-capped at 1 MB, the whole body at 10 MB, and every
-  existing target is copied to `<config>/toksight/backups/<agentId>/<fileName>.<ts>` before
+  existing target is copied exclusively to `<config>/toksight/backups/<agentId>/<fileName>.<fileId>.<ts>-<random>` before
   the temp-file+rename swap. Bundled config content is UNREDACTED on purpose (migration needs
   real values, provider keys included) — the UI warns about safe handling. Write POSTs are
   gated on application/json + `x-toksight-action` (CORS-preflight enforcement) and all
   /api/config routes reject `Sec-Fetch-Site: cross-site`.
+  `GET /api/config/backups` lists metadata only. Import preview/apply also accept `{ backupId }`
+  instead of `{ bundle }` (mutually exclusive); the server reconstructs its bundle internally,
+  never returns backup plaintext. `expected` optionally maps file ids to `{ target, content }`
+  revisions from preview; the UI always sends them. Restoration creates a new backup of current
+  content through applyImport. Do not add a separate restore write endpoint.
 - Windows compatibility matters (paths, fixtures use `C:\\...` directories); `pathExists`
   handles `ENOTDIR` for files.
 
@@ -222,7 +256,7 @@ cost (only OpenCode does).
 Versioning: bump `package.json` (+ keep `web/package.json` in sync), commit. GitHub Releases
 are automated by `.github/workflows/release.yml`: push a `v*` tag **matching `package.json`'s
 version** (e.g. `git tag v0.4.0 && git push origin v0.4.0`) → test matrix (Ubuntu + Windows,
-Node 20/22/24) → tag/version guard → GitHub Release with auto-generated notes. npm
+Node 20/22/24) + installed-package checks (Ubuntu/Windows, Node 22) → tag/version guard → GitHub Release with auto-generated notes. npm
 publishing is deliberately NOT automated — `npm publish` stays a manual step (lifecycle:
 `prepublishOnly` re-runs tests, `prepack` rebuilds `web/out` into the tarball at pack time,
 so there is no need to build `web/out` by hand).
@@ -235,54 +269,4 @@ locked visual spec for the dashboard. `pricing.json` user
 overrides match model names exactly or by `provider/`-suffix (e.g. `zhipuai/glm-5.3` covers
 `GLM-5.3`). `web/AGENTS.md` is generated by Next.js tooling — keep it when committing.
 
-## Researched but not implemented
 
-- **Second pricing source for cache prices (2026-09, TODO)**: LiteLLM entries often lack
-  `cache_read_input_token_cost` / `cache_creation_input_token_cost`, and toksight currently
-  falls back to the input price — a deliberate conservative overestimate (documented in both
-  READMEs). Best candidate to fill the gap: **models.dev** (`https://models.dev/api.json`;
-  open-source, community-maintained by the SST/opencode folks, TOML in-repo so gaps can be
-  PR'd). Its schema has optional `cost.cache_read` / `cost.cache_write` in USD/MTok — same unit
-  as toksight's builtin table — so it could slot in as a cross-check source beside LiteLLM.
-  Runner-up: OpenRouter `/api/v1/models` (has cache pricing) — but its numbers are router prices
-  including margin, so only a fallback. Users can already maintain their own prices via
-  `pricing.json` (exact names or `provider/`-suffix matching). Decision at the time: keep the
-  input-price fallback, do the research, revisit later.
-- **Cursor (2026-08, decided against for now)**: sessions/models/timestamps ARE readable, token
-  usage is NOT reliably written locally. Sources inspected on a real machine: per-chat
-  `~/.cursor/chats/<workspaceHash>/<sessionId>/meta.json` (title, `createdAtMs`, `updatedAtMs`,
-  `cwd`) and `store.db` (SQLite; `meta` table value is hex-encoded JSON with `lastUsedModel`,
-  `createdAt`; `blobs` table holds full conversation messages as decimal-CSV byte strings, some
-  encrypted via `blobEncryptionKey`); `%APPDATA%/Cursor/User/globalStorage/state.vscdb` has a
-  `composerHeaders` table plus `cursorDiskKV` keys `composerData:<id>` (`modelConfig.modelName`)
-  and `bubbleId:<composerId>:<bubbleId>`. Bubbles carry a `tokenCount {inputTokens, outputTokens}`
-  field but it was all-zero across 349 bubbles (subscription/privacy-mode dependent);
-  `composerData.usageData` was empty; `~/.cursor/ai-tracking/ai-code-tracking.db` tracks AI-authored
-  code *lines*, not tokens. Real usage lives server-side (dashboard API, needs login → violates
-  local-first). A future parser could emit sessions/models/message counts and use `tokenCount`
-  when non-zero, but cost/token stats would be mostly empty — revisit if Cursor starts writing
-  token counts again.
-- **Cursor re-check (2026-09-02, BYOK question — still no)**: re-verified on the new agent storage
-  architecture and probed the server APIs live. New layout: per-session
-  `~/.cursor/chats/<hash>/<sessionId>/store.db` (tables `blobs(id, data)` = decimal-CSV byte
-  strings holding `{role, content[], id, providerOptions.cursor.modelProviderMessageId}` — no
-  usage/token fields on assistant messages) + `meta` (hex JSON: agentId, name, createdAt,
-  subagentInfo); state.vscdb grew a `composerHeaders` table (78 rows, migration flag
-  `composer.composerHeaders.migratedToTable`) and 9648 `agentKv:blob:<sha>` content-addressed
-  entries; bubbles moved there but `tokenCount` is still all-zero (4597/4597); `composerData`
-  now also has `contextTokensUsed`/`promptTokenBreakdown` (last-prompt size only, not billing).
-  BYOK: official docs confirm every BYOK request routes through Cursor's backend (key sent
-  per-request, never stored server-side) and BYOK usage is "unlimited, at your own cost" — it
-  does not count against plan quotas and is not itemized in the dashboard's Spending/Usage
-  (plan spend only). Server-side probes: `GET api2.cursor.sh/auth/usage` works with the
-  plaintext JWT from ItemTable `cursorAuth/accessToken` but returns quota request counts only
-  (all zeros on an Ultra account, no BYOK, no token detail); `cursor.com/api/usage` requires
-  the browser `WorkosCursorSessionToken` cookie (401 with JWT); the official Analytics API
-  (`api.cursor.com/analytics/*`, API-key auth) is Enterprise-teams-only. The authoritative
-  BYOK token/cost data lives at the provider (OpenAI admin Usage API
-  `/v1/organization/usage/completions` / Anthropic equivalents): day×model aggregates with
-  cached-token detail, but no session/project attribution — a poor fit for the per-request
-  entries contract and a local-first violation (network + provider admin keys). Machine
-  details noted: BYOK OpenAI key present as encrypted ItemTable `secret://cursorAuth/openAIKey`;
-  hash-like model names in `modelConfig.modelName` (e.g. `9d20c7907fd2663c`) are Cursor's
-  anonymized model IDs, not necessarily BYOK markers.

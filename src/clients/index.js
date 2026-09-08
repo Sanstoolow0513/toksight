@@ -24,7 +24,7 @@ export function resolveClientIds(raw) {
     .filter(Boolean);
   const resolved = [];
   for (const id of ids) {
-    const canonical = clientAliases[id];
+    const canonical = Object.hasOwn(clientAliases, id) ? clientAliases[id] : null;
     if (!canonical) {
       throw new Error(`unknown client "${id}" (supported: ${Object.keys(clients).join(', ')})`);
     }

@@ -13,8 +13,7 @@ import { collectAll } from './collect.js';
 import { createFormatter } from './format.js';
 import { pathExists } from './fsutils.js';
 import { createWebServer } from './webserver.js';
-import { buildWebExtras } from './webdata.js';
-import { buildPayload } from './payload.js';
+import { createWebDataService } from './webservice.js';
 import { parseArgs } from './args.js';
 import { printEmpty, printWarnings, renderCommand, renderJson } from './render.js';
 
@@ -74,29 +73,12 @@ function openBrowser(url) {
   }
 }
 
-async function runWeb(opts) {
+// Returns the running server so the source-development command can own its lifetime.
+export async function runWeb(opts) {
   const outDir = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'web', 'out');
   const built = await pathExists(path.join(outDir, 'index.html'));
 
-  // Single-flight: concurrent /api/data requests share one in-flight
-  // collection run instead of each triggering a parallel full disk scan.
-  // Every settled request re-collects on the next call — the fresh-data,
-  // no-caching rule is unchanged.
-  let inflight = null;
-  const getData = async () => {
-    if (inflight) return inflight;
-    const run = (async () => {
-      // Re-collect on every request so a browser refresh shows fresh data.
-      const ctx = { opts, ...(await collectAll(opts)) };
-      return { ...buildPayload(ctx), ...buildWebExtras(ctx.entries, { top: opts.top }) };
-    })();
-    inflight = run;
-    try {
-      return await run;
-    } finally {
-      if (inflight === run) inflight = null;
-    }
-  };
+  const getData = createWebDataService(opts);
 
   const server = createWebServer({
     host: opts.host,
@@ -112,10 +94,11 @@ async function runWeb(opts) {
   console.log(`toksight web`);
   console.log(`  ${url}${opts.apiOnly ? '  (api-only)' : ''}`);
   if (!opts.apiOnly && !built) {
-    console.error('warn: dashboard assets not built yet — run `npm run web:build`, then restart toksight web (serving setup instructions at /)');
+    console.error('warn: dashboard assets missing. From a source checkout, run `npm run web:ci` then `npm run web:build` and refresh. Installed package users should reinstall toksight (serving setup instructions at /).');
   }
   console.log('  Press Ctrl+C to stop.');
   if (opts.open && !opts.apiOnly) openBrowser(url);
+  return server;
 }
 
 export async function main(argv = process.argv.slice(2)) {

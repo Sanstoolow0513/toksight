@@ -286,13 +286,14 @@ test('a bundle survives a full round trip: export here, import there', async () 
   assert.equal(read(results[0].backupPath), 'default_model = "old"\n');
 });
 
-test('importing the same bundle twice produces distinct backups', async () => {
+test('successive changes in one millisecond preserve both backups', async (t) => {
+  t.mock.timers.enable({ apis: ['Date'], now: new Date('2026-09-07T00:00:00Z').valueOf() });
   const { home, configRoot, svc } = setup();
   const target = path.join(home, '.claude', 'settings.json');
   write(target, '{"model":"first"}');
 
   const first = await svc.applyImport(bundleOf([entry()]));
-  const second = await svc.applyImport(bundleOf([entry()]));
+  const second = await svc.applyImport(bundleOf([entry({ content: '{"model":"third"}' })]));
   assert.notEqual(first.results[0].backupPath, second.results[0].backupPath);
   assert.equal(read(first.results[0].backupPath), '{"model":"first"}');
   assert.equal(read(second.results[0].backupPath), JSON.stringify({ model: 'claude-haiku-4.5' }));

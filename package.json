@@ -23,8 +23,10 @@
     "smoke": "node bin/toksight.js",
     "web:install": "npm install --prefix web",
     "web:ci": "npm ci --prefix web",
-    "web:dev": "npm run dev --prefix web",
-    "web:build": "npm run build --prefix web",
+    "web:dev": "node scripts/web-dev.js",
+    "web:dev:ui": "npm run dev --prefix web",
+    "web:build": "node scripts/web-build.js",
+    "check:package": "node scripts/check-package.js",
     "prepack": "npm run web:ci && npm run web:build",
     "prepublishOnly": "npm test"
   },

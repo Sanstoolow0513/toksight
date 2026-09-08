@@ -41,7 +41,18 @@ export function dayKeyToTs(dateKey) {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(dateKey ?? ''));
   if (!m) return null;
   const [, y, mo, d] = m.map(Number);
-  return new Date(y, mo - 1, d).getTime();
+  const date = new Date(y, mo - 1, d);
+  if (date.getFullYear() !== y || date.getMonth() !== mo - 1 || date.getDate() !== d) return null;
+  return date.getTime();
+}
+
+// Difference in calendar dates, independent of 23/25-hour local days.
+export function calendarDaysBetween(start, end) {
+  const ordinal = (ts) => {
+    const date = new Date(ts);
+    return Date.UTC(date.getFullYear(), date.getMonth(), date.getDate());
+  };
+  return Math.round((ordinal(end) - ordinal(start)) / 86400000);
 }
 
 // First local midnight of the calendar month containing ts.

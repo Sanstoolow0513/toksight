@@ -1,5 +1,5 @@
 # Auto-release: push a v* tag that matches package.json's version.
-# The tag runs the full test matrix (Ubuntu + Windows, Node 20/22/24), then
+# The tag runs the full test matrix and checks the built package, then
 # opens a GitHub Release with auto-generated notes.
 # npm publishing is deliberately NOT automated — run `npm publish` manually
 # when needed (its lifecycle scripts re-run the tests and rebuild web/out).
@@ -31,9 +31,12 @@ jobs:
       - run: npm ci
       - run: npm test
 
+  package:
+    uses: ./.github/workflows/package-check.yml
+
   release:
     name: GitHub Release
-    needs: test
+    needs: [test, package]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

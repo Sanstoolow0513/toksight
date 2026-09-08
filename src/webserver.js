@@ -47,10 +47,11 @@ function setupPage() {
   <main style="max-width:560px;padding:32px;border:2px solid #4a4a5e;background:#0e0e15">
     <h1 style="font-size:14px;letter-spacing:0.08em;text-transform:uppercase;margin:0 0 16px"><span style="background:#c9f24b;color:#060609;padding:2px 8px">toksight</span> web · 仪表盘尚未构建</h1>
     <p style="color:#82829c">JSON API 已可用：<code style="color:#c9f24b;background:#15151f;border:1px solid #26262f;padding:0 4px">/api/data</code>。要看到完整界面和配置页，请先构建静态资源（约需 1–2 分钟）：</p>
-    <pre style="background:#15151f;border:1px solid #4a4a5e;padding:14px 16px;overflow:auto"><code>cd web
-npm install
-npm run build</code></pre>
-    <p style="color:#82829c">或在仓库根目录执行 <code style="color:#c9f24b;background:#15151f;border:1px solid #26262f;padding:0 4px">npm run web:build</code>，然后重启 <code style="color:#c9f24b;background:#15151f;border:1px solid #26262f;padding:0 4px">toksight web</code> 并刷新本页。</p>
+    <p style="color:#82829c">从源码运行：在仓库根目录执行以下命令，完成后刷新本页。</p>
+    <pre style="background:#15151f;border:1px solid #4a4a5e;padding:14px 16px;overflow:auto"><code>npm run web:ci
+npm run web:build</code></pre>
+    <p style="color:#82829c">开发页面可运行 <code>npm run web:dev</code>，它会同时启动前端和 API。</p>
+    <p style="color:#82829c">通过 npm 安装的版本应已包含页面。如果你使用的是安装包，请重新安装 <code>npm install -g toksight</code>，然后重新启动服务。</p>
   </main>
 </body>
 </html>
@@ -312,11 +313,12 @@ export function createWebServer({
         return;
       }
       try {
-        const payload = await getData();
+        const payload = await getData(url.searchParams);
         sendJson(res, 200, payload, req.method);
       } catch (err) {
-        logger?.warn?.(`toksight web: /api/data failed: ${err?.message || err}`);
-        sendJson(res, 500, { error: String(err?.message || err) }, req.method);
+        const status = err?.status === 400 ? 400 : 500;
+        if (status === 500) logger?.warn?.(`toksight web: /api/data failed: ${err?.message || err}`);
+        sendJson(res, status, { error: String(err?.message || err), ...(err?.code ? { code: err.code } : {}) }, req.method);
       }
       return;
     }
@@ -356,6 +358,22 @@ export function createWebServer({
           logger?.warn?.(`toksight web: /api/config failed: ${err?.message || err}`);
           sendJson(res, 500, { error: String(err?.message || err), code: 'CONFIG_ERROR' }, req.method);
         }
+        return;
+      }
+
+      if (pathname === '/api/config/backups') {
+        if (req.method !== 'GET' && req.method !== 'HEAD') {
+          await drainBody(req);
+          sendJson(res, 405, { error: 'method not allowed', code: 'METHOD_NOT_ALLOWED' }, req.method, { allow: 'GET, HEAD' });
+          return;
+        }
+        if (!transferService?.listBackups) {
+          await drainBody(req);
+          sendJson(res, 503, { error: 'backup service is unavailable', code: 'TRANSFER_UNAVAILABLE' }, req.method);
+          return;
+        }
+        try { sendJson(res, 200, await transferService.listBackups(), req.method); }
+        catch { sendJson(res, 500, { error: 'cannot list backups', code: 'TRANSFER_ERROR' }, req.method); }
         return;
       }
 
@@ -412,9 +430,10 @@ export function createWebServer({
         try {
           guardWriteRequest(req, isPreview ? 'import-preview' : 'import');
           const body = await readJsonBody(req, MAX_IMPORT_BYTES);
-          const bundle = body?.bundle;
-          if (!bundle || typeof bundle !== 'object' || Array.isArray(bundle)) {
-            sendJson(res, 400, { error: 'request body must be { bundle, selected? } with a bundle object', code: 'BAD_REQUEST' }, req.method);
+          let bundle = body?.bundle;
+          const restoring = body?.backupId != null;
+          if (restoring ? typeof body.backupId !== 'string' || body.bundle != null : !bundle || typeof bundle !== 'object' || Array.isArray(bundle)) {
+            sendJson(res, 400, { error: 'provide either a bundle object or a backupId string', code: 'BAD_REQUEST' }, req.method);
             return;
           }
           let selected;
@@ -425,9 +444,27 @@ export function createWebServer({
             }
             selected = body.selected;
           }
+          const options = { selected };
+          if (body.expected != null) {
+            const expected = body.expected;
+            const hash = /^(?:missing|[a-f0-9]{64})$/;
+            if (typeof expected !== 'object' || Array.isArray(expected) || Object.values(expected).some((value) =>
+              !value || typeof value.target !== 'string' || !hash.test(value.target) || typeof value.content !== 'string' || !/^[a-f0-9]{64}$/.test(value.content))) {
+              sendJson(res, 400, { error: 'expected must contain target/content revisions from a preview', code: 'BAD_REQUEST' }, req.method);
+              return;
+            }
+            options.expected = expected;
+          }
+          if (restoring) {
+            try { bundle = await transferService.bundleFromBackup(body.backupId); }
+            catch {
+              sendJson(res, 400, { error: 'backup is unavailable, ambiguous or not a regular allowlisted file', code: 'BAD_BACKUP' }, req.method);
+              return;
+            }
+          }
           const result = isPreview
-            ? await transferService.planImport(bundle, { selected })
-            : await transferService.applyImport(bundle, { selected });
+            ? await transferService.planImport(bundle, options)
+            : await transferService.applyImport(bundle, options);
           if (result.error) {
             sendJson(res, 400, { error: result.error, code: 'BAD_BUNDLE' }, req.method);
             return;

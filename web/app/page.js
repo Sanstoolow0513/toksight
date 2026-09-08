@@ -15,6 +15,10 @@ import TrendChart from '@/components/TrendChart';
 import AgentsPanel from '@/components/AgentsPanel';
 import ModelBars from '@/components/ModelBars';
 import { HourBars, MonthlyBars } from '@/components/Bars';
+import DashboardFilters from '@/components/DashboardFilters';
+import CostDetails from '@/components/CostDetails';
+import PeriodComparison from '@/components/PeriodComparison';
+import { useDashboardData } from '@/lib/useDashboardData';
 import { DEFAULT_LOCALE, readStoredLocale, t, writeStoredLocale } from '@/lib/i18n';
 
 const CLIENT_LABELS = {
@@ -170,9 +174,7 @@ function SessionTable({ rows, tx }) {
 }
 
 export default function Page() {
-  const [data, setData] = useState(null);
-  const [error, setError] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const { data, view, error, loading, load, query, applyQuery } = useDashboardData();
   const [auto, setAuto] = useState(false);
   const [locale, setLocaleState] = useState(DEFAULT_LOCALE);
 
@@ -189,24 +191,6 @@ export default function Page() {
     document.documentElement.lang = locale;
     document.title = t(locale, 'docTitle');
   }, [locale]);
-
-  const load = useCallback(async (opts = {}) => {
-    if (!opts.silent) setLoading(true);
-    try {
-      const res = await fetch('/api/data', { cache: 'no-store' });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      setData(await res.json());
-      setError(null);
-    } catch (err) {
-      setError(String(err?.message || err));
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    load();
-  }, [load]);
 
   useEffect(() => {
     if (!auto) return undefined;
@@ -251,6 +235,8 @@ export default function Page() {
     <div className="wrap">
       <div className="frame">
         {masthead}
+        <DashboardFilters key={query} query={query} view={view} tx={tx} loading={loading} onApply={applyQuery} />
+        {error && data && <div className="banner error" role="alert">{tx('errorFail', { error })}</div>}
         {body}
       </div>
     </div>
@@ -280,12 +266,13 @@ export default function Page() {
   const totals = data.totals ?? {};
   const unpriced = data.pricing?.unpricedModels ?? [];
   const longest = data.longestSession;
-  const heatDays = data.heatmap?.days ?? [];
+  const heatmap = data.selection?.heatmap ?? data.heatmap;
+  const heatDays = heatmap?.days ?? [];
   const activeWindowDays = heatDays.filter((d) => d.tokens > 0).length;
   const streaks = data.streaks ?? {};
   const peakDay = data.peakDay;
   const filtered = Boolean(data.clientsFilter?.length || data.range?.since != null || data.range?.until != null);
-  const heatDesc = [tx('heatDesc', { weeks: data.heatmap?.weeks ?? 53 }), activeWindowDays ? tx('heatActive', { n: activeWindowDays }) : null]
+  const heatDesc = [tx('heatDesc', { weeks: heatmap?.weeks ?? 53 }), activeWindowDays ? tx('heatActive', { n: activeWindowDays }) : null]
     .filter(Boolean)
     .join(' · ');
   const topSessions = (data.topSessions ?? []).slice(0, 10);
@@ -335,8 +322,8 @@ export default function Page() {
             {tx('filterNote')}
             {[
               data.clientsFilter?.length ? tx('filterClient', { clients: data.clientsFilter.map(clientLabel).join(', ') }) : null,
-              data.range?.since != null ? tx('filterSince', { date: fmtDateTime(data.range.since).slice(0, 10) }) : null,
-              data.range?.until != null ? tx('filterUntil', { date: fmtDateTime(data.range.until).slice(0, 10) }) : null,
+              data.range?.since != null ? tx('filterSince', { date: data.view?.since || fmtDateTime(data.range.since).slice(0, 10) }) : null,
+              data.range?.until != null ? tx('filterUntil', { date: data.view?.until || fmtDateTime(data.range.until).slice(0, 10) }) : null,
             ]
               .filter(Boolean)
               .join(' · ')}
@@ -350,12 +337,13 @@ export default function Page() {
     return shell(
       <>
         {banners}
+        <PeriodComparison comparison={data.comparison} timezone={data.timezone} tx={tx} clientLabel={clientLabel} />
         <div className="state-card">
           <h1>
             <Inbox size={18} strokeWidth={2} aria-hidden="true" />
             {tx('emptyTitle')}
           </h1>
-          <p>{coded(tx('emptyBody'))}</p>
+          <p>{coded(tx(query || filtered ? 'filterEmpty' : 'emptyBody'))}</p>
         </div>
         {footer}
       </>,
@@ -375,7 +363,7 @@ export default function Page() {
         <Stat
           label={tx('statCost')}
           value={fmtCost(totals.costUsd)}
-          sub={unpriced.length === 0 ? tx('statCostPriced') : unpriced.length === 1 ? tx('statCostUnpricedOne') : tx('statCostUnpriced', { n: unpriced.length })}
+          sub={tx('costCoverage', { priced: totals.pricedRequests ?? 0, total: totals.requests ?? 0 })}
         />
         <Stat
           label={tx('statCache')}
@@ -390,11 +378,13 @@ export default function Page() {
         />
       </section>
 
+      <CostDetails coverage={data.costCoverage} pricing={data.pricing} tx={tx} />
+      <PeriodComparison comparison={data.comparison} timezone={data.timezone} tx={tx} clientLabel={clientLabel} />
       <div className="sheet">
         <Cell
           title={tx('trendTitle')}
-          desc={tx('trendDesc')}
-          extra={
+          desc={data.selection ? tx(data.selection.truncated ? 'selectedTruncated' : 'selectedCharts') : tx('trendDesc')}
+          extra={!data.selection &&
             <div className="range-chips">
               {rangeChips.map(({ key, label, r }) => (
                 <span key={key} className="range-chip">
@@ -407,6 +397,7 @@ export default function Page() {
           }
         >
           <TrendChart
+            selection={data.selection}
             trends={{ 7: data.trend7, 30: data.trend, 90: data.trend90 }}
             trendsByAgent={data.trendByAgent ?? {}}
             agents={agents.map((a) => ({ id: a.id, label: clientLabel(a.id) }))}
@@ -414,8 +405,8 @@ export default function Page() {
           />
         </Cell>
 
-        <Cell title={tx('heatTitle')} desc={heatDesc}>
-          <Heatmap heatmap={data.heatmap} locale={locale} />
+        <Cell title={tx('heatTitle')} desc={data.selection ? tx('selectedCharts') : heatDesc}>
+          <Heatmap heatmap={heatmap} locale={locale} />
         </Cell>
 
         <Cell title={tx('agentsTitle')} desc={tx('agentsDesc')} span={5}>
@@ -469,7 +460,7 @@ export default function Page() {
         <Cell title={tx('hourTitle')} desc={tx('hourDesc')} span={4}>
           <HourBars hourly={data.hourly} locale={locale} />
         </Cell>
-        <Cell title={tx('monthTitle')} desc={tx('monthDesc')} span={4}>
+        <Cell title={tx('monthTitle')} desc={tx('monthFiltered')} span={4}>
           <MonthlyBars monthly={data.monthly} locale={locale} />
         </Cell>
         <Cell title={tx('rhythmTitle')} desc={tx('rhythmDesc')} span={4}>

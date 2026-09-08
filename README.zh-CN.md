@@ -122,16 +122,26 @@ OpenCode 自带的价格（`cost` 字段）会被直接采用。
 仪表盘为 Brutalism 磷光工作表（v6）：近黑底上的 2px 外框马赛克，格子以
 `--color-border-strong` 硬网格线分割，方角，数据排版用 Geist Mono。施工图是
 `design-spec.md`；`design-system/toksight/MASTER.md` 是它的投影（不是 skill 原始落盘）。
-粘性页眉（lime logo chip + 上次抓取时间）之后是 4 格 KPI
-条，再是 12 列工作表——趋势领衔（方向先于明细），接着活动热力图、Agent/模型双栏、
+粘性页眉（lime logo chip + 上次抓取时间）之后是筛选栏、4 格 KPI
+条、费用说明与周期比较，再是 12 列工作表——趋势、活动热力图、Agent/模型双栏、
 按小时/按月/活跃节奏、会话用量表。悬停为瞬时反转；仅保留的动效（行展开、你切换范围/
 维度时的图表重放）在 `prefers-reduced-motion` 下全部关闭。包含：
 
-- **KPI 条** — 累计 tokens（lime，附请求 · 会话）、总费用、缓存命中率（绿色）、活跃天数，
+- **网页筛选** — 全部可用数据 / 今天 / 近 7 天 / 近 30 天 / 本月 / 自定义日期，以及 Agent 选择。
+  应用后同时更新汇总、图表、模型和会话；筛选保存在页面 URL 中，刷新后保留。
+- **KPI 条** — 累计 tokens（lime，附请求 · 会话）、参考费用、缓存命中率（绿色）、活跃天数，
   34px mono 大数字
 - **趋势格** — 7 / 30 / 90 天窗口 × 两种堆叠维度：按 token 构成（新输入 / 缓存读取 /
   缓存写入 / 输出）或按 Agent；图形是按日阶梯堆叠实心带（不是光滑面积山）；图例可点选
   隐藏序列；今日 / 近 7 天 / 近 30 天 / 本月方角汇总标签放在格头右侧
+- **所选时段** — 指定日期后，趋势与热力图覆盖该时段；超过 366 天时图表显示最后 366 天并注明，
+  汇总和比较仍覆盖完整选择。服务端日期按本机时区计算，非法日期（如 2 月 30 日）会被拒绝。
+- **参考费用说明** — 区分工具上报金额、用户价格覆盖、LiteLLM 与内置价格估算，展示有费用数据的请求比例、
+  未定价请求和实际用到缓存价格回退的请求数。参考费用不等于订阅账单或实际扣款，未定价也不代表免费。
+- **周期比较** — 所选时段与紧邻的等长本地日历周期比较；未指定开始日期时默认比较截止日之前最近 7 天。
+  展示费用、tokens、命中率和请求数变化，以及 Agent / Agent × 模型的变化贡献（按费用变化绝对值排序，最多 8 项）。
+  两期估算使用同次采集的价格；工具上报金额保留原值。本期未结束、记录缺失、无时间戳与缺失定价均有说明；
+  上期金额为 0 时不计算增长率。这些变化不衡量工作效率或模型质量。
 - **活动格** — GitHub 风格近 53 周每日热力网格（lime 强度 ramp），悬停可看单日明细
 - **Agent 分布格** — 各 Agent 份额条（tokens、费用、占比）与缓存命中率，点击行展开
   该 Agent 的分模型命中率
@@ -145,13 +155,20 @@ OpenCode 自带的价格（`cost` 字段）会被直接采用。
 所有筛选参数（`--client`、`--since`、`--until`、`--today/--week/--month`）对 `web` 同样
 生效；页面支持手动刷新、30 秒自动刷新，以及顶栏 中文 / EN 切换（记在 `localStorage` 键
 `toksight-locale`，默认中文）。
+启动参数限定服务的可见范围，网页筛选只会进一步缩小；清除网页筛选不会取消启动限制。
+如果上期超出启动日期范围，页面会说明无法进行完整比较。
+
+API 也接受 `GET /api/data?client=claude&period=7d`。`period` 可为 `all`（默认）、`today`、
+`7d`、`30d`、`month` 或 `custom`；`custom` 必须同时给出 `since=YYYY-MM-DD&until=YYYY-MM-DD`。
+也可单独使用 `since` / `until`；日期与 `client` 沿用 CLI 口径，多个 Agent 用逗号分隔。
+预设周期不能同时传日期；未知、重复或无效参数返回 HTTP 400。
 
 ### Agent 配置一览（只读 + 迁移）
 
 从仪表盘顶栏进入**配置**（或直接打开 `/config`），查看本机五个 Agent 的用户级配置摘要：
 默认模型、认证方式、服务商与端点、模型列表（含上下文长度）、权限/沙箱等关键设置，以及
-每项设置来自哪个文件。展开任意 Agent 可查看其配置文件的脱敏原文。页面底部的**打包与导入**
-面板是唯一的写入口：把配置收集成一个 JSON bundle 迁到别的机器，导入前已有文件会自动备份。
+每项设置来自哪个文件。展开任意 Agent 可查看其配置文件的脱敏原文。页面底部的**导出、导入与恢复**
+面板是唯一的写入口：把配置收集成一个 JSON bundle 迁到别的机器，查看差异后导入，也可以恢复本机备份。
 
 读取范围（固定白名单，全部为用户级文件）：
 
@@ -170,20 +187,30 @@ Claude `settings.json` 的 `env` 块按变量名逐项判断（`ANTHROPIC_BASE_U
 项目级配置、托管/企业策略文件不在扫描范围内。配置 API 仅限本机回环客户端且要求
 localhost `Host` 头，即使 `--host` 开放了统计仪表盘。
 
-#### 配置打包与导入
+#### 配置导出、导入与恢复
 
-配置页底部的**打包与导入**面板用于在机器之间迁移 Agent 配置：
+配置页底部的**导出、导入与恢复**面板用于在机器之间迁移 Agent 配置：
 
 - **导出**：勾选要迁移的配置文件（凭据文件不在列表里，也永远不可导出），下载单个
   JSON bundle（`toksight-agent-configs.json`）或直接复制 JSON 文本粘贴到别处。bundle
   里的配置是**未脱敏的原文**（迁移需要真实值，包括你自填的服务商密钥），请妥善保管。
-- **导入**：粘贴 bundle JSON 或选择文件 → **预览**会列出每个文件在本机的写入位置、
-  是新建还是替换 → 确认后执行。已存在的文件先备份到 `<config>/toksight/backups/<agent>/`
-  再原子替换（临时文件 + rename，不会出现写一半的截断文件）。
+- **导入**：选择文件后自动解析并预览，或粘贴 bundle 后点击**查看 / 刷新差异**。
+  预览列出本机写入位置、新建 / 修改 / 无变化 / 无法导入状态，并展示脱敏后的逐行差异
+  （每侧最多 64 KB / 600 行）。无变化的文件不会写入或生成备份；只有敏感值或格式变化时，
+  页面会说明为何原文不同而预览相同。确认后，已存在的文件先备份到 `<config>/toksight/backups/<agent>/`
+  再原子替换（临时文件 + rename，不会出现写一半的截断文件）。备份名包含时间与随机后缀，
+  复制时拒绝覆盖已有备份，连续导入也能保留各次备份。
+- **预览有效性**：页面提交预览时的目标与来源内容指纹；任一内容变化会拒绝该文件，要求重新预览。
+  无法读取或超过 1 MB 的本机目标文件也会被拒绝。原文中的绝对路径、环境变量引用、外部命令
+  与可检测的语法问题会提示人工检查；不会自动重写路径、安装程序或保证迁移后可用。
+- **恢复备份**：在“恢复备份”查看最近 200 份可识别备份 → 预览恢复 → 确认恢复。
+  恢复前也会备份当前文件，因此可以再恢复到恢复前的版本。列表只显示元数据，预览仍然脱敏。
+  旧备份仅在能唯一确定目标时支持恢复；例如旧 ZCode 两种 `config.json` 备份无法区分时会被省略并提示。
 - **范围限制**：导入只接受 bundle 中属于固定白名单的**配置**文件——未知条目与凭据条目
   一律跳过，写入路径按**本机**的白名单解析，bundle 里记录的来源路径仅供参考，因此一个
   bundle 无法向白名单之外的任何位置写入。目标是符号链接时会被拒绝（替换的是链接本身而
   不是它指向的文件）；写入失败时不残留临时文件，并回报已生成的备份路径。
+  skills、规则文件与插件资源不包含在 bundle 中。备份目录或备份文件为符号链接时拒绝自动恢复。
 - **安全**：导出 / 导入端点与配置一览一样仅限回环客户端 + localhost `Host` 头，额外再
   校验浏览器 `Sec-Fetch-Site`；导入端点只接受 `application/json` + 专用请求头
   （跨站网页无法伪造），请求体上限 10 MB。
@@ -196,19 +223,22 @@ npm 包已包含 `web/out/` 中预构建好的静态文件，安装后的用户�
 toksight web
 ```
 
-从源码开发时，先安装仪表盘的构建期依赖，再构建一次：
+从源码预览发布版页面时，在仓库根目录安装锁定的网页依赖，再构建并启动：
 
 ```bash
-npm run web:install
+npm run web:ci
 npm run web:build
+node bin/toksight.js web
 ```
 
 执行 `npm pack` 或 `npm publish` 时会自动重新构建仪表盘。从源码运行且 `web/out/` 尚未构建
-时，`toksight web` 会在 `/` 显示构建指引页，`/api/data` 仍可正常使用。
+时，`toksight web` 会在 `/` 显示构建指引页，`/api/data` 仍可正常使用。构建完成后刷新页面即可。
+`web:build` 只构建，不安装依赖；修改网页后需重新构建才能在此服务中看到更新。
+源码网页开发与构建需要 Node >=20.9（建议 Node 22 或 24）；安装包的 CLI 仍支持 Node >=20。
 
 参数：`--port <n>`（默认 4729）、`--host <addr>`（默认 127.0.0.1）、`--no-open`
-（不自动开浏览器）、`--api-only`（只开 JSON API，供 UI 开发——配合 `web/` 下的
-`npm run web:dev` 使用）。无论 `--host` 如何设置，配置一览端点始终只允许回环客户端访问。
+（不自动开浏览器）、`--api-only`（只开 JSON API，供手动分开启动前后端时使用）。
+无论 `--host` 如何设置，配置一览端点始终只允许回环客户端访问。
 
 ### 缓存命中率
 
@@ -241,50 +271,89 @@ entries 构建，`--client` / `--since` / `--until` 对它与其余切片一样�
 （请求间隔按 5 分钟封口后的活跃时长）；`longestSession` 按 `activeMs` 排名，挂机过夜的
 会话不会再把空闲时间算成时长。
 
+网页 API 另增 `view`（本机日期、可选 Agent 与启动范围）、`selection`（所选时段的趋势/热力图，
+没有日期筛选时为 null）、`costCoverage`（金额来源、未定价与缓存价格回退请求数）和 `comparison`
+（本期/上期、变化量及贡献项；无法比较时含原因）。原有 CLI `--json` 字段保持不变。
+
 ## 开发
 
 ```bash
 npm test              # node:test 套件 + 各客户端 fixture（无需联网）
 node bin/toksight.js  # 从源码直接运行
-npm run web:install   # 安装仪表盘构建期依赖
-npm run web:dev       # 开发仪表盘 UI（需先跑着 `toksight web --api-only`）
+npm run web:ci        # 按 web/package-lock.json 安装网页依赖
+npm run web:dev       # 同时启动 API 和前端，支持热更新
 ```
+
+打开 `http://127.0.0.1:3000`；API 默认在 `127.0.0.1:4729`，由前端代理。
+无需提前构建 `web/out/`，Ctrl+C 会一起关闭前后端；端口被占用会报错并关闭已启动的服务。
+
+```bash
+npm run web:dev -- --port 3001 --api-port 4730 --offline
+```
+
+`--port` 指前端端口，`--api-port` 指 API 端口；`--offline` 关闭开发 API 的价格拉取。
+需要手动启动时，用两个终端分别运行 `node bin/toksight.js web --api-only` 和
+`npm run web:dev:ui`（均在仓库根目录）；此模式可用 `TOKSIGHT_DEV_API` 设置代理目标。
+该环境变量只影响开发服务器，生产构建始终输出静态文件。
+`web:install` 保留给需要通过 `npm install` 更新网页依赖的开发者。
 
 ```
 bin/toksight.js        可执行入口
-src/cli.js             子命令分发 + 采集管线（collectAll）
+src/cli.js             子命令分发、启动网页服务
+src/collect.js         CLI 与网页共享的采集、筛选、定价管线
 src/args.js            命令行参数解析（--flag value / --flag=value）
 src/render.js          文本渲染（表格、摘要、警告）
 src/payload.js         --json / web API 的载荷契约
 src/dates.js           共享的本地时间日期工具（DST 安全）
 src/agentconfigs.js    固定白名单配置读取与结构化摘要（含 src/toml.js TOML 解析）
 src/agenttransfer.js   配置 bundle 打包与导入（备份 + 原子替换，唯一写路径）
+src/config/           配置实现：files 白名单、redact 脱敏、inventory 读取、summaries 摘要、
+                      compare 差异、backups 备份索引、transfer 导出/导入；上述两个入口保留兼容导出
 src/pricing.js         内置价格表 + LiteLLM 缓存 + 用户覆盖
 src/aggregate.js       分组与合计
 src/webdata.js         网页仪表盘聚合（热力图、趋势、会话……）
+src/webservice.js      并发请求共享采集、每个请求独立筛选与构建网页载荷
+src/webquery.js        网页筛选校验与启动范围交集
+src/comparison.js      相邻日历周期比较与变化贡献
+src/costcoverage.js    工具上报 / 价格估算来源与缺失定价覆盖情况
 src/webserver.js       `toksight web` 的零依赖 HTTP 服务器
 src/format.js          ANSI 表格与数字格式化
 src/fsutils.js         walkFiles、readJsonl、readJson、pathExists
 src/clients/           每个 agent 一个解析器，归一化为统一数据结构
                        （共享 src/clients/sqlite.js 只读打开助手）
 web/                   Next.js 仪表盘 + /config 页面（静态导出，由 CLI 托管）
+scripts/               源码开发启动、网页构建、安装包验证（不随 npm 包发布）
 ```
 
 CLI 本体保持**零运行时依赖**；仪表盘的依赖只存在于 `web/package.json`，
 仅在（重新）构建 `web/out/` 时需要。
 
+三条流程分别是：会话文件 → 解析器 → `collectAll` → CLI 输出或 `/api/data`；
+配置文件 → 固定白名单 → 摘要与迁移服务 → `/api/config`；
+`web/` 源码 → Next 构建 → `web/out/` → CLI 内置 HTTP 服务器。
+Next 只用于源码开发和构建，安装后的网页不需要 Next 服务器。
+
+```bash
+npm run check:package  # 自动构建、打包、临时安装，再验证页面、资源和 API
+```
+
+此检查会安装锁定的网页依赖（首次需要网络），然后离线安装刚生成的包，使用临时 Agent
+数据验证首页、配置页、JS/CSS/字体、API 与导入/恢复往返流程，并清理临时安装；不会导入真实配置。
+PR 与 main 分支的 CI 会运行测试及 Ubuntu/Windows 安装包检查。
+
 ### 发布
 
 发布由 [.github/workflows/release.yml](.github/workflows/release.yml) 自动完成：推送一个与
 `package.json` 版本一致的 `v*` 标签，工作流会先跑完整测试矩阵（Ubuntu + Windows，Node
-20/22/24），校验标签与包版本一致，然后用自动生成的变更记录创建 GitHub Release。
+20/22/24）与 Ubuntu/Windows 安装包检查，校验标签与包版本一致，然后用自动生成的变更记录创建 GitHub Release。
 
 ```bash
-npm version minor             # 更新 package.json 版本、提交并打标签（v0.4.0）
-git push origin main v0.4.0   # 推送标签，触发发布工作流
+# 先同步更新根目录与 web/package.json 的版本及对应 lockfile，再提交
+git tag vX.Y.Z                # X.Y.Z 必须与 package.json 一致
+git push origin main vX.Y.Z   # 推送标签，触发发布工作流
 ```
 
-标签与包版本不一致或任何测试失败时，都不会创建 Release。发布到 npm 是刻意保留的手动
+标签与包版本不一致、测试或安装包检查失败时，都不会创建 Release。发布到 npm 是刻意保留的手动
 步骤——需要时自行运行 `npm publish`（`prepublishOnly` / `prepack` 脚本会再跑一次测试，并把
 `web/out` 重新构建进发布包）。
 

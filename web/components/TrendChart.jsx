@@ -90,8 +90,8 @@ function niceStep(rough) {
 
 const shortDate = (date) => `${Number(date.slice(5, 7))}/${Number(date.slice(8, 10))}`;
 
-export default function TrendChart({ trends = {}, trendsByAgent = {}, agents = [], locale = 'zh-CN' }) {
-  const options = [
+export default function TrendChart({ selection, trends = {}, trendsByAgent = {}, agents = [], locale = 'zh-CN' }) {
+  const options = selection ? [{ days: 'selection', labelKey: 'selectedRange', rows: selection.rows }] : [
     { days: 7, labelKey: 'trend7', rows: trends[7] },
     { days: 30, labelKey: 'trend30', rows: trends[30] },
     { days: 90, labelKey: 'trend90', rows: trends[90] },
@@ -108,7 +108,7 @@ export default function TrendChart({ trends = {}, trendsByAgent = {}, agents = [
   const active = options.find((o) => o.days === days) || options.find((o) => o.days === 30) || options[0];
   const rows = active.rows;
   const n = rows.length;
-  const agentRows = trendsByAgent?.[active.days];
+  const agentRows = selection ? selection.byAgent : trendsByAgent?.[active.days];
   const agentDataOk = Array.isArray(agentRows) && agentRows.length === n;
   const agentMode = mode === 'agent' && agentDataOk;
 

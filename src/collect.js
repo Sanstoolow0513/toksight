@@ -44,6 +44,21 @@ export async function collectAll(opts, { env = process.env, home = os.homedir() 
     for (const e of entries) all.push(e);
   });
 
+  const filteredResult = filterEntries(all, opts);
+  warnings.push(...filteredResult.warnings);
+  const reportedCosts = new WeakSet();
+  const entries = filteredResult.entries.map((e) => {
+    if (e.costUsd != null) reportedCosts.add(e);
+    const costUsd = computeCost(e, pricing.priceFor(e.model));
+    return costUsd === e.costUsd ? e : { ...e, costUsd };
+  });
+
+  return { entries, warnings, pricing, perClient, reportedCosts };
+}
+
+// Shared by collection and request-scoped dashboard views. No pricing or mutation.
+export function filterEntries(all, opts) {
+  const warnings = [];
   let filtered = all;
   if (opts.clients) filtered = filtered.filter((e) => opts.clients.includes(e.client));
   if (opts.since != null || opts.until != null) {
@@ -66,10 +81,5 @@ export async function collectAll(opts, { env = process.env, home = os.homedir() 
     }
   }
 
-  const entries = filtered.map((e) => {
-    const costUsd = computeCost(e, pricing.priceFor(e.model));
-    return costUsd === e.costUsd ? e : { ...e, costUsd };
-  });
-
-  return { entries, warnings, pricing, perClient };
+  return { entries: filtered, warnings };
 }

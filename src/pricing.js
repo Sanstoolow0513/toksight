@@ -55,6 +55,8 @@ const perToken = (pricePerMTok) => ({
   cacheRead: pricePerMTok.cacheRead / 1e6,
   cacheWrite: pricePerMTok.cacheWrite / 1e6,
   source: pricePerMTok.source,
+  cacheReadFallback: Boolean(pricePerMTok.cacheReadFallback),
+  cacheWriteFallback: Boolean(pricePerMTok.cacheWriteFallback),
 });
 
 function builtinMap() {
@@ -131,6 +133,8 @@ async function loadUserPricing(dir) {
         cacheRead: v.cacheRead ?? v.input,
         cacheWrite: v.cacheWrite ?? v.input,
         source: 'user',
+        cacheReadFallback: v.cacheRead == null,
+        cacheWriteFallback: v.cacheWrite == null,
       }),
     ]);
   return buildExactMap(entries);
@@ -183,6 +187,8 @@ function buildLitellmMap(data) {
         cacheRead: v.cache_read_input_token_cost ?? v.input_cost_per_token,
         cacheWrite: v.cache_creation_input_token_cost ?? v.input_cost_per_token,
         source: 'litellm',
+        cacheReadFallback: v.cache_read_input_token_cost == null,
+        cacheWriteFallback: v.cache_creation_input_token_cost == null,
       },
     ]);
   }
