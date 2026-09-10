@@ -10,8 +10,8 @@ import { clientLabel } from '@/lib/clients';
 
 const sessionName = (s) => s.title || s.directory || s.sessionId || '—';
 
-export default function SessionTable({ rows, tx }) {
-  if (!rows.length) return <div className="muted">{tx('sessEmpty')}</div>;
+export default function SessionTable({ rows, tx, startIndex = 0 }) {
+  if (!rows.length) return startIndex === 0 ? <div className="muted">{tx('sessEmpty')}</div> : null;
   return (
     <div className="table-scroll">
       <table className="tbl">
@@ -33,7 +33,7 @@ export default function SessionTable({ rows, tx }) {
             const name = sessionName(s);
             return (
               <tr key={`${s.client}/${s.sessionId}`}>
-                <td className="num dim">{i + 1}</td>
+                <td className="num dim">{startIndex + i + 1}</td>
                 <td>{clientLabel(s.client)}</td>
                 <td>
                   <span className="sess-name" title={name}>

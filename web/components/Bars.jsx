@@ -20,7 +20,7 @@ function BarTip({ tip, locale, title }) {
       <div className="tip-title">{title}</div>
       <div className="tip-row">
         <span>{tr('heatTokens')}</span>
-        <b>{fmtTokens(tip.row.tokens)}</b>
+        <b>{fmtTokens(tip.row.tokens ?? tip.row.totalTokens)}</b>
       </div>
       <div className="tip-row">
         <span>{tr('heatCost')}</span>
@@ -76,7 +76,10 @@ export function MonthlyBars({ monthly, locale = 'zh-CN' }) {
   const [tip, setTip] = useState(null);
   const rows = (monthly ?? []).filter((m) => m.month && m.month !== 'unknown');
   if (!rows.length) return <div className="muted">{t(locale, 'monthEmpty')}</div>;
-  const max = Math.max(...rows.map((m) => m.tokens), 1);
+  // Payload monthly rows carry `totalTokens` (aggregate.js byMonth); `tokens`
+  // is accepted as a fallback so either shape renders.
+  const volume = (m) => m.totalTokens ?? m.tokens ?? 0;
+  const max = Math.max(...rows.map(volume), 1);
   return (
     <div className="bars-block" onMouseLeave={() => setTip(null)}>
       <div className="bars bars-short months">
@@ -84,6 +87,7 @@ export function MonthlyBars({ monthly, locale = 'zh-CN' }) {
           <div
             key={m.month}
             className="bar-col"
+            style={rows.length <= 6 ? { maxWidth: '48px' } : undefined}
             tabIndex={0}
             onMouseEnter={(e) => setTip({ row: m, x: e.clientX, y: e.clientY })}
             onFocus={(e) => {
@@ -92,7 +96,7 @@ export function MonthlyBars({ monthly, locale = 'zh-CN' }) {
             }}
             onBlur={() => setTip(null)}
           >
-            <div className="bar-solid" style={{ height: `${(m.tokens / max) * 100}%` }} />
+            <div className="bar-solid" style={{ height: `${(volume(m) / max) * 100}%` }} />
             <span className="bar-label">{m.month.slice(2)}</span>
           </div>
         ))}

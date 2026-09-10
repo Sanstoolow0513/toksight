@@ -164,7 +164,7 @@ It includes:
 - **Usage patterns** — hourly | monthly | pace in one three-column card: when tokens move by hour
   and month, current streak, peak day, and longest session by *active* time.
 - **Sessions table** — top 10 sessions by tokens (title, tokens, requests, hit rate, cost,
-  start, active duration).
+  start, active duration); the rest (the API serves the top 20) expand on demand.
 
 Startup filters (`--client`, `--since`, `--until`, `--today/--week/--month`) bound the data the
 server can see; URL query parameters only narrow within that scope, and removing them never lifts

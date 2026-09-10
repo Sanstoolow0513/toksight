@@ -17,7 +17,14 @@ export function useDashboardData() {
   const active = useRef(null);
   const sequence = useRef(0);
   useEffect(() => {
-    setQuery(window.location.search.slice(1));
+    // Forward only the params /api/data accepts; UI-only params (?tab=) and
+    // anything unknown would otherwise make the API reject the request.
+    const incoming = new URLSearchParams(window.location.search);
+    const q = new URLSearchParams();
+    for (const key of ['period', 'client', 'since', 'until']) {
+      if (incoming.has(key)) q.set(key, incoming.get(key));
+    }
+    setQuery(q.toString());
   }, []);
   const load = useCallback(async ({ silent = false } = {}) => {
     if (query == null) return;

@@ -202,6 +202,12 @@ export default function Page() {
         {tab === 'sessions' && (
           <Cell title={tx('sessTitle')} desc={tx('sessDesc')}>
             <SessionTable rows={(data.topSessions ?? []).slice(0, 10)} tx={tx} />
+            {(data.topSessions ?? []).length > 10 && (
+              <details className="details">
+                <summary>{tx('sessMore', { n: data.topSessions.length - 10 })}</summary>
+                <SessionTable rows={data.topSessions.slice(10)} startIndex={10} tx={tx} />
+              </details>
+            )}
           </Cell>
         )}
       </div>
