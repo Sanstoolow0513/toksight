@@ -79,17 +79,22 @@ src/fsutils.js      walkFiles/walkFilesMany/readJsonl/readJson/pathExists (warni
                     semantics: root ENOENT silent, other read failures warn)
 web/                Next.js (App Router, JS, no Tailwind), statically exported to web/out
                     and served by the CLI. `/` dashboard, `/config` viewer + export/import/
-                    restore; components/Shell.jsx is the shared page shell; lib/clients.js
-                    holds the single source of client display names, lib/useLocale.js the
-                    locale hook, lib/api.js the fetchJson helper; lib/i18n.js dictionaries
-                    (zh-CN / en, localStorage `toksight-locale`) are parity-tested, and
-                    lib/palette.js ↔ globals.css `--color-cat-*` equality is pinned by
-                    test/palette.test.js; components/DashboardGrid.jsx lays the dashboard
-                    cards out as a draggable/resizable react-grid-layout v2 grid (defaults
-                    + sanitize in lib/layout.js, persisted to localStorage, static .sheet
-                    fallback <900px container width); visual rules locked in design-spec.md
-                    (v7 minimal editorial paper, light-only) — do not ship raw
-                    ui-ux-pro-max --persist output
+                    restore; components/Shell.jsx is the shared page shell (it also owns the
+                    theme switch); lib/clients.js holds the single source of client display
+                    names, lib/useLocale.js the locale hook, lib/theme.js the theme hook
+                    (system/light/dark → `data-theme` on <html>, pre-paint snippet in
+                    app/layout.js, localStorage `toksight-theme`), lib/api.js the fetchJson
+                    helper; lib/i18n.js dictionaries (zh-CN / en, localStorage
+                    `toksight-locale`) are parity-tested, and lib/palette.js ↔ globals.css
+                    `--color-cat-*` (light :root ramp + dark override block) is pinned by
+                    test/palette.test.js — inline styles must use colorAt()'s var()
+                    references, never hex. app/page.js lays the dashboard out as a single
+                    content-sized column — KPI strip, then a text tab bar splitting the
+                    merged cards into history (trend, heatmap, hour|month|pace trio), cost
+                    (comparison + cost details, agents|models split) and sessions, deep-
+                    linked via ?tab= — no filter bar, no drag grid; visual rules locked in
+                    design-spec.md (v8 minimal editorial paper, light + dark) — do not
+                    ship raw ui-ux-pro-max --persist output
 ```
 
 Each client parser exports `id`, `label`, `sourceRoots({ env, home })`, and
@@ -164,8 +169,9 @@ cost (only OpenCode does).
   trend/heatmap rows capped at the last 366 days (totals/comparison stay complete); without a
   start date comparison uses seven days ending on the selected end date/today, and is
   unavailable if the previous window falls outside startup scope. UI request
-  cancellation/sequence checks keep stale responses from replacing newer filters; URL query
-  preserves filter state.
+  cancellation/sequence checks keep stale responses from replacing newer data; the
+  dashboard has no filter UI — the URL query string is read once at mount so manual
+  deep links keep working.
 - **Config viewer scope/redaction**: the config page inventory is strictly read-only. Only
   user-level files for ZCode, Claude Code, Codex CLI, OpenCode and Kimi Code are allowlisted
   (`src/config/files.js`, re-exported via `src/agentconfigs.js`); project/managed policy files

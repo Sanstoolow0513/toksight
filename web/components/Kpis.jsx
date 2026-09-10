@@ -1,11 +1,10 @@
 'use client';
 
-// KPI strip: four white cards — total tokens (accent value, requests·sessions
-// sub), reference cost (pricing coverage sub), cache hit rate (semantic green
-// value), active days (start date sub). `Stat` is the single card; `kpiCards`
-// maps the dashboard payload onto the four of them (one react-grid-layout
-// item per card on wide screens, the `.kpis` grid wraps them in the narrow
-// static fallback — see components/DashboardGrid.jsx).
+// KPI strip: one white card holding four stat cells separated by hairlines —
+// total tokens (accent value, requests·sessions sub), reference cost
+// (pricing coverage sub), cache hit rate (semantic green value), active days
+// (start date sub). `Stat` is a single transparent cell; `kpiCards` maps the
+// dashboard payload onto the four of them; `KpiStrip` renders the card.
 
 import { fmtTokens, fmtCost, fmtPct, fmtDateOnly } from '@/lib/format';
 
@@ -48,4 +47,14 @@ export function kpiCards({ totals, cacheHitRate, activeDays, activityRange, tx }
       sub: activityRange?.firstAt ? tx('statActiveSince', { date: fmtDateOnly(activityRange.firstAt) }) : '—',
     },
   ];
+}
+
+export default function KpiStrip({ totals, cacheHitRate, activeDays, activityRange, tx }) {
+  return (
+    <section className="kpis" aria-label={tx('heroAria')}>
+      {kpiCards({ totals, cacheHitRate, activeDays, activityRange, tx }).map((card) => (
+        <Stat key={card.id} label={card.label} value={card.value} sub={card.sub} tone={card.tone} />
+      ))}
+    </section>
+  );
 }

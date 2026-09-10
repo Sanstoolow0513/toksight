@@ -1,31 +1,33 @@
 'use client';
 
-// toksight dashboard — Editorial Paper (design-spec v7): warm paper ground,
-// white hairline cards. Masthead → banners → draggable/resizable card grid
-// (DashboardGrid: KPI ×4, comparison, cost, trend, heatmap, agent/model,
-// hour/month/pace, sessions; static .sheet stream below 900px) → footer.
-// Hover is a quiet color/background transition, no shadows/blur/gradients.
-// Icons only mark actions and states; last-fetch time comes from
-// generatedAt. This file only assembles data and picks the conditional
-// branch; the pieces live in components/ (Shell, Cell, TrendCell, Kpis,
-// Rhythm, SessionTable, StateCard, Skeleton, DashboardBanners,
-// DashboardGrid, DashboardFooter).
+// toksight dashboard — Editorial Paper (design-spec v8): warm paper ground,
+// white hairline cards in a single content-sized column. Masthead → banners →
+// KPI strip → tab bar → tab panels → footer. The tab bar splits the cards
+// into three sections (design-spec §4): history (trend with its in-card
+// range/mode controls, heatmap, usage patterns), cost (period comparison
+// with cost details, agent+model breakdown) and sessions (top-10 table).
+// The active tab round-trips through ?tab= so views are linkable; manual URL
+// deep links (?period=…&client=…) are still honored by the API and surfaced
+// by the filter banner. Hover is a quiet color/background transition, no
+// shadows/blur/gradients. Icons only mark actions and states; last-fetch
+// time comes from generatedAt. This file only assembles data and picks the
+// conditional branch; the pieces live in components/ (Shell, Cell, KpiStrip,
+// TrendCell, AgentsPanel, ModelBars, Bars, Rhythm, SessionTable, StateCard,
+// Skeleton, DashboardBanners, DashboardFooter).
 
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { RefreshCw, RotateCcw } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { RefreshCw } from 'lucide-react';
 import { fmtDateTime } from '@/lib/format';
 import Heatmap from '@/components/Heatmap';
 import TrendCell from '@/components/TrendCell';
 import AgentsPanel from '@/components/AgentsPanel';
 import ModelBars from '@/components/ModelBars';
 import { HourBars, MonthlyBars } from '@/components/Bars';
-import DashboardFilters from '@/components/DashboardFilters';
 import CostDetails from '@/components/CostDetails';
 import PeriodComparison from '@/components/PeriodComparison';
 import Shell from '@/components/Shell';
 import Cell from '@/components/Cell';
-import DashboardGrid from '@/components/DashboardGrid';
-import { Stat, kpiCards } from '@/components/Kpis';
+import KpiStrip from '@/components/Kpis';
 import Rhythm from '@/components/Rhythm';
 import SessionTable from '@/components/SessionTable';
 import Skeleton from '@/components/Skeleton';
@@ -36,11 +38,33 @@ import { useDashboardData } from '@/lib/useDashboardData';
 import { useLocale } from '@/lib/useLocale';
 import { clientLabel } from '@/lib/clients';
 
+const TABS = [
+  { id: 'history', labelKey: 'tabHistory' },
+  { id: 'cost', labelKey: 'tabCost' },
+  { id: 'sessions', labelKey: 'tabSessions' },
+];
+const DEFAULT_TAB = 'history';
+
 export default function Page() {
-  const { data, view, error, refreshing, version, load, query, applyQuery } = useDashboardData();
+  const { data, error, refreshing, version, load } = useDashboardData();
   const [auto, setAuto] = useState(false);
+  const [tab, setTab] = useState(DEFAULT_TAB);
   const { locale, setLocale, tx } = useLocale('docTitle');
-  const gridResetRef = useRef(null);
+
+  // Deep link: adopt a valid ?tab= once on mount; tab switches write back
+  // with replaceState so the URL stays shareable without history spam.
+  useEffect(() => {
+    const v = new URLSearchParams(window.location.search).get('tab');
+    if (TABS.some((t) => t.id === v)) setTab(v);
+  }, []);
+
+  const switchTab = (next) => {
+    setTab(next);
+    const url = new URL(window.location.href);
+    if (next === DEFAULT_TAB) url.searchParams.delete('tab');
+    else url.searchParams.set('tab', next);
+    window.history.replaceState(null, '', url);
+  };
 
   useEffect(() => {
     if (!auto) return undefined;
@@ -72,10 +96,6 @@ export default function Page() {
             <input type="checkbox" checked={auto} onChange={(e) => setAuto(e.target.checked)} />
             {tx('autoRefresh')}
           </label>
-          <button className="btn" type="button" title={tx('layoutReset')} onClick={() => gridResetRef.current?.()}>
-            <RotateCcw size={16} strokeWidth={1.5} aria-hidden="true" />
-            {tx('layoutReset')}
-          </button>
           <button className="btn" type="button" onClick={load} disabled={refreshing}>
             <RefreshCw size={14} strokeWidth={1.5} className={refreshing ? 'icon-spin' : undefined} aria-hidden="true" />
             {refreshing ? tx('refreshing') : tx('refresh')}
@@ -83,7 +103,6 @@ export default function Page() {
         </>
       }
     >
-      <DashboardFilters query={query} view={view} tx={tx} loading={refreshing} onApply={applyQuery} />
       {error && data && <div className="banner error" role="alert">{tx('errorFail', { error })}</div>}
       {body}
     </Shell>
@@ -105,64 +124,86 @@ export default function Page() {
       <div className={fade}>
         <DashboardBanners data={data} tx={tx} />
         <PeriodComparison comparison={data.comparison} timezone={data.timezone} tx={tx} clientLabel={clientLabel} />
-        <EmptyCard tx={tx} filtered={Boolean(query) || filtered} />
+        <EmptyCard tx={tx} filtered={filtered} />
         <DashboardFooter data={data} tx={tx} />
       </div>,
     );
   }
 
-  const items = {};
-  for (const card of kpiCards({ totals, cacheHitRate: data.cacheHitRate, activeDays: data.activeDays ?? activeWindowDays, activityRange: data.activityRange, tx })) {
-    items[card.id] = <Stat label={card.label} value={card.value} sub={card.sub} tone={card.tone} />;
-  }
-  items.comparison = <PeriodComparison comparison={data.comparison} timezone={data.timezone} tx={tx} clientLabel={clientLabel} />;
-  items.cost = <CostDetails coverage={data.costCoverage} pricing={data.pricing} tx={tx} />;
-  items.trend = <TrendCell data={data} agents={agents} locale={locale} tx={tx} />;
-  items.heatmap = (
-    <Cell title={tx('heatTitle')} desc={data.selection ? tx('selectedCharts') : heatDesc}>
-      <Heatmap heatmap={heatmap} locale={locale} />
-    </Cell>
-  );
-  items.agents = (
-    <Cell title={tx('agentsTitle')} desc={tx('agentsDesc')} span={5}>
-      <AgentsPanel
-        agents={agents.map((a) => ({ ...a, label: clientLabel(a.id) }))}
-        models={data.models ?? []}
-        totals={{ totalTokens: totals.totalTokens, costUsd: totals.costUsd, cacheHitRate: data.cacheHitRate }}
-        locale={locale}
-      />
-    </Cell>
-  );
-  items.models = (
-    <Cell title={tx('modelTitle')} desc={tx('modelDesc')} span={7}>
-      <ModelBars models={data.models ?? []} totalTokens={totals.totalTokens} locale={locale} />
-    </Cell>
-  );
-  items.hour = (
-    <Cell title={tx('hourTitle')} desc={tx('hourDesc')} span={4}>
-      <HourBars hourly={data.hourly} locale={locale} />
-    </Cell>
-  );
-  items.month = (
-    <Cell title={tx('monthTitle')} desc={tx('monthFiltered')} span={4}>
-      <MonthlyBars monthly={data.monthly} locale={locale} />
-    </Cell>
-  );
-  items.rhythm = (
-    <Cell title={tx('rhythmTitle')} desc={tx('rhythmDesc')} span={4}>
-      <Rhythm streaks={data.streaks ?? {}} peakDay={data.peakDay} longest={data.longestSession} tx={tx} />
-    </Cell>
-  );
-  items.sessions = (
-    <Cell title={tx('sessTitle')} desc={tx('sessDesc')}>
-      <SessionTable rows={(data.topSessions ?? []).slice(0, 10)} tx={tx} />
-    </Cell>
-  );
-
   return shell(
     <div className={fade}>
       <DashboardBanners data={data} tx={tx} />
-      <DashboardGrid items={items} tx={tx} resetRef={gridResetRef} />
+      <KpiStrip
+        totals={totals}
+        cacheHitRate={data.cacheHitRate}
+        activeDays={data.activeDays ?? activeWindowDays}
+        activityRange={data.activityRange}
+        tx={tx}
+      />
+      <nav className="dash-tabs" aria-label={tx('tabsAria')}>
+        {TABS.map(({ id, labelKey }) => (
+          <button
+            key={id}
+            type="button"
+            className={tab === id ? 'active' : undefined}
+            aria-current={tab === id ? 'page' : undefined}
+            onClick={() => switchTab(id)}
+          >
+            {tx(labelKey)}
+          </button>
+        ))}
+      </nav>
+      <div key={tab} className="tab-panels">
+        {tab === 'history' && (
+          <>
+            <TrendCell data={data} agents={agents} locale={locale} tx={tx} />
+            <Cell title={tx('heatTitle')} desc={data.selection ? tx('selectedCharts') : heatDesc}>
+              <Heatmap heatmap={heatmap} locale={locale} />
+            </Cell>
+            <Cell title={tx('patternsTitle')} desc={tx('patternsDesc')} bodyClass="cell-trio">
+              <section className="cell-part">
+                <h3 className="cell-sub">{tx('hourTitle')}</h3>
+                <HourBars hourly={data.hourly} locale={locale} />
+              </section>
+              <section className="cell-part">
+                <h3 className="cell-sub">{tx('monthTitle')}</h3>
+                <MonthlyBars monthly={data.monthly} locale={locale} />
+              </section>
+              <section className="cell-part">
+                <h3 className="cell-sub">{tx('rhythmTitle')}</h3>
+                <Rhythm streaks={data.streaks ?? {}} peakDay={data.peakDay} longest={data.longestSession} tx={tx} />
+              </section>
+            </Cell>
+          </>
+        )}
+        {tab === 'cost' && (
+          <>
+            <PeriodComparison comparison={data.comparison} timezone={data.timezone} tx={tx} clientLabel={clientLabel}>
+              <CostDetails coverage={data.costCoverage} pricing={data.pricing} tx={tx} />
+            </PeriodComparison>
+            <Cell title={tx('breakdownTitle')} desc={tx('breakdownDesc')} bodyClass="cell-split">
+              <section className="cell-part">
+                <h3 className="cell-sub">{tx('agentsTitle')}</h3>
+                <AgentsPanel
+                  agents={agents.map((a) => ({ ...a, label: clientLabel(a.id) }))}
+                  models={data.models ?? []}
+                  totals={{ totalTokens: totals.totalTokens, costUsd: totals.costUsd, cacheHitRate: data.cacheHitRate }}
+                  locale={locale}
+                />
+              </section>
+              <section className="cell-part">
+                <h3 className="cell-sub">{tx('modelTitle')}</h3>
+                <ModelBars models={data.models ?? []} totalTokens={totals.totalTokens} locale={locale} />
+              </section>
+            </Cell>
+          </>
+        )}
+        {tab === 'sessions' && (
+          <Cell title={tx('sessTitle')} desc={tx('sessDesc')}>
+            <SessionTable rows={(data.topSessions ?? []).slice(0, 10)} tx={tx} />
+          </Cell>
+        )}
+      </div>
       <DashboardFooter data={data} tx={tx} />
     </div>,
   );

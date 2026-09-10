@@ -123,26 +123,29 @@ statically-exported [Next.js](https://nextjs.org) dashboard plus a live JSON API
 browser (default `http://127.0.0.1:4729`). It binds to localhost only and re-aggregates your
 session files on every request — data never leaves your machine.
 
-The dashboard is a minimal editorial paper sheet (v7): a warm paper background, white cards and
+The dashboard is a minimal editorial paper sheet (v8): a warm paper background, white cards and
 hairline rules, Geist Sans for reading and Geist Mono for data; the construction spec is
-`design-spec.md` (single source of truth). A sticky masthead (mono logo + last-fetch time) leads
-filters, a 4-card KPI strip, cost details and period comparison, then a 12-column sheet — trend
-first (direction before detail), activity heatmap, agent/model split, hourly/monthly/pace,
-sessions table. On wide screens every card can be dragged and resized (the layout persists
-locally, with a reset button in the masthead); narrow screens fall back to the single-column
-stream. Hover is a quiet 150 ms fade, and all motion respects `prefers-reduced-motion`.
+`design-spec.md` (single source of truth). Light and dark themes follow the OS by default, with a
+manual override in the masthead (system / light / dark, stored in `localStorage` under
+`toksight-theme`). A sticky masthead (mono logo + last-fetch time) leads the four-cell KPI strip,
+then a text tab bar splits the cards into three sections — **History** (the trend card (direction
+before detail), the activity heatmap, a three-column usage patterns card (hourly | monthly |
+pace)), **Cost** (period comparison with cost details, a two-column usage breakdown
+(agents | models)) and **Sessions** (the sessions table) — with the active tab deep-linkable via
+`?tab=`. Card height follows content. There is no global filter bar — range and dimension
+switching live inside the trend card, and the API query parameters below still work as manual URL
+deep links. Hover is a quiet 150 ms fade, and all motion respects `prefers-reduced-motion`.
 It includes:
 
-- **Dashboard filters** — all data / today / last 7 days / last 30 days / this month / custom
-  dates, plus agent selection. Totals, charts, models and sessions update together; the
-  selection is stored in the page URL and survives reloads.
 - **KPI strip** — total tokens (accent orange, requests · sessions), reference cost, cache hit
-  rate, active days.
+  rate, active days: four hairline-divided cells in one card.
 - **Trend cell** — 7 / 30 / 90-day windows × two stack modes (by token class or by agent) as
-  per-day step-after solids; legend chips toggle series; today/7d/30d/this-month chips in the header.
-- **Selected period** — date filters re-window the trend and heatmap; selections beyond 366
-  days chart only the last 366 (with a notice) while totals and comparison keep the full range.
-  Dates follow the server's local timezone; impossible dates such as February 30 are rejected.
+  per-day step-after solids; legend chips toggle series; today/7d/30d/this-month chips in the
+  header. This is where time-range and agent views switch.
+- **Manual deep links** — `?period=…&since=…&until=…&client=…` in the page URL re-window the
+  dashboard; selections beyond 366 days chart only the last 366 (with a notice) while totals and
+  comparison keep the full range. Dates follow the server's local timezone; impossible dates such
+  as February 30 are rejected.
 - **Reference cost details** — agent-reported amounts, user overrides, LiteLLM and built-in
   estimates, priced-request coverage, unpriced requests, and requests actually using fallback
   cache prices. Reference cost is not a subscription bill; unpriced does not mean free.
@@ -154,16 +157,16 @@ It includes:
   no percentage. This does not measure productivity or model quality.
 - **Activity heatmap** — GitHub-style 53-week grid of daily tokens with a paper-to-ink ramp and
   per-day tooltips.
-- **Agent mix** — per-agent share of tokens/cost with hit rates; expand a row for its per-model hit rates.
-- **Model usage** — models aggregated across agents; bars hard-split cache reads (green) from
-  fresh traffic; collapsible agent × model detail table.
-- **Hourly / monthly / pace** — when tokens move by hour and month, current streak, peak day,
-  and longest session by *active* time.
+- **Usage breakdown** — agents | models in one split card: per-agent share of tokens/cost with
+  hit rates (expand a row for its per-model hit rates); models aggregated across agents, bars
+  hard-split cache reads (green) from fresh traffic, collapsible agent × model detail table.
+- **Usage patterns** — hourly | monthly | pace in one three-column card: when tokens move by hour
+  and month, current streak, peak day, and longest session by *active* time.
 - **Sessions table** — top 10 sessions by tokens (title, tokens, requests, hit rate, cost,
   start, active duration).
 
 Startup filters (`--client`, `--since`, `--until`, `--today/--week/--month`) bound the data the
-server can see; dashboard filters only narrow within that scope, and clearing them never lifts
+server can see; URL query parameters only narrow within that scope, and removing them never lifts
 the startup restriction — if the previous comparison period falls outside it, the dashboard says
 so. The page also offers a manual refresh, a 30s auto-refresh toggle, and a 中文 / EN switch
 (`localStorage` key `toksight-locale`, default Chinese).

@@ -1,7 +1,7 @@
 'use client';
 
-// Daily token trend as a step-after stacked worksheet (spec v7, Editorial
-// Paper): each day is a rectangular band, not a smooth mountain. Series are
+// Daily token trend as a step-after stacked worksheet (design-spec §4): each
+// day is a rectangular band, not a smooth mountain. Series are
 // drawn down to the baseline, top of stack first, so the visible bands are
 // the differences between cumulative steps. Bands carry a 1px card-colored
 // seam; the stack's top edge gets a separate 1.5px ink outline. No Bézier /

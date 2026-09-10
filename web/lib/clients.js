@@ -1,6 +1,5 @@
-// Single source of truth for agent display names (previously duplicated in
-// app/page.js and DashboardFilters). Unknown ids fall back to the raw id so
-// a new client id can never crash the UI.
+// Single source of truth for agent display names. Unknown ids fall back to
+// the raw id so a new client id can never crash the UI.
 
 export const CLIENT_LABELS = {
   zcode: 'ZCode',

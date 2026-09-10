@@ -50,18 +50,19 @@ npm run web:dev:ui
 
 ## 结构
 
-- `app/page.js` — 仪表盘页面组装（数据 → 组件的条件分支；KPI 条、12 列工作表、热力图、趋势、Agent 分布、小时/月/节奏、模型与会话表格）
+- `app/page.js` — 仪表盘页面组装（数据 → 组件的条件分支；KPI 条带 + 文字标签栏，标签页把卡片分为历史（趋势、热力图、小时/月/节奏三联）、成本（周期对比内嵌费用说明、Agent+模型双栏）、会话（表格），`?tab=` 深链）
 - `app/config/page.js` — 配置摘要与文件预览
-- `components/Shell.jsx` — 两页共享页壳（masthead、导航、语言切换、操作插槽）
-- `components/` — 仪表盘区块（`Kpis` / `Cell` / `TrendCell` / `Rhythm` / `SessionTable` / `StateCard` / `Skeleton` / `DashboardBanners` / `DashboardFooter`）、图表（`TrendChart` / `Heatmap` / `Bars` / `ModelBars` / `AgentsPanel`）、共享 `Tip`、`DashboardFilters` / `CostDetails` / `PeriodComparison`（网页筛选、参考费用来源与相邻日历周期比较）、配置迁移入口 `TransferPanel`
+- `components/Shell.jsx` — 两页共享页壳（masthead、导航、主题切换、语言切换、操作插槽）
+- `components/` — 仪表盘区块（`Kpis` / `Cell` / `TrendCell` / `Rhythm` / `SessionTable` / `StateCard` / `Skeleton` / `DashboardBanners` / `DashboardFooter`）、图表（`TrendChart` / `Heatmap` / `Bars` / `ModelBars` / `AgentsPanel`）、共享 `Tip`、`CostDetails` / `PeriodComparison`（参考费用来源与相邻日历周期比较，同卡嵌套）、配置迁移入口 `TransferPanel`
 - `components/config/` — `AgentCard` / `FileCard`、`ExportPanel`、`ImportPanel`、`ImportPlan`、`ImportResults`、`RestorePanel`、`TransferMessage`
 - `lib/clients.js` — Agent 显示名的单一事实源；`lib/useLocale.js` — 中英切换共享 hook；`lib/api.js` — 统一 `fetchJson`（写操作自动带 `x-toksight-action` 头）
 - `lib/config.js` / `lib/transfer.js` — 配置标签、格式化、选择规则与 bundle 解析
 - `lib/format.js` — 数字/时间格式化（与 CLI `src/format.js` 口径一致）
 - `lib/i18n.js` — 界面文案（`zh-CN` / `en`，localStorage `toksight-locale`）
-- `lib/palette.js` — 分类色（与 `design-spec.md` / `globals.css` 的 `--color-cat-*` 对齐，`test/palette.test.js` 校验一致）
+- `lib/theme.js` — 明暗主题（跟随系统/浅色/深色 → `<html>` 的 `data-theme`，localStorage `toksight-theme`；`app/layout.js` 内联脚本首帧前盖章，避免暗色用户闪白）
+- `lib/palette.js` — 分类色（`colorAt()` 返回 `var(--color-cat-N)` 引用，与 `globals.css` 的浅色 `:root` ramp + 暗色 override 对齐，`test/palette.test.js` 校验一致）
 - `next.config.mjs` — 静态导出 / dev 代理配置
-- `lib/useDashboardData.js` — URL 筛选状态、请求取消与过期响应隔离；切换筛选保留旧数据，仅首屏显示骨架
+- `lib/useDashboardData.js` — 挂载时读取一次 URL 深链参数、请求取消与过期响应隔离；刷新保留旧数据，仅首屏显示骨架
 
 API 返回 `--json` 载荷外加 web 专属字段（`heatmap`、`trend`、`hourly`、`today`、
 `last7Days`、`last30Days`、`thisMonth`、`topSessions`、`longestSession`、`streaks`、

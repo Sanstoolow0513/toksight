@@ -1,10 +1,13 @@
-/* toksight dashboard — Editorial Paper (design-spec v7): warm paper ground,
+/* toksight dashboard — Editorial Paper (design-spec v8): warm paper ground,
  * white cards with 1px hairlines, generous whitespace, print-like type
- * rhythm. No shadows / blur / gradients / textures; layering comes from
- * hairlines and panel/panel-2 background deltas. Hover is a quiet 150ms
- * color/background transition. Allowed motion (killed under
- * prefers-reduced-motion): page fade, content fade on filter switch, agent
- * row expand + caret, refresh spin, skeleton pulse. */
+ * rhythm. Light/dark themes: :root carries the light tokens,
+ * [data-theme='dark'] overrides them (stamped pre-paint by app/layout.js,
+ * driven by lib/theme.js — default follows the OS). No shadows / blur /
+ * gradients / textures; layering comes from hairlines and panel/panel-2
+ * background deltas. Hover is a quiet 150ms color/background transition.
+ * Allowed motion (killed under prefers-reduced-motion): page fade, content
+ * fade on filter switch, agent row expand + caret, refresh spin, skeleton
+ * pulse. */
 
 /* ---------- tokens ---------- */
 
@@ -42,7 +45,6 @@
   --font-size-md: 16px;
   --font-size-xl: 20px;
   --font-size-2xl: 28px;
-  --font-size-hero: 40px;
   --space-1: 4px;
   --space-2: 8px;
   --space-3: 12px;
@@ -56,6 +58,45 @@
   --masthead-h: 56px;
   color-scheme: light;
 }
+
+/* Dark theme: same warm-paper family, inverted. Stamped on <html> as
+   data-theme by lib/theme.js (and the pre-paint snippet in app/layout.js);
+   'system' follows prefers-color-scheme. Every component reads tokens, so
+   this block is the whole theme — the only exceptions are the heat ramp
+   classes, overridden right below the tokens. Rank ramp flips too: rank 1
+   is the lightest ink, stepping down toward the ground. */
+[data-theme='dark'] {
+  --color-accent: #d9562c;
+  --color-accent-ink: #ffffff;
+  --color-accent-subtle: rgba(217, 86, 44, 0.16);
+  --color-bg: #161511;
+  --color-panel: #1f1d17;
+  --color-panel-2: #2a2820;
+  --color-line: #36332b;
+  --color-line-strong: #4f4b40;
+  --color-text: #ebe8e1;
+  --color-text-secondary: #b4b0a5;
+  --color-text-muted: #837f73;
+  --color-success: #45a06b;
+  --color-warning: #d18a34;
+  --color-error: #d95f56;
+  --color-chart-input: #ebe8e1;
+  --color-chart-cache-read: #45a06b;
+  --color-chart-cache-write: #6b675c;
+  --color-chart-output: #4a473d;
+  --color-cat-1: #ebe8e1;
+  --color-cat-2: #b4b0a5;
+  --color-cat-3: #837f73;
+  --color-cat-4: #55524a;
+  --color-cat-5: #3a382f;
+  color-scheme: dark;
+}
+
+[data-theme='dark'] .heat-0 { fill: #2a2820; background: #2a2820; }
+[data-theme='dark'] .heat-1 { fill: #3f3c33; background: #3f3c33; }
+[data-theme='dark'] .heat-2 { fill: #5c584c; background: #5c584c; }
+[data-theme='dark'] .heat-3 { fill: #8a8578; background: #8a8578; }
+[data-theme='dark'] .heat-4 { fill: #e8e5dd; background: #e8e5dd; }
 
 /* ---------- base ---------- */
 
@@ -318,6 +359,49 @@ code {
   cursor: default;
 }
 
+/* Icon-only segmented buttons (theme switch). */
+.seg button.seg-icon {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 8px;
+}
+
+/* ---------- dashboard tabs (history / cost / sessions) ---------- */
+
+/* Text tabs on a hairline rule, echoing the top-nav idiom: the active tab
+   carries the accent underline, hover only deepens the ink. */
+.dash-tabs {
+  display: flex;
+  gap: var(--space-5);
+  border-bottom: 1px solid var(--color-line);
+}
+
+.dash-tabs button {
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+  padding: var(--space-1) 0 var(--space-2);
+  margin-bottom: -1px;
+  border-bottom: 1px solid transparent;
+  transition: color 150ms ease, border-color 150ms ease;
+}
+
+.dash-tabs button:hover:not(.active) {
+  color: var(--color-text);
+}
+
+.dash-tabs button.active {
+  color: var(--color-accent);
+  border-bottom-color: var(--color-accent);
+}
+
+/* Tab panels replay the content fade on every switch (keyed remount). */
+.tab-panels {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  animation: content-fade-a 200ms ease-out both;
+}
+
 .auto-label {
   display: flex;
   align-items: center;
@@ -375,55 +459,29 @@ code {
   cursor: default;
 }
 
-.filter-fields {
-  display: flex;
-  align-items: flex-end;
-  flex-wrap: wrap;
-  gap: var(--space-3);
-}
-
-.filter-fields label {
-  display: grid;
-  gap: var(--space-1);
-  color: var(--color-text-muted);
-  font-size: var(--font-size-xs);
-}
-
-.filter-fields select,
-.filter-fields input {
-  min-width: 150px;
-  max-width: 100%;
-  background: var(--color-panel);
-  color: var(--color-text);
-  border: 1px solid var(--color-line-strong);
-  border-radius: var(--radius);
-  padding: var(--space-2);
-  transition: border-color 150ms ease;
-}
-
-.filter-fields select {
-  appearance: auto;
-}
-
 /* ---------- KPI strip ---------- */
 
+/* KPI strip: one card, four cells. 1px gaps let the card's line-colored
+   background show through as hairline dividers (2×2-safe, no per-side
+   border bookkeeping). */
 .kpis {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: var(--space-4);
+  gap: 1px;
+  background: var(--color-line);
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius);
+  overflow: hidden;
 }
 
 .stat {
   min-width: 0;
-  height: 100%;
   display: flex;
   flex-direction: column;
   justify-content: center;
   gap: var(--space-1);
   background: var(--color-panel);
-  border: 1px solid var(--color-line);
-  border-radius: var(--radius);
-  padding: var(--space-5) var(--space-6);
+  padding: var(--space-4) var(--space-5);
 }
 
 .stat-label {
@@ -434,12 +492,14 @@ code {
   letter-spacing: 0.08em;
   color: var(--color-text-muted);
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .stat-value {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
-  font-size: var(--font-size-hero);
+  font-size: var(--font-size-2xl);
   font-weight: 600;
   line-height: 1.15;
   white-space: nowrap;
@@ -465,49 +525,59 @@ code {
   text-overflow: ellipsis;
 }
 
-/* ---------- sheet / cells ---------- */
+/* ---------- cells ---------- */
 
-.sheet {
-  display: grid;
-  grid-template-columns: repeat(12, minmax(0, 1fr));
-  gap: var(--space-4);
-}
-
+/* Cards stack in the frame's single column; height follows content — no
+   fixed-size grid, no vertical scrolling inside cards. Wide tables and the
+   heatmap scroll horizontally via .table-scroll / .hm-scroll. */
 .cell {
   background: var(--color-panel);
   border: 1px solid var(--color-line);
   border-radius: var(--radius);
-  padding: var(--space-6);
+  padding: var(--space-5);
   min-width: 0;
-  height: 100%;
-  display: flex;
-  flex-direction: column;
 }
 
-/* Content area: fills the card (grid mode) and scrolls long lists instead
-   of overflowing the card. */
 .cell-body {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  overflow: auto;
+  min-width: 0;
 }
 
-/* Single-root chart blocks stretch to fill the body. */
-.cell-body > .trend,
-.cell-body > .bars-block {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
+/* Internal columns for merged cards: hairline dividers between parts. */
+.cell-split {
+  display: grid;
+  grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
 }
 
-.span-12 { grid-column: span 12; }
-.span-7 { grid-column: span 7; }
-.span-6 { grid-column: span 6; }
-.span-5 { grid-column: span 5; }
-.span-4 { grid-column: span 4; }
+.cell-trio {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.cell-part {
+  min-width: 0;
+}
+
+.cell-split > .cell-part + .cell-part,
+.cell-trio > .cell-part + .cell-part {
+  border-left: 1px solid var(--color-line);
+  padding-left: var(--space-5);
+}
+
+.cell-split > .cell-part:first-child,
+.cell-trio > .cell-part:not(:last-child) {
+  padding-right: var(--space-5);
+}
+
+/* Sub-section heading inside merged cards: the shared micro-label style. */
+.cell-sub {
+  font-family: var(--font-mono);
+  font-size: var(--font-size-2xs);
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-text-muted);
+  margin-bottom: var(--space-3);
+}
 
 .cell-head {
   display: flex;
@@ -518,7 +588,7 @@ code {
 }
 
 .cell-head h2 {
-  font-size: var(--font-size-md);
+  font-size: var(--font-size-sm);
   font-weight: 600;
 }
 
@@ -529,69 +599,6 @@ code {
 
 .cell-extra {
   margin-left: auto;
-}
-
-/* ---------- dashboard grid (react-grid-layout v2) ---------- */
-
-/* Narrow/pre-measure fallback: the static card stream the media queries
-   below collapse to one column. */
-.dashboard-grid-static {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-4);
-}
-
-.grid-item {
-  min-width: 0;
-}
-
-.grid-item > .cell,
-.grid-item > .stat,
-.grid-item > .cost-details,
-.grid-item > .period-comparison {
-  height: 100%;
-}
-
-/* Drag affordance: card heads, or the whole card for headless KPI/cost
-   cards. Interactive elements are excluded via dragConfig.cancel. */
-.grid-item .cell-head,
-.grid-item-handle {
-  cursor: grab;
-}
-
-.react-grid-item.react-draggable-dragging {
-  cursor: grabbing;
-}
-
-.react-grid-item {
-  transition-timing-function: ease-out;
-}
-
-/* Placeholder: recessed ground + dashed accent hairline, never a shadow. */
-.react-grid-item.react-grid-placeholder {
-  background: var(--color-panel-2);
-  border: 1px dashed var(--color-accent);
-  border-radius: var(--radius);
-  opacity: 1;
-}
-
-/* Dragging card: accent hairline on the inner card, no box-shadow. */
-.react-grid-item.react-draggable-dragging > .cell,
-.react-grid-item.react-draggable-dragging > .stat,
-.react-grid-item.react-draggable-dragging > .cost-details,
-.react-grid-item.react-draggable-dragging > .period-comparison {
-  border-color: var(--color-accent);
-  box-shadow: none;
-}
-
-/* Resize affordance: quiet corner ticks in the hairline color. */
-.react-grid-item > .react-resizable-handle::after {
-  right: 4px;
-  bottom: 4px;
-  width: 6px;
-  height: 6px;
-  border-right: 2px solid var(--color-line-strong);
-  border-bottom: 2px solid var(--color-line-strong);
 }
 
 /* ---------- trend ---------- */
@@ -658,14 +665,7 @@ code {
 
 .trend-chart {
   position: relative;
-  min-height: 300px;
-  flex: 1;
-}
-
-/* Inside a resizable grid item the floor relaxes so small cells scroll
-   instead of forcing the card taller. */
-.grid-item .trend-chart {
-  min-height: 240px;
+  height: 300px;
 }
 
 .tc-grid {
@@ -835,8 +835,7 @@ code {
 }
 
 .bars-short {
-  min-height: 128px;
-  flex: 1;
+  height: 120px;
 }
 
 .bar-col {
@@ -1444,25 +1443,21 @@ code {
   margin-top: var(--space-3);
 }
 
-/* ---------- filters / cost details / period comparison ---------- */
+/* ---------- cost details / period comparison ---------- */
 
-.dashboard-filters,
-.cost-details,
-.period-comparison {
-  background: var(--color-panel);
-  border: 1px solid var(--color-line);
-  border-radius: var(--radius);
-  padding: var(--space-4) var(--space-5);
-  min-width: 0;
+/* Cost details is embedded at the bottom of the comparison card, separated
+   by a hairline. */
+.cost-details {
+  border-top: 1px solid var(--color-line);
+  margin-top: var(--space-4);
+  padding-top: var(--space-2);
 }
 
-.dashboard-filters p,
 .cost-details p {
   margin: var(--space-2) 0 0;
 }
 
-.cost-details summary,
-.period-comparison summary {
+.cost-details summary {
   color: var(--color-accent);
   cursor: pointer;
   font-size: var(--font-size-xs);
@@ -1476,15 +1471,13 @@ code {
   overflow-wrap: anywhere;
 }
 
+.compare-window {
+  margin-bottom: var(--space-2);
+}
+
 .cost-caveat {
   color: var(--color-warning) !important;
   font-size: var(--font-size-xs);
-}
-
-.period-comparison h2 {
-  font-size: var(--font-size-md);
-  font-weight: 600;
-  margin: 0;
 }
 
 .compare-kpis {
@@ -1538,13 +1531,10 @@ code {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: var(--space-4);
-}
-
-.skel-kpis > div {
   background: var(--color-panel);
   border: 1px solid var(--color-line);
   border-radius: var(--radius);
-  padding: var(--space-5) var(--space-6);
+  padding: var(--space-4) var(--space-5);
 }
 
 .skel-cell {
@@ -2287,9 +2277,21 @@ code {
 /* ---------- responsive ---------- */
 
 @media (max-width: 1200px) {
-  .span-5,
-  .span-7 {
-    grid-column: span 6;
+  /* Merged breakdown card stacks its two parts. */
+  .cell-split {
+    grid-template-columns: 1fr;
+  }
+
+  .cell-split > .cell-part:first-child {
+    padding-right: 0;
+  }
+
+  .cell-split > .cell-part + .cell-part {
+    border-left: 0;
+    padding-left: 0;
+    border-top: 1px solid var(--color-line);
+    padding-top: var(--space-4);
+    margin-top: var(--space-4);
   }
 }
 
@@ -2299,11 +2301,21 @@ code {
     grid-template-columns: 1fr 1fr;
   }
 
-  .span-4,
-  .span-5,
-  .span-6,
-  .span-7 {
-    grid-column: span 12;
+  /* Patterns card stacks its three parts. */
+  .cell-trio {
+    grid-template-columns: 1fr;
+  }
+
+  .cell-trio > .cell-part:not(:last-child) {
+    padding-right: 0;
+  }
+
+  .cell-trio > .cell-part + .cell-part {
+    border-left: 0;
+    padding-left: 0;
+    border-top: 1px solid var(--color-line);
+    padding-top: var(--space-4);
+    margin-top: var(--space-4);
   }
 
   .cell-extra {
@@ -2378,26 +2390,17 @@ code {
     border-bottom: 0;
   }
 
-  .filter-fields label {
-    flex: 1 1 140px;
-    min-width: 0;
-  }
-
-  .filter-fields input,
-  .filter-fields select {
-    min-width: 0;
-    width: 100%;
-  }
-
   .cell,
-  .stat,
-  .skel-kpis > div,
   .skel-cell {
     padding: var(--space-4);
   }
 
+  .stat {
+    padding: var(--space-3) var(--space-4);
+  }
+
   .stat-value {
-    font-size: var(--font-size-2xl);
+    font-size: var(--font-size-xl);
   }
 
   .sess-name {
