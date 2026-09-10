@@ -1,10 +1,11 @@
 'use client';
 
-// KPI strip: one white card holding four stat cells separated by hairlines —
-// total tokens (accent value, requests·sessions sub), reference cost
-// (pricing coverage sub), cache hit rate (semantic green value), active days
-// (start date sub). `Stat` is a single transparent cell; `kpiCards` maps the
-// dashboard payload onto the four of them; `KpiStrip` renders the card.
+// Stat row: four hairline-divided stat cells merged into the head of the
+// Token activity (heatmap) card — total tokens (accent value, requests·
+// sessions sub), reference cost (pricing coverage sub), cache hit rate
+// (semantic green value), active days (start date sub). `Stat` is a single
+// transparent cell; `kpiCards` maps the dashboard payload onto the four of
+// them; `StatRow` renders the row.
 
 import { fmtTokens, fmtCost, fmtPct, fmtDateOnly } from '@/lib/format';
 
@@ -49,12 +50,12 @@ export function kpiCards({ totals, cacheHitRate, activeDays, activityRange, tx }
   ];
 }
 
-export default function KpiStrip({ totals, cacheHitRate, activeDays, activityRange, tx }) {
+export default function StatRow({ totals, cacheHitRate, activeDays, activityRange, tx }) {
   return (
-    <section className="kpis" aria-label={tx('heroAria')}>
+    <div className="kpis kpis-inline" aria-label={tx('heroAria')}>
       {kpiCards({ totals, cacheHitRate, activeDays, activityRange, tx }).map((card) => (
         <Stat key={card.id} label={card.label} value={card.value} sub={card.sub} tone={card.tone} />
       ))}
-    </section>
+    </div>
   );
 }

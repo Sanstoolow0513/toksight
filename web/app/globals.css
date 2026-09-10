@@ -459,11 +459,11 @@ code {
   cursor: default;
 }
 
-/* ---------- KPI strip ---------- */
+/* ---------- stat row ---------- */
 
-/* KPI strip: one card, four cells. 1px gaps let the card's line-colored
-   background show through as hairline dividers (2×2-safe, no per-side
-   border bookkeeping). */
+/* Stat row: four cells. 1px gaps let the line-colored background show
+   through as hairline dividers (2×2-safe, no per-side border bookkeeping).
+   Rendered inline at the head of the Token activity card (.kpis-inline). */
 .kpis {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -472,6 +472,29 @@ code {
   border: 1px solid var(--color-line);
   border-radius: var(--radius);
   overflow: hidden;
+}
+
+/* Inline variant: the stat row merged into the head of the Token activity
+   card — no card chrome of its own, a bottom hairline sections it off from
+   the heatmap below. */
+.kpis-inline {
+  border: 0;
+  border-radius: 0;
+  margin-bottom: var(--space-5);
+  padding-bottom: var(--space-5);
+  border-bottom: 1px solid var(--color-line);
+}
+
+.kpis-inline .stat {
+  padding: 0 var(--space-4);
+}
+
+.kpis-inline .stat:first-child {
+  padding-left: 0;
+}
+
+.kpis-inline .stat:last-child {
+  padding-right: 0;
 }
 
 .stat {
@@ -1538,10 +1561,7 @@ code {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: var(--space-4);
-  background: var(--color-panel);
-  border: 1px solid var(--color-line);
-  border-radius: var(--radius);
-  padding: var(--space-4) var(--space-5);
+  margin-bottom: var(--space-5);
 }
 
 .skel-cell {

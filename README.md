@@ -127,9 +127,10 @@ The dashboard is a minimal editorial paper sheet (v8): a warm paper background, 
 hairline rules, Geist Sans for reading and Geist Mono for data; the construction spec is
 `design-spec.md` (single source of truth). Light and dark themes follow the OS by default, with a
 manual override in the masthead (system / light / dark, stored in `localStorage` under
-`toksight-theme`). A sticky masthead (mono logo + last-fetch time) leads the four-cell KPI strip,
-then a text tab bar splits the cards into three sections — **History** (the trend card (direction
-before detail), the activity heatmap, a three-column usage patterns card (hourly | monthly |
+`toksight-theme`). A sticky masthead (mono logo + last-fetch time) leads a text tab bar that
+splits the cards into three sections — **History** (the trend card (direction
+before detail), the Token-activity heatmap headed by the four-stat row, a three-column usage
+patterns card (hourly | monthly |
 pace)), **Cost** (period comparison with cost details, a two-column usage breakdown
 (agents | models)) and **Sessions** (the sessions table) — with the active tab deep-linkable via
 `?tab=`. Card height follows content. There is no global filter bar — range and dimension
@@ -137,8 +138,8 @@ switching live inside the trend card, and the API query parameters below still w
 deep links. Hover is a quiet 150 ms fade, and all motion respects `prefers-reduced-motion`.
 It includes:
 
-- **KPI strip** — total tokens (accent orange, requests · sessions), reference cost, cache hit
-  rate, active days: four hairline-divided cells in one card.
+- **Stat row** — merged into the head of the Token activity card: total tokens (accent orange,
+  requests · sessions), reference cost, cache hit rate, active days — four hairline-divided cells.
 - **Trend cell** — 7 / 30 / 90-day windows × two stack modes (by token class or by agent) as
   per-day step-after solids; legend chips toggle series; today/7d/30d/this-month chips in the
   header. This is where time-range and agent views switch.

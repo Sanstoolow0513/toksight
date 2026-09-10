@@ -89,8 +89,10 @@ web/                Next.js (App Router, JS, no Tailwind), statically exported t
                     `--color-cat-*` (light :root ramp + dark override block) is pinned by
                     test/palette.test.js — inline styles must use colorAt()'s var()
                     references, never hex. app/page.js lays the dashboard out as a single
-                    content-sized column — KPI strip, then a text tab bar splitting the
-                    merged cards into history (trend, heatmap, hour|month|pace trio), cost
+                    content-sized column — a text tab bar splitting the
+                    merged cards into history (trend, Token-activity heatmap headed by the
+                    four-stat KPI row (components/Kpis.jsx StatRow), hour|month|pace trio),
+                    cost
                     (comparison + cost details, agents|models split) and sessions, deep-
                     linked via ?tab= — no filter bar, no drag grid; visual rules locked in
                     design-spec.md (v8 minimal editorial paper, light + dark) — do not

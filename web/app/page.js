@@ -2,16 +2,17 @@
 
 // toksight dashboard — Editorial Paper (design-spec v8): warm paper ground,
 // white hairline cards in a single content-sized column. Masthead → banners →
-// KPI strip → tab bar → tab panels → footer. The tab bar splits the cards
+// tab bar → tab panels → footer. The tab bar splits the cards
 // into three sections (design-spec §4): history (trend with its in-card
-// range/mode controls, heatmap, usage patterns), cost (period comparison
-// with cost details, agent+model breakdown) and sessions (top-10 table).
+// range/mode controls, the Token-activity heatmap headed by the four-stat
+// row, usage patterns), cost (period comparison with cost details,
+// agent+model breakdown) and sessions (top-10 table).
 // The active tab round-trips through ?tab= so views are linkable; manual URL
 // deep links (?period=…&client=…) are still honored by the API and surfaced
 // by the filter banner. Hover is a quiet color/background transition, no
 // shadows/blur/gradients. Icons only mark actions and states; last-fetch
 // time comes from generatedAt. This file only assembles data and picks the
-// conditional branch; the pieces live in components/ (Shell, Cell, KpiStrip,
+// conditional branch; the pieces live in components/ (Shell, Cell, StatRow,
 // TrendCell, AgentsPanel, ModelBars, Bars, Rhythm, SessionTable, StateCard,
 // Skeleton, DashboardBanners, DashboardFooter).
 
@@ -27,7 +28,7 @@ import CostDetails from '@/components/CostDetails';
 import PeriodComparison from '@/components/PeriodComparison';
 import Shell from '@/components/Shell';
 import Cell from '@/components/Cell';
-import KpiStrip from '@/components/Kpis';
+import StatRow from '@/components/Kpis';
 import Rhythm from '@/components/Rhythm';
 import SessionTable from '@/components/SessionTable';
 import Skeleton from '@/components/Skeleton';
@@ -133,13 +134,6 @@ export default function Page() {
   return shell(
     <div className={fade}>
       <DashboardBanners data={data} tx={tx} />
-      <KpiStrip
-        totals={totals}
-        cacheHitRate={data.cacheHitRate}
-        activeDays={data.activeDays ?? activeWindowDays}
-        activityRange={data.activityRange}
-        tx={tx}
-      />
       <nav className="dash-tabs" aria-label={tx('tabsAria')}>
         {TABS.map(({ id, labelKey }) => (
           <button
@@ -158,6 +152,13 @@ export default function Page() {
           <>
             <TrendCell data={data} agents={agents} locale={locale} tx={tx} />
             <Cell title={tx('heatTitle')} desc={data.selection ? tx('selectedCharts') : heatDesc}>
+              <StatRow
+                totals={totals}
+                cacheHitRate={data.cacheHitRate}
+                activeDays={data.activeDays ?? activeWindowDays}
+                activityRange={data.activityRange}
+                tx={tx}
+              />
               <Heatmap heatmap={heatmap} locale={locale} />
             </Cell>
             <Cell title={tx('patternsTitle')} desc={tx('patternsDesc')} bodyClass="cell-trio">
