@@ -690,10 +690,17 @@ code {
 }
 
 /* Stacked bands: 1px card-colored seam between neighbours; the stack's top
-   edge gets a 1.5px ink outline drawn as a separate open step path. */
+   edge gets a 1.5px ink outline drawn as a separate open path. */
 .trend-band {
   stroke: var(--color-panel);
   stroke-width: 1;
+}
+
+/* Overlaid per-model curves (model mode): color comes from the rank palette
+   via inline style. */
+.trend-line {
+  fill: none;
+  stroke-width: 1.5;
 }
 
 .trend-top {

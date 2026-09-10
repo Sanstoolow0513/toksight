@@ -5,6 +5,7 @@ import {
   buildHeatmap,
   buildTrend,
   buildTrendByAgent,
+  buildTrendByModel,
   buildHourly,
   buildSessionRows,
   buildWebExtras,
@@ -181,6 +182,26 @@ test('trendByAgent splits each day per client and zero-fills the window', () => 
   assert.ok(!('claude' in rows[1].clients));
 });
 
+test('trendByModel splits each day per model and zero-fills the window', () => {
+  const now = new Date(2026, 7, 12, 15).getTime();
+  const entries = [
+    entry({ model: 'alpha', timestamp: new Date(2026, 7, 11, 10).getTime(), inputTokens: 7, cacheReadTokens: 3 }),
+    entry({ model: 'beta', timestamp: new Date(2026, 7, 11, 11).getTime(), inputTokens: 4 }),
+    entry({ model: 'beta', timestamp: new Date(2026, 7, 11, 12).getTime(), inputTokens: 1 }),
+    entry({ model: null, timestamp: new Date(2026, 7, 11, 13).getTime(), inputTokens: 2 }),
+    entry({ model: 'alpha', timestamp: null, inputTokens: 999 }), // never attributed
+  ];
+  const rows = buildTrendByModel(entries, { days: 3, now });
+  assert.equal(rows.length, 3);
+  assert.equal(rows[0].tokens, 0);
+  assert.deepEqual(rows[0].models, {});
+  // alpha 10+5, beta 4+5 + 1+5, unknown model folds into 'unknown'
+  assert.deepEqual(rows[1].models, { alpha: 15, beta: 15, unknown: 7 });
+  assert.equal(rows[1].tokens, 37);
+  assert.equal(rows[2].date, localDate(now));
+  assert.ok(!('gamma' in rows[1].models));
+});
+
 test('range stats: today / last 7 days / this month use local boundaries', () => {
   const now = new Date(2026, 7, 12, 18).getTime();
   const entries = [
@@ -263,6 +284,7 @@ test('buildWebExtras exposes the dashboard payload shape', () => {
     'trend7',
     'trend90',
     'trendByAgent',
+    'trendByModel',
     'hourly',
     'today',
     'last7Days',
@@ -286,6 +308,7 @@ test('buildWebExtras exposes the dashboard payload shape', () => {
   assert.equal(extras.trend.length, 30);
   assert.equal(extras.trend7.length, 7);
   assert.equal(extras.trend90.length, 90);
+  assert.equal(extras.trendByModel[30].length, 30);
   assert.deepEqual(extras.streaks, { current: 1, longest: 1 });
   assert.equal(extras.activeDays, 1);
   assert.equal(extras.peakDay.date, localDate(new Date(2026, 7, 10, 12).getTime()));

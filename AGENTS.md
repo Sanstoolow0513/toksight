@@ -145,7 +145,7 @@ cost (only OpenCode does).
 - **`--json` output is a user-facing contract**: shape is `totals, cacheHitRate, clients, models,
   daily, monthly, sessions, pricing (incl. unpricedModels), warnings` — don't break it
   (`buildPayload` in `src/payload.js`). `GET /api/data` reuses this exact payload and layers the
-  `src/webdata.js` extras additively (heatmap, trend, trendByAgent, hourly, today, last7Days,
+  `src/webdata.js` extras additively (heatmap, trend, trendByAgent, trendByModel, hourly, today, last7Days,
   thisMonth, topSessions, longestSession — ranked by activeMs with idle gaps capped at 5min —
   activityRange, timezone) plus newer additive extras: `view`, `selection`, `costCoverage`,
   `comparison`; legacy extras must stay present. Each `clients` entry is that agent's totals plus

@@ -121,6 +121,43 @@ export function buildTrendByAgent(entries, { days = 30, now = Date.now() } = {})
   return rows;
 }
 
+// Same daily zero-filled window, split per model so the trend chart can draw
+// one curve per model. Each row is `{ date, tokens, costUsd, sessions,
+// models: {name: tokens} }`; models absent on a day are missing from the map
+// (treated as 0). The UI picks the top models by window volume and folds the
+// rest into an "other" bucket.
+export function buildTrendByModel(entries, { days = 30, now = Date.now() } = {}) {
+  const buckets = buildDayBuckets(entries);
+  const perModel = new Map();
+  for (const e of entries) {
+    if (!Number.isFinite(e.timestamp)) continue;
+    const key = localDate(e.timestamp);
+    let m = perModel.get(key);
+    if (!m) {
+      m = new Map();
+      perModel.set(key, m);
+    }
+    const name = e.model || 'unknown';
+    const t = e.inputTokens + e.outputTokens + e.cacheReadTokens + e.cacheWriteTokens;
+    m.set(name, (m.get(name) || 0) + t);
+  }
+  const todayStart = startOfDay(now);
+  const rows = [];
+  for (const ts of eachDay(stepDay(todayStart, -(days - 1)), todayStart)) {
+    const date = localDate(ts);
+    const b = buckets.get(date);
+    const m = perModel.get(date);
+    rows.push({
+      date,
+      tokens: b ? b.input + b.cacheRead + b.cacheWrite + b.output : 0,
+      costUsd: b ? roundUsd(b.costUsd) : 0,
+      sessions: b ? b.sessions.size : 0,
+      models: m ? Object.fromEntries(m) : {},
+    });
+  }
+  return rows;
+}
+
 export function buildHourly(entries) {
   const hours = Array.from({ length: 24 }, (_, hour) => ({
     hour,
@@ -297,6 +334,11 @@ export function buildWebExtras(entries, { top = 20, weeks = 53, now = Date.now()
       7: buildTrendByAgent(entries, { days: 7, now }),
       30: buildTrendByAgent(entries, { days: 30, now }),
       90: buildTrendByAgent(entries, { days: 90, now }),
+    },
+    trendByModel: {
+      7: buildTrendByModel(entries, { days: 7, now }),
+      30: buildTrendByModel(entries, { days: 30, now }),
+      90: buildTrendByModel(entries, { days: 90, now }),
     },
     hourly: buildHourly(entries),
     today: rangeStats(entries, (e) => Number.isFinite(e.timestamp) && localDate(e.timestamp) === localDate(now)),

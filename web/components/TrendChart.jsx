@@ -1,18 +1,17 @@
 'use client';
 
-// Daily token trend as a step-after stacked worksheet (design-spec §4): each
-// day is a rectangular band, not a smooth mountain. Series are
-// drawn down to the baseline, top of stack first, so the visible bands are
-// the differences between cumulative steps. Bands carry a 1px card-colored
-// seam; the stack's top edge gets a separate 1.5px ink outline. No Bézier /
-// monotone-cubic, no translucent fill — those read as SaaS gradients.
-//
-// Two cross-cutting views share the same engine:
+// Daily token trend as continuous lines anchored at each day's midpoint
+// (design-spec §4): straight segments between days, no Bézier / monotone-
+// cubic, no translucent SaaS gradients. Three cross-cutting views share the
+// same engine:
 //   - "mix"   → stack the four token classes (fresh input / cache read /
 //               cache write / output) from the `trends` rows;
 //   - "agent" → stack per-agent token volume from the `trendsByAgent` rows,
 //               using the same rank palette order as the agent share card
-//               (agents arrive sorted by volume; colors encode rank, not id).
+//               (agents arrive sorted by volume; colors encode rank, not id);
+//   - "model" → overlaid (not stacked) per-model curves from the
+//               `trendsByModel` rows: the top three models by window volume
+//               each get a rank-palette color, the rest fold into "other".
 // Legend chips toggle series visibility; range segmented control switches
 // 7 / 30 / 90 days. The 200ms fade plays only when the *user* changes
 // range / mode / series — the first paint is static — so it reads as
@@ -52,6 +51,11 @@ const PAD_T = 12;
 const PAD_B = 24;
 const MIN_HEIGHT = 240;
 
+// Model mode: how many models get their own curve before the rest fold into
+// the "other" bucket.
+const MODEL_TOP = 3;
+const OTHER_KEY = '__other__';
+
 // Width AND height: the chart fills its flex:1 slot inside the dashboard
 // grid cell (globals.css keeps a 300px floor in the static fallback).
 function useSize() {
@@ -69,31 +73,22 @@ function useSize() {
   return [ref, size];
 }
 
-// Step-after silhouette: hold each day's y across its slot, then jump.
-function stepArea(pts, slotW, baseY) {
-  const n = pts.length;
-  if (n === 0) return '';
-  const x0 = pts[0][0];
-  const xN = pts[n - 1][0] + slotW;
-  let d = `M${x0},${baseY}L${x0},${pts[0][1]}`;
-  for (let i = 0; i < n; i++) {
-    const xRight = pts[i][0] + slotW;
-    d += `L${xRight},${pts[i][1]}`;
-    if (i < n - 1) d += `L${xRight},${pts[i + 1][1]}`;
-  }
-  d += `L${xN},${baseY}Z`;
+// Filled silhouette under a polyline: straight segments between day
+// midpoints, closed down to the baseline at both ends.
+function lineArea(pts, baseY) {
+  if (!pts.length) return '';
+  let d = `M${pts[0][0]},${baseY}`;
+  for (const [x, yv] of pts) d += `L${x},${yv}`;
+  d += `L${pts[pts.length - 1][0]},${baseY}Z`;
   return d;
 }
 
-// Same step-after rhythm as an open path: the stack's top outline.
-function stepLine(pts, slotW) {
+// Open polyline through the same midpoints: a series curve or the stack's
+// top outline.
+function linePath(pts) {
   if (!pts.length) return '';
   let d = `M${pts[0][0]},${pts[0][1]}`;
-  for (let i = 0; i < pts.length; i++) {
-    const xRight = pts[i][0] + slotW;
-    d += `L${xRight},${pts[i][1]}`;
-    if (i < pts.length - 1) d += `L${xRight},${pts[i + 1][1]}`;
-  }
+  for (let i = 1; i < pts.length; i++) d += `L${pts[i][0]},${pts[i][1]}`;
   return d;
 }
 
@@ -105,7 +100,7 @@ function niceStep(rough) {
 
 const shortDate = (date) => `${Number(date.slice(5, 7))}/${Number(date.slice(8, 10))}`;
 
-export default function TrendChart({ selection, trends = {}, trendsByAgent = {}, agents = [], locale = 'zh-CN' }) {
+export default function TrendChart({ selection, trends = {}, trendsByAgent = {}, trendsByModel = {}, agents = [], locale = 'zh-CN' }) {
   const options = selection ? [{ days: 'selection', labelKey: 'selectedRange', rows: selection.rows }] : [
     { days: 7, labelKey: 'trend7', rows: trends[7] },
     { days: 30, labelKey: 'trend30', rows: trends[30] },
@@ -126,11 +121,30 @@ export default function TrendChart({ selection, trends = {}, trendsByAgent = {},
   const n = rows.length;
   const agentRows = selection ? selection.byAgent : trendsByAgent?.[active.days];
   const agentDataOk = Array.isArray(agentRows) && agentRows.length === n;
+  const modelRows = selection ? selection.byModel : trendsByModel?.[active.days];
+  const modelDataOk = Array.isArray(modelRows) && modelRows.length === n;
   const agentMode = mode === 'agent' && agentDataOk;
+  const modelMode = mode === 'model' && modelDataOk;
 
-  const series = agentMode
-    ? agents.map((a, i) => ({ key: a.id, label: a.label || a.id, color: colorAt(i) }))
-    : CLASS_KEYS.map((key) => ({ key, label: tr(locale, CLASS_LABEL_KEYS[key]), color: CLASS_COLORS[key] }));
+  // Model series: rank models by window volume, keep the top three as their
+  // own curves and fold the rest into a single "other" curve.
+  let series;
+  if (modelMode) {
+    const totals = new Map();
+    for (const r of modelRows) {
+      for (const [k, v] of Object.entries(r.models || {})) totals.set(k, (totals.get(k) || 0) + v);
+    }
+    const ranked = [...totals.entries()].sort((a, b) => b[1] - a[1]);
+    const topModels = ranked.slice(0, MODEL_TOP).filter(([, v]) => v > 0);
+    const restTotal = ranked.slice(MODEL_TOP).reduce((s, [, v]) => s + v, 0);
+    series = topModels.map(([key], i) => ({ key, label: key, color: colorAt(i) }));
+    if (restTotal > 0) series.push({ key: OTHER_KEY, label: tr(locale, 'trendOther'), color: colorAt(MODEL_TOP) });
+  } else if (agentMode) {
+    series = agents.map((a, i) => ({ key: a.id, label: a.label || a.id, color: colorAt(i) }));
+  } else {
+    series = CLASS_KEYS.map((key) => ({ key, label: tr(locale, CLASS_LABEL_KEYS[key]), color: CLASS_COLORS[key] }));
+  }
+  const topModelKeys = new Set(series.filter((s) => s.key !== OTHER_KEY).map((s) => s.key));
 
   const toggle = (key) => {
     const next = { ...hidden, [key]: !hidden[key] };
@@ -141,10 +155,25 @@ export default function TrendChart({ selection, trends = {}, trendsByAgent = {},
   };
 
   const visible = series.filter((s) => !hidden[s.key]);
-  const valueOf = (i, s) => (agentMode ? agentRows[i].clients?.[s.key] || 0 : rows[i][s.key] || 0);
+  const valueOf = (i, s) => {
+    if (modelMode) {
+      const models = modelRows[i].models || {};
+      if (s.key === OTHER_KEY) {
+        let v = 0;
+        for (const [k, val] of Object.entries(models)) if (!topModelKeys.has(k)) v += val;
+        return v;
+      }
+      return models[s.key] || 0;
+    }
+    return agentMode ? agentRows[i].clients?.[s.key] || 0 : rows[i][s.key] || 0;
+  };
 
   const dayTotals = rows.map((d) => d.tokens || 0);
-  const maxVal = Math.max(...dayTotals, 1);
+  // Stacked modes scale to the daily total; overlaid model curves scale to
+  // the largest single-series day so the lines use the full height.
+  const maxVal = modelMode
+    ? Math.max(...rows.map((_, i) => Math.max(0, ...visible.map((s) => valueOf(i, s)))), 1)
+    : Math.max(...dayTotals, 1);
   const step = niceStep(maxVal / 3.5);
   const top = Math.max(Math.ceil(maxVal / step) * step, step);
   const ticks = [];
@@ -153,7 +182,6 @@ export default function TrendChart({ selection, trends = {}, trendsByAgent = {},
   const innerW = Math.max(width - PAD_L - PAD_R, 10);
   const innerH = height - PAD_T - PAD_B;
   const slotW = innerW / n;
-  const xLeft = (i) => PAD_L + i * slotW;
   const xMid = (i) => PAD_L + (i + 0.5) * slotW;
   const y = (v) => PAD_T + innerH * (1 - v / top);
   const baseY = y(0);
@@ -178,7 +206,7 @@ export default function TrendChart({ selection, trends = {}, trendsByAgent = {},
   };
 
   const animated = userTouched.current;
-  const bandKey = `${animated ? 1 : 0}-${agentMode ? 'agent' : 'mix'}-${active.days}-${visible.map((s) => s.key).join('.')}`;
+  const bandKey = `${animated ? 1 : 0}-${modelMode ? 'model' : agentMode ? 'agent' : 'mix'}-${active.days}-${visible.map((s) => s.key).join('.')}`;
 
   return (
     <div className="trend">
@@ -192,7 +220,7 @@ export default function TrendChart({ selection, trends = {}, trendsByAgent = {},
             ))}
           </div>
           <div className="seg" role="tablist" aria-label={tr(locale, 'trendMode')}>
-            <button type="button" role="tab" aria-selected={!agentMode} className={!agentMode ? 'on' : ''} onClick={() => { touch(); setMode('mix'); }}>
+            <button type="button" role="tab" aria-selected={!agentMode && !modelMode} className={!agentMode && !modelMode ? 'on' : ''} onClick={() => { touch(); setMode('mix'); }}>
               {tr(locale, 'modeMix')}
             </button>
             <button
@@ -204,6 +232,16 @@ export default function TrendChart({ selection, trends = {}, trendsByAgent = {},
               disabled={!agentDataOk}
             >
               {tr(locale, 'modeAgent')}
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={modelMode}
+              className={modelMode ? 'on' : ''}
+              onClick={() => { touch(); setMode('model'); }}
+              disabled={!modelDataOk}
+            >
+              {tr(locale, 'modeModel')}
             </button>
           </div>
         </div>
@@ -224,20 +262,29 @@ export default function TrendChart({ selection, trends = {}, trendsByAgent = {},
             ))}
             <line x1={PAD_L} x2={width - PAD_R} y1={baseY} y2={baseY} className="tc-axis" />
             <g key={bandKey} className={animated ? 'trend-fade' : undefined}>
-              {[...cumulatives].reverse().map((cum, rev) => {
-                const k = cumulatives.length - 1 - rev;
-                const s = visible[k];
-                const pts = cum.map((v, i) => [xLeft(i), y(v)]);
-                return (
-                  <path
-                    key={s.key}
-                    d={stepArea(pts, slotW, baseY)}
-                    className="trend-band"
-                    style={{ fill: s.color }}
-                  />
-                );
-              })}
-              <path d={stepLine(rows.map((_, i) => [xLeft(i), y(visibleTop(i))]), slotW)} className="trend-top" />
+              {modelMode
+                ? visible.map((s) => (
+                    <path
+                      key={s.key}
+                      d={linePath(rows.map((_, i) => [xMid(i), y(valueOf(i, s))]))}
+                      className="trend-line"
+                      style={{ stroke: s.color }}
+                    />
+                  ))
+                : [...cumulatives].reverse().map((cum, rev) => {
+                    const k = cumulatives.length - 1 - rev;
+                    const s = visible[k];
+                    const pts = cum.map((v, i) => [xMid(i), y(v)]);
+                    return (
+                      <path
+                        key={s.key}
+                        d={lineArea(pts, baseY)}
+                        className="trend-band"
+                        style={{ fill: s.color }}
+                      />
+                    );
+                  })}
+              {!modelMode && <path d={linePath(rows.map((_, i) => [xMid(i), y(visibleTop(i))]))} className="trend-top" />}
             </g>
             {xTickIdx.map((i) => (
               <text key={i} x={xMid(i)} y={height - 8} textAnchor={i === 0 ? 'start' : i === n - 1 ? 'end' : 'middle'} className="tc-text">
@@ -245,14 +292,25 @@ export default function TrendChart({ selection, trends = {}, trendsByAgent = {},
               </text>
             ))}
             {hover && <line x1={xMid(hover.i)} x2={xMid(hover.i)} y1={PAD_T} y2={baseY} className="tc-guide" />}
-            {hover && (
-              <circle
-                cx={xMid(hover.i)}
-                cy={y(visibleTop(hover.i))}
-                r="3"
-                className="trend-mark"
-              />
-            )}
+            {hover && modelMode
+              ? visible.map((s) => (
+                  <circle
+                    key={s.key}
+                    cx={xMid(hover.i)}
+                    cy={y(valueOf(hover.i, s))}
+                    r="3"
+                    className="trend-mark"
+                    style={{ fill: s.color }}
+                  />
+                ))
+              : hover && (
+                  <circle
+                    cx={xMid(hover.i)}
+                    cy={y(visibleTop(hover.i))}
+                    r="3"
+                    className="trend-mark"
+                  />
+                )}
             <rect
               x={PAD_L}
               y={PAD_T}
@@ -293,8 +351,8 @@ export default function TrendChart({ selection, trends = {}, trendsByAgent = {},
               <span>{tr(locale, 'trendCostSess')}</span>
               <b>
                 {tr(locale, 'trendCostSessValue', {
-                  cost: fmtCost((agentMode ? agentRows[hover.i].costUsd : rows[hover.i].costUsd) || 0),
-                  sessions: agentMode ? agentRows[hover.i].sessions : rows[hover.i].sessions,
+                  cost: fmtCost((agentMode ? agentRows[hover.i].costUsd : modelMode ? modelRows[hover.i].costUsd : rows[hover.i].costUsd) || 0),
+                  sessions: agentMode ? agentRows[hover.i].sessions : modelMode ? modelRows[hover.i].sessions : rows[hover.i].sessions,
                 })}
               </b>
             </div>

@@ -1,6 +1,6 @@
 import { collectAll, filterEntries } from './collect.js';
 import { buildPayload } from './payload.js';
-import { activityRange, buildHeatmap, buildTrend, buildTrendByAgent, buildWebExtras } from './webdata.js';
+import { activityRange, buildHeatmap, buildTrend, buildTrendByAgent, buildTrendByModel, buildWebExtras } from './webdata.js';
 import { buildComparison } from './comparison.js';
 import { buildCostCoverage } from './costcoverage.js';
 import { resolveWebQuery } from './webquery.js';
@@ -42,6 +42,7 @@ export function createWebDataService(base, { collect = collectAll, env, home, no
           since: shownStart, until: end, truncated: fullDays > days,
           rows: buildTrend(ctx.entries, { days, now: end }),
           byAgent: buildTrendByAgent(ctx.entries, { days, now: end }),
+          byModel: buildTrendByModel(ctx.entries, { days, now: end }),
           heatmap: buildHeatmap(ctx.entries, { weeks, now: end }),
         };
       }

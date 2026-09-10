@@ -37,6 +37,7 @@ export default function TrendCell({ data, agents, locale, tx }) {
         selection={data.selection}
         trends={{ 7: data.trend7, 30: data.trend, 90: data.trend90 }}
         trendsByAgent={data.trendByAgent ?? {}}
+        trendsByModel={data.trendByModel ?? {}}
         agents={agents.map((a) => ({ id: a.id, label: clientLabel(a.id) }))}
         locale={locale}
       />
