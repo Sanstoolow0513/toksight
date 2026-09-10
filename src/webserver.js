@@ -113,6 +113,17 @@ export function isCrossSiteRequest(req) {
 // still bounding memory use.
 export const MAX_IMPORT_BYTES = 10 * 1024 * 1024;
 
+// The one error type the routing layer understands: carries the HTTP status
+// and the machine-readable code for the JSON error body. failRequest maps any
+// thrown value — HttpError or not — to a response.
+export class HttpError extends Error {
+  constructor(status, code, message) {
+    super(message);
+    this.status = status;
+    this.code = code;
+  }
+}
+
 // Write-request gate: requires an application/json content type AND the
 // x-toksight-action header matching the endpoint's action. Both are
 // CORS-safelisted violations, so a browser enforces a preflight before the
@@ -122,16 +133,10 @@ export const MAX_IMPORT_BYTES = 10 * 1024 * 1024;
 export function guardWriteRequest(req, action) {
   const contentType = String(req?.headers?.['content-type'] || '').toLowerCase();
   if (!contentType.startsWith('application/json')) {
-    const err = new Error('import requests must have content-type application/json');
-    err.status = 415;
-    err.code = 'UNSUPPORTED_MEDIA_TYPE';
-    throw err;
+    throw new HttpError(415, 'UNSUPPORTED_MEDIA_TYPE', 'import requests must have content-type application/json');
   }
   if (String(req?.headers?.['x-toksight-action'] || '') !== action) {
-    const err = new Error(`missing or wrong x-toksight-action header (expected "${action}")`);
-    err.status = 403;
-    err.code = 'ACTION_HEADER_REQUIRED';
-    throw err;
+    throw new HttpError(403, 'ACTION_HEADER_REQUIRED', `missing or wrong x-toksight-action header (expected "${action}")`);
   }
 }
 
@@ -141,7 +146,7 @@ export function guardWriteRequest(req, action) {
 // reliably reaches the client. Draining rather than destroying the socket
 // avoids a race where the error response is cut off mid-flight; the server is
 // loopback-only anyway, so there is no remote attacker to DoS with a slow
-// body. Rejects with .status/.code attached for the right HTTP status.
+// body. Rejects with an HttpError carrying the right HTTP status.
 export function readJsonBody(req, limitBytes) {
   return new Promise((resolve, reject) => {
     const chunks = [];
@@ -151,9 +156,7 @@ export function readJsonBody(req, limitBytes) {
       if (overflow) return; // keep draining past the cap, discard
       total += chunk.length;
       if (total > limitBytes) {
-        overflow = new Error(`request body exceeds ${limitBytes} bytes`);
-        overflow.status = 413;
-        overflow.code = 'BODY_TOO_LARGE';
+        overflow = new HttpError(413, 'BODY_TOO_LARGE', `request body exceeds ${limitBytes} bytes`);
         chunks.length = 0; // nothing is kept from an oversized body
         return;
       }
@@ -168,10 +171,7 @@ export function readJsonBody(req, limitBytes) {
       try {
         body = JSON.parse(Buffer.concat(chunks).toString('utf8'));
       } catch {
-        const err = new Error('request body is not valid JSON');
-        err.status = 400;
-        err.code = 'BAD_JSON';
-        reject(err);
+        reject(new HttpError(400, 'BAD_JSON', 'request body is not valid JSON'));
         return;
       }
       resolve(body);
@@ -207,6 +207,149 @@ function sendJson(res, status, payload, method = 'GET', extraHeaders = {}) {
   res.writeHead(status, { ...JSON_HEADERS, ...extraHeaders });
   res.end(method === 'HEAD' ? undefined : JSON.stringify(payload));
 }
+
+// Business-level shape check for an import request body: exactly one of a
+// bundle object or a backupId string, plus optional selected file ids and
+// expected target/content revisions carried over from a preview. Throws
+// HttpError(400) on any malformed shape; the service layer sees only the
+// validated pieces.
+function validateImportBody(body) {
+  const restoring = body?.backupId != null;
+  const bundle = body?.bundle;
+  if (restoring ? typeof body.backupId !== 'string' || bundle != null : !bundle || typeof bundle !== 'object' || Array.isArray(bundle)) {
+    throw new HttpError(400, 'BAD_REQUEST', 'provide either a bundle object or a backupId string');
+  }
+  let selected;
+  if (body.selected != null) {
+    if (!Array.isArray(body.selected) || body.selected.some((entry) => typeof entry !== 'string')) {
+      throw new HttpError(400, 'BAD_REQUEST', 'selected must be an array of file ids');
+    }
+    selected = body.selected;
+  }
+  const options = { selected };
+  if (body.expected != null) {
+    const expected = body.expected;
+    const hash = /^(?:missing|[a-f0-9]{64})$/;
+    if (typeof expected !== 'object' || Array.isArray(expected) || Object.values(expected).some((value) =>
+      !value || typeof value.target !== 'string' || !hash.test(value.target) || typeof value.content !== 'string' || !/^[a-f0-9]{64}$/.test(value.content))) {
+      throw new HttpError(400, 'BAD_REQUEST', 'expected must contain target/content revisions from a preview');
+    }
+    options.expected = expected;
+  }
+  return { bundle, backupId: restoring ? body.backupId : null, options };
+}
+
+// Single error exit for the config API routes: maps any thrown value to the
+// JSON error response. 5xx is logged; the body is drained first so the client
+// reliably receives this JSON error instead of a mid-upload connection reset
+// (415/403 fire before the body is read, 400s after it was — draining is
+// idempotent).
+async function failRequest(req, res, pathname, err, logger) {
+  const status = Number.isFinite(err?.status) ? err.status : 500;
+  if (status >= 500) logger?.warn?.(`toksight web: ${pathname} failed: ${err?.message || err}`);
+  await drainBody(req);
+  sendJson(res, status, { error: String(err?.message || err), code: err?.code || 'TRANSFER_ERROR' }, req.method);
+}
+
+// /api/data maps a 400 from query validation straight through and keeps the
+// error code only when one was attached — a different contract from the
+// config routes, so it keeps its own catch instead of failRequest.
+async function serveData({ res, url, method, getData, logger }) {
+  try {
+    sendJson(res, 200, await getData(url.searchParams), method);
+  } catch (err) {
+    const status = err?.status === 400 ? 400 : 500;
+    if (status === 500) logger?.warn?.(`toksight web: /api/data failed: ${err?.message || err}`);
+    sendJson(res, status, { error: String(err?.message || err), ...(err?.code ? { code: err.code } : {}) }, method);
+  }
+}
+
+// Read-only inventory: GET/HEAD only, never a request body.
+async function serveInventory({ res, method, configService }) {
+  try {
+    sendJson(res, 200, await configService.inspect(), method);
+  } catch (err) {
+    throw new HttpError(500, 'CONFIG_ERROR', String(err?.message || err));
+  }
+}
+
+async function serveBackups({ res, method, transferService }) {
+  try {
+    sendJson(res, 200, await transferService.listBackups(), method);
+  } catch {
+    sendJson(res, 500, { error: 'cannot list backups', code: 'TRANSFER_ERROR' }, method);
+  }
+}
+
+// Bundle export: same GET semantics as the inventory, plus a
+// Content-Disposition so the dashboard can offer it as a download.
+async function serveExport({ res, url, method, transferService }) {
+  let exported;
+  try {
+    exported = await transferService.exportBundle({
+      agents: url.searchParams.get('agents') || undefined,
+      files: url.searchParams.get('files') || undefined,
+    });
+  } catch (err) {
+    throw new HttpError(500, 'TRANSFER_ERROR', String(err?.message || err));
+  }
+  sendJson(
+    res,
+    200,
+    { ...exported.bundle, warnings: exported.warnings },
+    method,
+    { 'content-disposition': 'attachment; filename="toksight-agent-configs.json"' },
+  );
+}
+
+// Import endpoints — the only write path in toksight. Beyond the
+// loopback/Host/Fetch-Metadata gates shared with the read side, a
+// browser-initiated write requires a JSON content type AND the
+// x-toksight-action header: both force a CORS preflight, and this server
+// answers no preflight (no CORS headers at all), so a foreign page can never
+// fire a state-changing request at it.
+async function serveImport({ req, res, method, transferService }, preview) {
+  const { bundle, backupId, options } = validateImportBody(await readJsonBody(req, MAX_IMPORT_BYTES));
+  let resolved = bundle;
+  if (backupId != null) {
+    try {
+      resolved = await transferService.bundleFromBackup(backupId);
+    } catch {
+      throw new HttpError(400, 'BAD_BACKUP', 'backup is unavailable, ambiguous or not a regular allowlisted file');
+    }
+  }
+  const result = preview
+    ? await transferService.planImport(resolved, options)
+    : await transferService.applyImport(resolved, options);
+  if (result.error) {
+    sendJson(res, 400, { error: result.error, code: 'BAD_BUNDLE' }, method);
+    return;
+  }
+  sendJson(res, 200, result, method);
+}
+
+const hasTransfer = ({ transferService }) => Boolean(transferService);
+
+// Declarative API routing. Each entry declares its path, allowed methods, the
+// service it needs (checked after the method check), and whether it is a
+// write (guarded by guardWriteRequest with the given action). `config` marks
+// routes under the /api/config umbrella gates. Handlers receive
+// { req, res, url, method, getData, configService, transferService, logger }.
+const API_ROUTES = [
+  { path: '/api/data', methods: ['GET', 'HEAD'], handler: serveData },
+  { path: '/api/config', methods: ['GET', 'HEAD'], config: true, handler: serveInventory },
+  {
+    path: '/api/config/backups',
+    methods: ['GET', 'HEAD'],
+    config: true,
+    needs: ({ transferService }) => Boolean(transferService?.listBackups),
+    unavailable: 'backup service is unavailable',
+    handler: serveBackups,
+  },
+  { path: '/api/config/export', methods: ['GET', 'HEAD'], config: true, needs: hasTransfer, handler: serveExport },
+  { path: '/api/config/import/preview', methods: ['POST'], config: true, needs: hasTransfer, write: 'import-preview', handler: (ctx) => serveImport(ctx, true) },
+  { path: '/api/config/import', methods: ['POST'], config: true, needs: hasTransfer, write: 'import', handler: (ctx) => serveImport(ctx, false) },
+];
 
 export function createWebServer({
   host = '127.0.0.1',
@@ -299,8 +442,10 @@ export function createWebServer({
     // DNS-rebinding defense: a foreign page whose domain resolves to
     // 127.0.0.1 is still remoteAddress-loopback, but its Host header is not.
     const localHostHeader = isLocalHostHeader(req.headers.host);
+    const route = API_ROUTES.find((entry) => entry.path === pathname);
+    const ctx = { req, res, url, method: req.method, getData, configService, transferService, logger };
 
-    if (pathname === '/api/data') {
+    if (route && !route.config) {
       // Loopback-bound servers (the default) reject foreign Host headers;
       // a user who deliberately binds --host 0.0.0.0 exposes the dashboard
       // to the LAN on purpose, so the Host check would only break that.
@@ -308,18 +453,11 @@ export function createWebServer({
         sendJson(res, 403, { error: 'requests with a foreign Host header are not accepted', code: 'HOST_NOT_ALLOWED' }, req.method);
         return;
       }
-      if (req.method !== 'GET' && req.method !== 'HEAD') {
-        sendJson(res, 405, { error: 'method not allowed', code: 'METHOD_NOT_ALLOWED' }, req.method, { allow: 'GET, HEAD' });
+      if (!route.methods.includes(req.method)) {
+        sendJson(res, 405, { error: 'method not allowed', code: 'METHOD_NOT_ALLOWED' }, req.method, { allow: route.methods.join(', ') });
         return;
       }
-      try {
-        const payload = await getData(url.searchParams);
-        sendJson(res, 200, payload, req.method);
-      } catch (err) {
-        const status = err?.status === 400 ? 400 : 500;
-        if (status === 500) logger?.warn?.(`toksight web: /api/data failed: ${err?.message || err}`);
-        sendJson(res, status, { error: String(err?.message || err), ...(err?.code ? { code: err.code } : {}) }, req.method);
-      }
+      await route.handler(ctx);
       return;
     }
 
@@ -344,148 +482,26 @@ export function createWebServer({
         sendJson(res, 503, { error: 'configuration service is unavailable', code: 'CONFIG_UNAVAILABLE' }, req.method);
         return;
       }
-
-      // Read-only inventory: GET/HEAD only, never a request body.
-      if (pathname === '/api/config') {
-        if (req.method !== 'GET' && req.method !== 'HEAD') {
-          await drainBody(req);
-          sendJson(res, 405, { error: 'method not allowed', code: 'METHOD_NOT_ALLOWED' }, req.method, { allow: 'GET, HEAD' });
-          return;
-        }
-        try {
-          sendJson(res, 200, await configService.inspect(), req.method);
-        } catch (err) {
-          logger?.warn?.(`toksight web: /api/config failed: ${err?.message || err}`);
-          sendJson(res, 500, { error: String(err?.message || err), code: 'CONFIG_ERROR' }, req.method);
-        }
+      if (!route) {
+        sendJson(res, 404, { error: 'not found', code: 'NOT_FOUND' }, req.method);
         return;
       }
-
-      if (pathname === '/api/config/backups') {
-        if (req.method !== 'GET' && req.method !== 'HEAD') {
-          await drainBody(req);
-          sendJson(res, 405, { error: 'method not allowed', code: 'METHOD_NOT_ALLOWED' }, req.method, { allow: 'GET, HEAD' });
-          return;
-        }
-        if (!transferService?.listBackups) {
-          await drainBody(req);
-          sendJson(res, 503, { error: 'backup service is unavailable', code: 'TRANSFER_UNAVAILABLE' }, req.method);
-          return;
-        }
-        try { sendJson(res, 200, await transferService.listBackups(), req.method); }
-        catch { sendJson(res, 500, { error: 'cannot list backups', code: 'TRANSFER_ERROR' }, req.method); }
+      if (!route.methods.includes(req.method)) {
+        await drainBody(req);
+        sendJson(res, 405, { error: 'method not allowed', code: 'METHOD_NOT_ALLOWED' }, req.method, { allow: route.methods.join(', ') });
         return;
       }
-
-      // Bundle export: same GET semantics as the inventory, plus a
-      // Content-Disposition so the dashboard can offer it as a download.
-      if (pathname === '/api/config/export') {
-        if (req.method !== 'GET' && req.method !== 'HEAD') {
-          await drainBody(req);
-          sendJson(res, 405, { error: 'method not allowed', code: 'METHOD_NOT_ALLOWED' }, req.method, { allow: 'GET, HEAD' });
-          return;
-        }
-        if (!transferService) {
-          await drainBody(req);
-          sendJson(res, 503, { error: 'transfer service is unavailable', code: 'TRANSFER_UNAVAILABLE' }, req.method);
-          return;
-        }
-        try {
-          const { bundle, warnings } = await transferService.exportBundle({
-            agents: url.searchParams.get('agents') || undefined,
-            files: url.searchParams.get('files') || undefined,
-          });
-          sendJson(
-            res,
-            200,
-            { ...bundle, warnings },
-            req.method,
-            { 'content-disposition': 'attachment; filename="toksight-agent-configs.json"' },
-          );
-        } catch (err) {
-          logger?.warn?.(`toksight web: /api/config/export failed: ${err?.message || err}`);
-          sendJson(res, 500, { error: String(err?.message || err), code: 'TRANSFER_ERROR' }, req.method);
-        }
+      if (route.needs && !route.needs(ctx)) {
+        await drainBody(req);
+        sendJson(res, 503, { error: route.unavailable || 'transfer service is unavailable', code: 'TRANSFER_UNAVAILABLE' }, req.method);
         return;
       }
-
-      // Import endpoints — the only write path in toksight. Beyond the
-      // loopback/Host/Fetch-Metadata gates shared with the read side, a
-      // browser-initiated write requires a JSON content type AND the
-      // x-toksight-action header: both force a CORS preflight, and this
-      // server answers no preflight (no CORS headers at all), so a foreign
-      // page can never fire a state-changing request at it.
-      if (pathname === '/api/config/import/preview' || pathname === '/api/config/import') {
-        const isPreview = pathname === '/api/config/import/preview';
-        if (req.method !== 'POST') {
-          await drainBody(req);
-          sendJson(res, 405, { error: 'method not allowed', code: 'METHOD_NOT_ALLOWED' }, req.method, { allow: 'POST' });
-          return;
-        }
-        if (!transferService) {
-          await drainBody(req);
-          sendJson(res, 503, { error: 'transfer service is unavailable', code: 'TRANSFER_UNAVAILABLE' }, req.method);
-          return;
-        }
-        try {
-          guardWriteRequest(req, isPreview ? 'import-preview' : 'import');
-          const body = await readJsonBody(req, MAX_IMPORT_BYTES);
-          let bundle = body?.bundle;
-          const restoring = body?.backupId != null;
-          if (restoring ? typeof body.backupId !== 'string' || body.bundle != null : !bundle || typeof bundle !== 'object' || Array.isArray(bundle)) {
-            sendJson(res, 400, { error: 'provide either a bundle object or a backupId string', code: 'BAD_REQUEST' }, req.method);
-            return;
-          }
-          let selected;
-          if (body.selected != null) {
-            if (!Array.isArray(body.selected) || body.selected.some((entry) => typeof entry !== 'string')) {
-              sendJson(res, 400, { error: 'selected must be an array of file ids', code: 'BAD_REQUEST' }, req.method);
-              return;
-            }
-            selected = body.selected;
-          }
-          const options = { selected };
-          if (body.expected != null) {
-            const expected = body.expected;
-            const hash = /^(?:missing|[a-f0-9]{64})$/;
-            if (typeof expected !== 'object' || Array.isArray(expected) || Object.values(expected).some((value) =>
-              !value || typeof value.target !== 'string' || !hash.test(value.target) || typeof value.content !== 'string' || !/^[a-f0-9]{64}$/.test(value.content))) {
-              sendJson(res, 400, { error: 'expected must contain target/content revisions from a preview', code: 'BAD_REQUEST' }, req.method);
-              return;
-            }
-            options.expected = expected;
-          }
-          if (restoring) {
-            try { bundle = await transferService.bundleFromBackup(body.backupId); }
-            catch {
-              sendJson(res, 400, { error: 'backup is unavailable, ambiguous or not a regular allowlisted file', code: 'BAD_BACKUP' }, req.method);
-              return;
-            }
-          }
-          const result = isPreview
-            ? await transferService.planImport(bundle, options)
-            : await transferService.applyImport(bundle, options);
-          if (result.error) {
-            sendJson(res, 400, { error: result.error, code: 'BAD_BUNDLE' }, req.method);
-            return;
-          }
-          sendJson(res, 200, result, req.method);
-        } catch (err) {
-          const status = Number.isFinite(err?.status) ? err.status : 500;
-          if (status >= 500) {
-            logger?.warn?.(`toksight web: ${pathname} failed: ${err?.message || err}`);
-          }
-          // 415/403 fire before the body is read (and 400s after it was);
-          // draining is idempotent, and it guarantees the client reliably
-          // receives this JSON error instead of a mid-upload connection
-          // reset.
-          await drainBody(req);
-          sendJson(res, status, { error: String(err?.message || err), code: err?.code || 'TRANSFER_ERROR' }, req.method);
-        }
-        return;
+      try {
+        if (route.write) guardWriteRequest(req, route.write);
+        await route.handler(ctx);
+      } catch (err) {
+        await failRequest(req, res, pathname, err, logger);
       }
-
-      sendJson(res, 404, { error: 'not found', code: 'NOT_FOUND' }, req.method);
       return;
     }
 

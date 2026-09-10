@@ -2,11 +2,11 @@
 
 // Two compact bar histograms sharing one visual language: token volume by
 // local hour of day, and by calendar month across the full data range. Bars
-// report through the shared Tip tooltip (mouse-anchored) instead of the
-// native `title` attribute, so every chart on the page has the same
-// instant-tooltip behavior. Hour axis labels sit at each tick's bar center
-// ((h + 0.5) / 24), not spread evenly — space-between drifted a full slot
-// by the right edge.
+// report through the shared Tip tooltip (anchored at the pointer, or at the
+// focused bar for keyboard users) instead of the native `title` attribute,
+// so every chart on the page has the same instant-tooltip behavior. Hour
+// axis labels sit at each tick's bar center ((h + 0.5) / 24), not spread
+// evenly — space-between drifted a full slot by the right edge.
 
 import { useState } from 'react';
 import { fmtTokens, fmtCost } from '@/lib/format';
@@ -42,10 +42,20 @@ export function HourBars({ hourly, locale = 'zh-CN' }) {
   const max = Math.max(...hourly.map((h) => h.tokens), 1);
   const pad = (n) => String(n).padStart(2, '0');
   return (
-    <div onMouseLeave={() => setTip(null)}>
+    <div className="bars-block" onMouseLeave={() => setTip(null)}>
       <div className="bars bars-short">
         {hourly.map((h) => (
-          <div key={h.hour} className="bar-col" onMouseEnter={(e) => setTip({ row: h, x: e.clientX, y: e.clientY })}>
+          <div
+            key={h.hour}
+            className="bar-col"
+            tabIndex={0}
+            onMouseEnter={(e) => setTip({ row: h, x: e.clientX, y: e.clientY })}
+            onFocus={(e) => {
+              const r = e.currentTarget.getBoundingClientRect();
+              setTip({ row: h, x: r.left + r.width / 2, y: r.top });
+            }}
+            onBlur={() => setTip(null)}
+          >
             <div className="bar-solid" style={{ height: `${(h.tokens / max) * 100}%` }} />
           </div>
         ))}
@@ -68,10 +78,20 @@ export function MonthlyBars({ monthly, locale = 'zh-CN' }) {
   if (!rows.length) return <div className="muted">{t(locale, 'monthEmpty')}</div>;
   const max = Math.max(...rows.map((m) => m.tokens), 1);
   return (
-    <div onMouseLeave={() => setTip(null)}>
+    <div className="bars-block" onMouseLeave={() => setTip(null)}>
       <div className="bars bars-short months">
         {rows.map((m) => (
-          <div key={m.month} className="bar-col" onMouseEnter={(e) => setTip({ row: m, x: e.clientX, y: e.clientY })}>
+          <div
+            key={m.month}
+            className="bar-col"
+            tabIndex={0}
+            onMouseEnter={(e) => setTip({ row: m, x: e.clientX, y: e.clientY })}
+            onFocus={(e) => {
+              const r = e.currentTarget.getBoundingClientRect();
+              setTip({ row: m, x: r.left + r.width / 2, y: r.top });
+            }}
+            onBlur={() => setTip(null)}
+          >
             <div className="bar-solid" style={{ height: `${(m.tokens / max) * 100}%` }} />
             <span className="bar-label">{m.month.slice(2)}</span>
           </div>

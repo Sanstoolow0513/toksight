@@ -1,7 +1,8 @@
 'use client';
 import { useMemo, useState } from 'react';
 import { ClipboardCopy, Download } from 'lucide-react';
-import { responseJson, ITEM_KEYS } from '@/lib/config';
+import { ITEM_KEYS } from '@/lib/config';
+import { fetchJson } from '@/lib/api';
 import { configFileGroups, exportFileIds, isExportable } from '@/lib/transfer';
 import TransferMessage from './TransferMessage';
 
@@ -22,7 +23,7 @@ export default function ExportPanel({ agents, tx, busy, setBusy }) {
     if (!ids.length || busy) return;
     setBusy(true); setMessage(null);
     try {
-      const bundle = await responseJson(await fetch(`/api/config/export?files=${encodeURIComponent(ids.join(','))}`, { cache: 'no-store' }));
+      const bundle = await fetchJson(`/api/config/export?files=${encodeURIComponent(ids.join(','))}`);
       const text = JSON.stringify(bundle, null, 2);
       if (copy) await navigator.clipboard.writeText(text);
       else {
@@ -60,8 +61,8 @@ export default function ExportPanel({ agents, tx, busy, setBusy }) {
       })}
     </div>
     <div className="config-xfer-actions">
-      <button className="btn" type="button" disabled={busy || !ids.length} onClick={() => exportBundle(false)}><Download size={14} aria-hidden="true" />{tx('cfgXferDownload')}</button>
-      <button className="btn" type="button" disabled={busy || !ids.length} onClick={() => exportBundle(true)}><ClipboardCopy size={14} aria-hidden="true" />{tx('cfgXferCopy')}</button>
+      <button className="btn" type="button" disabled={busy || !ids.length} onClick={() => exportBundle(false)}><Download size={14} strokeWidth={1.5} aria-hidden="true" />{tx('cfgXferDownload')}</button>
+      <button className="btn" type="button" disabled={busy || !ids.length} onClick={() => exportBundle(true)}><ClipboardCopy size={14} strokeWidth={1.5} aria-hidden="true" />{tx('cfgXferCopy')}</button>
       <span className="muted">{tx('cfgXferFilesCount', { n: ids.length })}</span>
     </div>
   </div>;

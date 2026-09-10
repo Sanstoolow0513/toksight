@@ -1,12 +1,15 @@
 'use client';
 
-// Ranked model list, aggregated across agents. Each bar is two sibling hard
-// segments: green cache-read, then rank-color fresh traffic (fresh input +
-// cache write + output). No CSS gradient — Brutalism only allows a hard split.
+// Model usage cell: ranked model list aggregated across agents, plus the
+// collapsible agent × model detail table (design-spec §6 groups both in one
+// cell). Each bar is two sibling hard segments: green cache-read, then
+// rank-color fresh traffic (fresh input + cache write + output). No CSS
+// gradient — only a hard split.
 
 import { useMemo } from 'react';
 import { fmtTokens, fmtCost, fmtPct } from '@/lib/format';
 import { colorAt } from '@/lib/palette';
+import { clientLabel } from '@/lib/clients';
 import { t } from '@/lib/i18n';
 
 export default function ModelBars({ models = [], totalTokens = 0, limit = 8, locale = 'zh-CN' }) {
@@ -32,54 +35,92 @@ export default function ModelBars({ models = [], totalTokens = 0, limit = 8, loc
   const restTokens = rest.reduce((s, r) => s + r.tokens, 0);
 
   return (
-    <div className="mlist">
-      {rows.map((r, i) => {
-        const share = totalTokens > 0 ? r.tokens / totalTokens : 0;
-        const cacheFrac = r.tokens > 0 ? Math.min(r.cacheRead / r.tokens, 1) : 0;
-        return (
-          <div className="mrow" key={r.model}>
+    <>
+      <div className="mlist">
+        {rows.map((r, i) => {
+          const share = totalTokens > 0 ? r.tokens / totalTokens : 0;
+          const cacheFrac = r.tokens > 0 ? Math.min(r.cacheRead / r.tokens, 1) : 0;
+          return (
+            <div className="mrow" key={r.model}>
+              <div className="mrow-top">
+                <span className="mrow-name mono">
+                  <i className="mrow-dot" style={{ background: colorAt(i) }} />
+                  {r.model}
+                  <span className="mrow-clients">{[...r.clients].join(' / ')}</span>
+                </span>
+                <span className="mrow-meta">
+                  <b>{fmtTokens(r.tokens)}</b>{' '}
+                  {t(locale, 'modelMeta', { cost: fmtCost(r.costUsd), share: fmtPct(share) })}{' '}
+                  <em className="cache-badge">{t(locale, 'modelCacheShare', { pct: fmtPct(cacheFrac, 0) })}</em>
+                </span>
+              </div>
+              <div className="mrow-bar">
+                <span className="mrow-fill" style={{ width: `${Math.max((r.tokens / max) * 100, 1)}%` }}>
+                  <i className="mrow-cache" style={{ width: `${(cacheFrac * 100).toFixed(2)}%` }} />
+                  <i className="mrow-fresh" style={{ background: colorAt(i) }} />
+                </span>
+              </div>
+            </div>
+          );
+        })}
+        {rest.length > 0 && (
+          <div className="mrow mrow-rest">
             <div className="mrow-top">
-              <span className="mrow-name mono">
-                <i className="mrow-dot" style={{ background: colorAt(i) }} />
-                {r.model}
-                <span className="mrow-clients">{[...r.clients].join(' / ')}</span>
-              </span>
+              <span className="mrow-name">{t(locale, 'modelRest', { n: rest.length })}</span>
               <span className="mrow-meta">
-                <b>{fmtTokens(r.tokens)}</b> tokens · {fmtCost(r.costUsd)} · {fmtPct(share)}{' '}
-                <em className="cache-badge">{t(locale, 'modelCacheShare', { pct: fmtPct(cacheFrac, 0) })}</em>
-              </span>
-            </div>
-            <div className="mrow-bar">
-              <span className="mrow-fill" style={{ width: `${Math.max((r.tokens / max) * 100, 1)}%` }}>
-                <i className="mrow-cache" style={{ width: `${(cacheFrac * 100).toFixed(2)}%` }} />
-                <i className="mrow-fresh" style={{ background: colorAt(i) }} />
+                <b>{fmtTokens(restTokens)}</b> {t(locale, 'unitTokens')}
               </span>
             </div>
           </div>
-        );
-      })}
-      {rest.length > 0 && (
-        <div className="mrow mrow-rest">
-          <div className="mrow-top">
-            <span className="mrow-name">{t(locale, 'modelRest', { n: rest.length })}</span>
-            <span className="mrow-meta">
-              <b>{fmtTokens(restTokens)}</b> tokens
-            </span>
-          </div>
+        )}
+        <div className="legend-row model-legend">
+          <span>
+            <i className="seg-cache" />
+            {t(locale, 'modelLegendCache')}
+          </span>
+          <span>
+            <i className="seg-fresh" />
+            <i className="seg-fresh-dim" />
+            {t(locale, 'modelLegendFresh')}
+          </span>
+          <span className="legend-note">{t(locale, 'rankNote')}</span>
         </div>
-      )}
-      <div className="legend-row model-legend">
-        <span>
-          <i className="seg-cache" />
-          {t(locale, 'modelLegendCache')}
-        </span>
-        <span>
-          <i className="seg-fresh" />
-          <i className="seg-fresh-dim" />
-          {t(locale, 'modelLegendFresh')}
-        </span>
-        <span className="legend-note">{t(locale, 'rankNote')}</span>
       </div>
-    </div>
+      <details className="details">
+        <summary>{t(locale, 'details')}</summary>
+        <div className="table-scroll">
+          <table className="tbl">
+            <thead>
+              <tr>
+                <th>{t(locale, 'thModel')}</th>
+                <th>{t(locale, 'thAgent')}</th>
+                <th className="num">{t(locale, 'thRequests')}</th>
+                <th className="num">{t(locale, 'thInput')}</th>
+                <th className="num">{t(locale, 'thCacheRead')}</th>
+                <th className="num">{t(locale, 'thCacheWrite')}</th>
+                <th className="num">{t(locale, 'thOutput')}</th>
+                <th className="num">{t(locale, 'thHitRate')}</th>
+                <th className="num">{t(locale, 'thCost')}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {models.map((m) => (
+                <tr key={`${m.client}/${m.model}`}>
+                  <td className="mono">{m.model}</td>
+                  <td className="dim">{clientLabel(m.client)}</td>
+                  <td className="num">{m.requests}</td>
+                  <td className="num">{fmtTokens(m.inputTokens)}</td>
+                  <td className="num">{fmtTokens(m.cacheReadTokens)}</td>
+                  <td className="num">{fmtTokens(m.cacheWriteTokens)}</td>
+                  <td className="num">{fmtTokens(m.outputTokens)}</td>
+                  <td className="num">{fmtPct(m.cacheHitRate)}</td>
+                  <td className="num">{fmtCost(m.costUsd)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </details>
+    </>
   );
 }

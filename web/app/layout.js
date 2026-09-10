@@ -1,5 +1,6 @@
 import { GeistSans } from "geist/font/sans";
 import { GeistMono } from "geist/font/mono";
+import "react-grid-layout/css/styles.css";
 import "./globals.css";
 
 export const metadata = {

@@ -18,7 +18,7 @@ export default function TransferPanel({ agents, tx, locale, onImported }) {
         </button>)}
       </div>
     </div>
-    <div className="banner warn config-warning"><ShieldAlert size={15} aria-hidden="true" /><div>{tx('cfgXferSecretNote')}</div></div>
+    <div className="banner warn config-warning"><ShieldAlert size={15} strokeWidth={1.5} aria-hidden="true" /><div>{tx('cfgXferSecretNote')}</div></div>
     {tab === 'export' ? <ExportPanel agents={agents} {...props} /> : tab === 'import' ? <ImportPanel {...props} /> : <RestorePanel locale={locale} {...props} />}
   </section>;
 }

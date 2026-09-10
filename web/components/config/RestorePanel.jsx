@@ -1,7 +1,8 @@
 'use client';
 import { useEffect, useState } from 'react';
 import { RefreshCw } from 'lucide-react';
-import { responseJson, formatBytes, formatDate } from '@/lib/config';
+import { formatBytes, formatDate } from '@/lib/config';
+import { fetchJson } from '@/lib/api';
 import ImportPanel from './ImportPanel';
 import TransferMessage from './TransferMessage';
 
@@ -12,14 +13,14 @@ export default function RestorePanel({ tx, locale, busy, setBusy, onImported }) 
   const [loading, setLoading] = useState(false);
   async function load() {
     setLoading(true); setMessage(null);
-    try { setInventory(await responseJson(await fetch('/api/config/backups', { cache: 'no-store' }))); }
+    try { setInventory(await fetchJson('/api/config/backups')); }
     catch (err) { setMessage({ text: String(err.message || err) }); }
     finally { setLoading(false); }
   }
   useEffect(() => { void load(); }, []);
   return <div className="config-transfer-body">
     <p className="muted">{tx('cfgRestoreIntro')}</p>
-    <div className="config-xfer-actions"><button className="btn" type="button" onClick={load} disabled={loading || busy}><RefreshCw size={14} aria-hidden="true" />{tx('refresh')}</button></div>
+    <div className="config-xfer-actions"><button className="btn" type="button" onClick={load} disabled={loading || busy}><RefreshCw size={14} strokeWidth={1.5} aria-hidden="true" />{tx('refresh')}</button></div>
     <TransferMessage message={message} tx={tx} />
     {inventory?.warnings?.map((text) => <TransferMessage key={text} message={{ kind: 'warn', text }} tx={tx} />)}
     {loading && <p className="muted" role="status">{tx('cfgXferWorking')}</p>}

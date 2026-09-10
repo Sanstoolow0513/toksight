@@ -138,7 +138,7 @@ export default function AgentCard({ agent, locale, tx }) {
               onClick={() => setOpen((value) => !value)}
               aria-expanded={open}
             >
-              <ChevronDown size={14} strokeWidth={2} aria-hidden="true" />
+              <ChevronDown size={14} strokeWidth={1.5} aria-hidden="true" />
               {open ? tx('cfgHideFiles') : tx('cfgShowFiles', { n: agent.files.length })}
             </button>
             {open && (

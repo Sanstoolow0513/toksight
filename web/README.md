@@ -3,7 +3,7 @@
 `toksight web` 的前端：一个 Next.js（App Router）静态导出应用，由 CLI 内置的零依赖
 HTTP 服务器（`src/webserver.js`）托管，数据来自同源的 `/api/data` 实时 JSON API。
 
-视觉规范见仓库根目录 `design-spec.md`（v6 Brutalism 磷光工作表），实现以 spec 为准。
+视觉规范见仓库根目录 `design-spec.md`（v7 极简文档风：浅色纸面、白卡片、发丝线），实现以 spec 为准。
 
 ## 使用
 
@@ -50,17 +50,18 @@ npm run web:dev:ui
 
 ## 结构
 
-- `app/page.js` — 仪表盘页面（客户端组件：KPI 条、12 列工作表、热力图、趋势、Agent 分布、小时/月/节奏、模型与会话表格；中英切换）
+- `app/page.js` — 仪表盘页面组装（数据 → 组件的条件分支；KPI 条、12 列工作表、热力图、趋势、Agent 分布、小时/月/节奏、模型与会话表格）
 - `app/config/page.js` — 配置摘要与文件预览
-- `components/` — 图表、共享 `Tip`、配置迁移入口 `TransferPanel`
-- `components/config/` — `AgentCard` / `FileCard`、`ExportPanel`、`ImportPanel`、`ImportPlan`、`ImportResults`、`RestorePanel`
+- `components/Shell.jsx` — 两页共享页壳（masthead、导航、语言切换、操作插槽）
+- `components/` — 仪表盘区块（`Kpis` / `Cell` / `TrendCell` / `Rhythm` / `SessionTable` / `StateCard` / `Skeleton` / `DashboardBanners` / `DashboardFooter`）、图表（`TrendChart` / `Heatmap` / `Bars` / `ModelBars` / `AgentsPanel`）、共享 `Tip`、`DashboardFilters` / `CostDetails` / `PeriodComparison`（网页筛选、参考费用来源与相邻日历周期比较）、配置迁移入口 `TransferPanel`
+- `components/config/` — `AgentCard` / `FileCard`、`ExportPanel`、`ImportPanel`、`ImportPlan`、`ImportResults`、`RestorePanel`、`TransferMessage`
+- `lib/clients.js` — Agent 显示名的单一事实源；`lib/useLocale.js` — 中英切换共享 hook；`lib/api.js` — 统一 `fetchJson`（写操作自动带 `x-toksight-action` 头）
 - `lib/config.js` / `lib/transfer.js` — 配置标签、格式化、选择规则与 bundle 解析
 - `lib/format.js` — 数字/时间格式化（与 CLI `src/format.js` 口径一致）
-- `lib/i18n.js` — 界面文案（`zh-CN` / `en`）
-- `lib/palette.js` — 分类色（与 `design-spec.md` / `globals.css` 的 `--color-cat-*` 对齐）
+- `lib/i18n.js` — 界面文案（`zh-CN` / `en`，localStorage `toksight-locale`）
+- `lib/palette.js` — 分类色（与 `design-spec.md` / `globals.css` 的 `--color-cat-*` 对齐，`test/palette.test.js` 校验一致）
 - `next.config.mjs` — 静态导出 / dev 代理配置
-- `DashboardFilters` / `CostDetails` / `PeriodComparison` — 网页筛选、参考费用来源与相邻日历周期比较
-- `lib/useDashboardData.js` — URL 筛选状态、请求取消与过期响应隔离
+- `lib/useDashboardData.js` — URL 筛选状态、请求取消与过期响应隔离；切换筛选保留旧数据，仅首屏显示骨架
 
 API 返回 `--json` 载荷外加 web 专属字段（`heatmap`、`trend`、`hourly`、`today`、
 `last7Days`、`last30Days`、`thisMonth`、`topSessions`、`longestSession`、`streaks`、

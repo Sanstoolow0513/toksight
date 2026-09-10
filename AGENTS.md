@@ -79,9 +79,17 @@ src/fsutils.js      walkFiles/walkFilesMany/readJsonl/readJson/pathExists (warni
                     semantics: root ENOENT silent, other read failures warn)
 web/                Next.js (App Router, JS, no Tailwind), statically exported to web/out
                     and served by the CLI. `/` dashboard, `/config` viewer + export/import/
-                    restore; components per feature, shared components/Tip; lib/i18n.js
-                    (zh-CN / en, localStorage `toksight-locale`); visual rules locked in
-                    design-spec.md — do not ship raw ui-ux-pro-max --persist output
+                    restore; components/Shell.jsx is the shared page shell; lib/clients.js
+                    holds the single source of client display names, lib/useLocale.js the
+                    locale hook, lib/api.js the fetchJson helper; lib/i18n.js dictionaries
+                    (zh-CN / en, localStorage `toksight-locale`) are parity-tested, and
+                    lib/palette.js ↔ globals.css `--color-cat-*` equality is pinned by
+                    test/palette.test.js; components/DashboardGrid.jsx lays the dashboard
+                    cards out as a draggable/resizable react-grid-layout v2 grid (defaults
+                    + sanitize in lib/layout.js, persisted to localStorage, static .sheet
+                    fallback <900px container width); visual rules locked in design-spec.md
+                    (v7 minimal editorial paper, light-only) — do not ship raw
+                    ui-ux-pro-max --persist output
 ```
 
 Each client parser exports `id`, `label`, `sourceRoots({ env, home })`, and

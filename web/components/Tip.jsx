@@ -11,6 +11,7 @@ export default function Tip({ x = 0, y = 0, width = 230, children }) {
   return (
     <div
       className="tip"
+      role="tooltip"
       style={{
         left: 0,
         top: 0,

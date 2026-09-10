@@ -36,6 +36,10 @@ export function fmtDateTime(ts) {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
 }
 
+export function fmtDateOnly(ts) {
+  return ts == null ? '—' : fmtDateTime(ts).slice(0, 10);
+}
+
 export function fmtDuration(ms) {
   if (ms == null || !Number.isFinite(ms) || ms < 0) return '—';
   const s = Math.round(ms / 1000);

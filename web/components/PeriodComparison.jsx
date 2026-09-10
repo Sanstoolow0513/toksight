@@ -7,7 +7,7 @@ const signed = (value, format) => `${value > 0 ? '+' : value < 0 ? '−' : ''}${
 
 export default function PeriodComparison({ comparison, timezone, tx, clientLabel }) {
   if (!comparison) return null;
-  if (!comparison.available) return <section className="period-comparison"><h2>{tx('compareTitle')}</h2><p className="muted">{tx(comparison.reason === 'startup-range' ? 'compareRestricted' : 'compareEmptyRange')}</p></section>;
+  if (!comparison.available) return <section className="period-comparison"><div className="cell-head"><h2>{tx('compareTitle')}</h2></div><p className="muted">{tx(comparison.reason === 'startup-range' ? 'compareRestricted' : 'compareEmptyRange')}</p></section>;
   const { current, previous, delta } = comparison;
   const unpriced = current.costCoverage.unpricedRequests + previous.costCoverage.unpricedRequests;
   const fallback = current.costCoverage.cacheFallbackRequests + previous.costCoverage.cacheFallbackRequests;

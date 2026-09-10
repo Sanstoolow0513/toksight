@@ -2,8 +2,8 @@
 
 // GitHub-style activity heatmap: whole weeks as columns starting on Sunday,
 // one row per weekday, ending today (partial last column). Tokens per local
-// day drive a 5-step lime ramp. Cells are squares with a 2px gutter (worksheet
-// grid, not GitHub's rounded 4px pitch).
+// day drive a 5-step paper→ink ramp. Cells are 12px squares with a 3px
+// corner and a 2px gutter.
 
 import { useEffect, useRef, useState } from 'react';
 import { fmtTokens, fmtCost } from '@/lib/format';
@@ -88,10 +88,16 @@ export default function Heatmap({ heatmap, locale = 'zh-CN' }) {
                   y={TOP + ri * PITCH}
                   width={CELL}
                   height={CELL}
-                  shapeRendering="crispEdges"
+                  rx={3}
                   className={`heat-${level}${d.tokens > 0 ? '' : ' heat-empty'}`}
+                  tabIndex={0}
                   onMouseEnter={(e) => setTip({ d, x: e.clientX, y: e.clientY })}
                   onMouseMove={(e) => setTip((cur) => (cur && cur.d === d ? cur : { d, x: e.clientX, y: e.clientY }))}
+                  onFocus={(e) => {
+                    const r = e.currentTarget.getBoundingClientRect();
+                    setTip({ d, x: r.left + r.width / 2, y: r.top });
+                  }}
+                  onBlur={() => setTip(null)}
                 />
               );
             }),

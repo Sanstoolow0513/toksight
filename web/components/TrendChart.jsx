@@ -1,10 +1,11 @@
 'use client';
 
-// Daily token trend as a step-after stacked worksheet (Brutalism, spec v6):
-// each day is a rectangular band, not a smooth mountain. Series are drawn
-// down to the baseline, top of stack first, so the visible bands are the
-// differences between cumulative steps. No Bézier / monotone-cubic, no
-// translucent fill — those read as SaaS gradients.
+// Daily token trend as a step-after stacked worksheet (spec v7, Editorial
+// Paper): each day is a rectangular band, not a smooth mountain. Series are
+// drawn down to the baseline, top of stack first, so the visible bands are
+// the differences between cumulative steps. Bands carry a 1px card-colored
+// seam; the stack's top edge gets a separate 1.5px ink outline. No Bézier /
+// monotone-cubic, no translucent fill — those read as SaaS gradients.
 //
 // Two cross-cutting views share the same engine:
 //   - "mix"   → stack the four token classes (fresh input / cache read /
@@ -13,11 +14,11 @@
 //               using the same rank palette order as the agent share card
 //               (agents arrive sorted by volume; colors encode rank, not id).
 // Legend chips toggle series visibility; range segmented control switches
-// 7 / 30 / 90 days. The wipe reveal plays only when the *user* changes
+// 7 / 30 / 90 days. The 200ms fade plays only when the *user* changes
 // range / mode / series — the first paint is static — so it reads as
 // feedback instead of an entrance performance.
 
-import { useEffect, useId, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { fmtTokens, fmtCost } from '@/lib/format';
 import { colorAt } from '@/lib/palette';
 import { t as tr } from '@/lib/i18n';
@@ -49,21 +50,23 @@ const PAD_L = 48;
 const PAD_R = 12;
 const PAD_T = 12;
 const PAD_B = 24;
-const HEIGHT = 300;
+const MIN_HEIGHT = 240;
 
-function useWidth() {
+// Width AND height: the chart fills its flex:1 slot inside the dashboard
+// grid cell (globals.css keeps a 300px floor in the static fallback).
+function useSize() {
   const ref = useRef(null);
-  const [width, setWidth] = useState(0);
+  const [size, setSize] = useState({ width: 0, height: 0 });
   useEffect(() => {
     const el = ref.current;
     if (!el) return undefined;
     const ro = new ResizeObserver((entries) => {
-      for (const entry of entries) setWidth(entry.contentRect.width);
+      for (const entry of entries) setSize({ width: entry.contentRect.width, height: entry.contentRect.height });
     });
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
-  return [ref, width];
+  return [ref, size];
 }
 
 // Step-after silhouette: hold each day's y across its slot, then jump.
@@ -79,6 +82,18 @@ function stepArea(pts, slotW, baseY) {
     if (i < n - 1) d += `L${xRight},${pts[i + 1][1]}`;
   }
   d += `L${xN},${baseY}Z`;
+  return d;
+}
+
+// Same step-after rhythm as an open path: the stack's top outline.
+function stepLine(pts, slotW) {
+  if (!pts.length) return '';
+  let d = `M${pts[0][0]},${pts[0][1]}`;
+  for (let i = 0; i < pts.length; i++) {
+    const xRight = pts[i][0] + slotW;
+    d += `L${xRight},${pts[i][1]}`;
+    if (i < pts.length - 1) d += `L${xRight},${pts[i + 1][1]}`;
+  }
   return d;
 }
 
@@ -99,10 +114,11 @@ export default function TrendChart({ selection, trends = {}, trendsByAgent = {},
   const [days, setDays] = useState(null);
   const [mode, setMode] = useState('mix');
   const [hidden, setHidden] = useState({});
-  const [ref, width] = useWidth();
+  const [ref, size] = useSize();
+  const width = size.width;
+  const height = Math.max(Math.round(size.height), MIN_HEIGHT);
   const [hover, setHover] = useState(null);
   const [userTouched, touch] = useUserInteraction();
-  const clipId = `twipe${useId().replace(/[^a-zA-Z0-9]/g, '')}`;
 
   if (!options.length) return <div className="muted">{tr(locale, 'trendEmpty')}</div>;
   const active = options.find((o) => o.days === days) || options.find((o) => o.days === 30) || options[0];
@@ -135,7 +151,7 @@ export default function TrendChart({ selection, trends = {}, trendsByAgent = {},
   for (let v = step; v <= top + 1e-9; v += step) ticks.push(v);
 
   const innerW = Math.max(width - PAD_L - PAD_R, 10);
-  const innerH = HEIGHT - PAD_T - PAD_B;
+  const innerH = height - PAD_T - PAD_B;
   const slotW = innerW / n;
   const xLeft = (i) => PAD_L + i * slotW;
   const xMid = (i) => PAD_L + (i + 0.5) * slotW;
@@ -165,7 +181,7 @@ export default function TrendChart({ selection, trends = {}, trendsByAgent = {},
   const bandKey = `${animated ? 1 : 0}-${agentMode ? 'agent' : 'mix'}-${active.days}-${visible.map((s) => s.key).join('.')}`;
 
   return (
-    <div>
+    <div className="trend">
       <div className="trend-head">
         <div className="trend-controls">
           <div className="seg" role="tablist" aria-label={tr(locale, 'trendRange')}>
@@ -192,17 +208,12 @@ export default function TrendChart({ selection, trends = {}, trendsByAgent = {},
           </div>
         </div>
         <span className="trend-sum">
-          {tr(locale, 'trendTotal')} <b>{fmtTokens(windowTokens)}</b> tokens · {fmtCost(windowCost)}
+          {tr(locale, 'trendTotal')} <b>{fmtTokens(windowTokens)}</b> {tr(locale, 'trendSum', { cost: fmtCost(windowCost) })}
         </span>
       </div>
       <div ref={ref} className="trend-chart" onMouseLeave={() => setHover(null)}>
         {width > 0 && (
-          <svg width={width} height={HEIGHT} role="img" aria-label={tr(locale, 'trendAria')}>
-            <defs>
-              <clipPath id={clipId}>
-                <rect key={bandKey} x={PAD_L - 2} y={PAD_T - 2} width={innerW + 4} height={innerH + 4} className={animated ? 'trend-wipe' : undefined} />
-              </clipPath>
-            </defs>
+          <svg width={width} height={height} role="img" aria-label={tr(locale, 'trendAria')}>
             {ticks.map((v) => (
               <g key={v}>
                 <line x1={PAD_L} x2={width - PAD_R} y1={y(v)} y2={y(v)} className="tc-grid" />
@@ -212,7 +223,7 @@ export default function TrendChart({ selection, trends = {}, trendsByAgent = {},
               </g>
             ))}
             <line x1={PAD_L} x2={width - PAD_R} y1={baseY} y2={baseY} className="tc-axis" />
-            <g key={bandKey} clipPath={`url(#${clipId})`}>
+            <g key={bandKey} className={animated ? 'trend-fade' : undefined}>
               {[...cumulatives].reverse().map((cum, rev) => {
                 const k = cumulatives.length - 1 - rev;
                 const s = visible[k];
@@ -223,23 +234,22 @@ export default function TrendChart({ selection, trends = {}, trendsByAgent = {},
                     d={stepArea(pts, slotW, baseY)}
                     className="trend-band"
                     style={{ fill: s.color }}
-                    shapeRendering="crispEdges"
                   />
                 );
               })}
+              <path d={stepLine(rows.map((_, i) => [xLeft(i), y(visibleTop(i))]), slotW)} className="trend-top" />
             </g>
             {xTickIdx.map((i) => (
-              <text key={i} x={xMid(i)} y={HEIGHT - 8} textAnchor={i === 0 ? 'start' : i === n - 1 ? 'end' : 'middle'} className="tc-text">
+              <text key={i} x={xMid(i)} y={height - 8} textAnchor={i === 0 ? 'start' : i === n - 1 ? 'end' : 'middle'} className="tc-text">
                 {shortDate(rows[i].date)}
               </text>
             ))}
             {hover && <line x1={xMid(hover.i)} x2={xMid(hover.i)} y1={PAD_T} y2={baseY} className="tc-guide" />}
             {hover && (
-              <rect
-                x={xMid(hover.i) - 3}
-                y={y(visibleTop(hover.i)) - 3}
-                width="6"
-                height="6"
+              <circle
+                cx={xMid(hover.i)}
+                cy={y(visibleTop(hover.i))}
+                r="3"
                 className="trend-mark"
               />
             )}
@@ -249,8 +259,17 @@ export default function TrendChart({ selection, trends = {}, trendsByAgent = {},
               width={innerW}
               height={innerH}
               fill="transparent"
+              tabIndex={0}
               onMouseMove={pick}
               onMouseEnter={pick}
+              onFocus={(e) => {
+                // Keyboard users get the latest day's readout, anchored at
+                // that day's slot instead of a pointer position.
+                const rect = e.currentTarget.getBoundingClientRect();
+                const i = n - 1;
+                setHover({ i, x: rect.left + ((i + 0.5) / n) * rect.width, y: rect.top });
+              }}
+              onBlur={() => setHover(null)}
             />
           </svg>
         )}
@@ -273,8 +292,10 @@ export default function TrendChart({ selection, trends = {}, trendsByAgent = {},
             <div className="tip-row">
               <span>{tr(locale, 'trendCostSess')}</span>
               <b>
-                {fmtCost((agentMode ? agentRows[hover.i].costUsd : rows[hover.i].costUsd) || 0)} ·{' '}
-                {agentMode ? agentRows[hover.i].sessions : rows[hover.i].sessions}
+                {tr(locale, 'trendCostSessValue', {
+                  cost: fmtCost((agentMode ? agentRows[hover.i].costUsd : rows[hover.i].costUsd) || 0),
+                  sessions: agentMode ? agentRows[hover.i].sessions : rows[hover.i].sessions,
+                })}
               </b>
             </div>
           </Tip>

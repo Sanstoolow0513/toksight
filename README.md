@@ -123,18 +123,21 @@ statically-exported [Next.js](https://nextjs.org) dashboard plus a live JSON API
 browser (default `http://127.0.0.1:4729`). It binds to localhost only and re-aggregates your
 session files on every request — data never leaves your machine.
 
-The dashboard is a Brutalism phosphor worksheet (v6): near-black page, square corners, hard
-grid lines, Geist Mono for data; the construction spec is `design-spec.md` (single source of
-truth). A sticky masthead (lime logo chip + last-fetch time) leads filters, a 4-cell KPI strip,
-cost details and period comparison, then a 12-column sheet — trend first (direction before
-detail), activity heatmap, agent/model split, hourly/monthly/pace, sessions table. Hover is
-instant invert, and all motion respects `prefers-reduced-motion`. It includes:
+The dashboard is a minimal editorial paper sheet (v7): a warm paper background, white cards and
+hairline rules, Geist Sans for reading and Geist Mono for data; the construction spec is
+`design-spec.md` (single source of truth). A sticky masthead (mono logo + last-fetch time) leads
+filters, a 4-card KPI strip, cost details and period comparison, then a 12-column sheet — trend
+first (direction before detail), activity heatmap, agent/model split, hourly/monthly/pace,
+sessions table. On wide screens every card can be dragged and resized (the layout persists
+locally, with a reset button in the masthead); narrow screens fall back to the single-column
+stream. Hover is a quiet 150 ms fade, and all motion respects `prefers-reduced-motion`.
+It includes:
 
 - **Dashboard filters** — all data / today / last 7 days / last 30 days / this month / custom
   dates, plus agent selection. Totals, charts, models and sessions update together; the
   selection is stored in the page URL and survives reloads.
-- **KPI strip** — total tokens (lime, requests · sessions), reference cost, cache hit rate,
-  active days.
+- **KPI strip** — total tokens (accent orange, requests · sessions), reference cost, cache hit
+  rate, active days.
 - **Trend cell** — 7 / 30 / 90-day windows × two stack modes (by token class or by agent) as
   per-day step-after solids; legend chips toggle series; today/7d/30d/this-month chips in the header.
 - **Selected period** — date filters re-window the trend and heatmap; selections beyond 366
@@ -149,7 +152,8 @@ instant invert, and all motion respects `prefers-reduced-motion`. It includes:
   Both windows share one price snapshot; reported amounts keep their original values. Incomplete
   periods, absent/undated records and missing pricing are explained; a zero previous cost yields
   no percentage. This does not measure productivity or model quality.
-- **Activity heatmap** — GitHub-style 53-week grid of daily tokens with a lime ramp and per-day tooltips.
+- **Activity heatmap** — GitHub-style 53-week grid of daily tokens with a paper-to-ink ramp and
+  per-day tooltips.
 - **Agent mix** — per-agent share of tokens/cost with hit rates; expand a row for its per-model hit rates.
 - **Model usage** — models aggregated across agents; bars hard-split cache reads (green) from
   fresh traffic; collapsible agent × model detail table.
