@@ -22,7 +22,7 @@ export function parseArgs(argv, { now = Date.now() } = {}) {
     top: 20,
     port: 4729,
     host: '127.0.0.1',
-    open: true,
+    open: false,
     apiOnly: false,
   };
   const positional = [];
@@ -80,6 +80,7 @@ export function parseArgs(argv, { now = Date.now() } = {}) {
         opts.host = v;
         break;
       }
+      case '--open': opts.open = true; break;
       case '--no-open': opts.open = false; break;
       case '--api-only': opts.apiOnly = true; break;
       case '--version': case '-v': opts.version = true; break;

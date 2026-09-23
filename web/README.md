@@ -15,7 +15,7 @@ HTTP 服务器（`src/webserver.js`）托管，数据来自同源的 `/api/data`
 ```bash
 npm run web:ci      # 按 lockfile 安装构建依赖，首次需要网络
 npm run web:build   # 只构建静态资源到 web/out/，不安装依赖
-node bin/toksight.js web   # 启动本地服务并自动打开浏览器（默认 http://127.0.0.1:4729）
+node bin/toksight.js web   # 启动本地服务并打印地址（默认 http://127.0.0.1:4729；--open 才打开浏览器）
 ```
 
 未构建时 `toksight web` 会在 `/` 显示构建指引页，`/api/data` 仍可用。

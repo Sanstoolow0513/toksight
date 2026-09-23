@@ -19,7 +19,7 @@ test('defaults: no arguments means the overview command', () => {
   assert.equal(opts.top, 20);
   assert.equal(opts.port, 4729);
   assert.equal(opts.host, '127.0.0.1');
-  assert.equal(opts.open, true);
+  assert.equal(opts.open, false);
   assert.equal(opts.apiOnly, false);
 });
 
@@ -38,6 +38,9 @@ test('boolean flags', () => {
   assert.equal(opts.noColor, true);
   assert.equal(opts.open, false);
   assert.equal(opts.apiOnly, true);
+  assert.equal(parse(['--open']).open, true);
+  assert.equal(parse(['--open', '--no-open']).open, false);
+  assert.equal(parse(['--no-open', '--open']).open, true);
   assert.equal(parse(['-v']).version, true);
   assert.equal(parse(['--version']).version, true);
   assert.equal(parse(['-h']).help, true);

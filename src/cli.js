@@ -44,7 +44,8 @@ Options
   --json           Output machine-readable JSON
   --port <n>       Web dashboard port (default 4729)
   --host <addr>    Web dashboard bind address (default 127.0.0.1)
-  --no-open        Do not open the browser automatically (web only)
+  --open           Open the printed URL in a browser (web only)
+  --no-open        Leave the browser closed (web only; default)
   --api-only       Web: serve only the JSON API, no static dashboard
   --offline        Skip the LiteLLM pricing fetch (use built-in/user prices)
   --no-color       Disable ANSI colors

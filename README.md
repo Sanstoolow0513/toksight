@@ -79,7 +79,8 @@ zcode   glm-5.3             41   116K    1.99M        0   43.3K  94.5%   $0.870
 --json           machine-readable JSON on stdout
 --port <n>       web dashboard port (default 4729)
 --host <addr>    web dashboard bind address (default 127.0.0.1)
---no-open        do not open the browser automatically (web only)
+--open           open the printed URL in a browser (web only)
+--no-open        leave the browser closed (web only; default)
 --api-only       web: serve only the JSON API, no static dashboard
 --offline        skip the LiteLLM pricing fetch
 --no-color       disable ANSI colors
@@ -120,9 +121,10 @@ price) so costs are never silently undercounted. Models with proper cache prices
 ## Web dashboard
 
 `toksight web` starts a small local server (zero-dependency `node:http`) that serves a
-statically-exported [Next.js](https://nextjs.org) dashboard plus a live JSON API, then opens your
-browser (default `http://127.0.0.1:4729`). It binds to localhost only and re-aggregates your
-session files on every request — data never leaves your machine.
+statically-exported [Next.js](https://nextjs.org) dashboard plus a live JSON API, and prints
+the URL (default `http://127.0.0.1:4729`). Pass `--open` to open that URL in a browser. It
+binds to localhost only and re-aggregates your session files on every request — data never
+leaves your machine.
 
 The dashboard is a one-page **token usage & cost report** for a calendar month or a whole year,
 in Claude's warm light/dark palette on a sparse dot grid (visual spec: `design-spec.md`). The
