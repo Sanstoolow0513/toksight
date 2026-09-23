@@ -7,7 +7,7 @@ import { periodBounds } from './period.js';
 // screen (tagged with what it was requested for) while the next one loads,
 // and an aborted or superseded request can never overwrite a newer one.
 // Without a range nothing loads and the last result is kept.
-function useRange(since, until, tag) {
+function useRange(since, until, tag, revision = 0) {
   const [state, setState] = useState({ data: null, tag: null, error: null, loading: false });
   const active = useRef(null);
   const sequence = useRef(0);
@@ -37,20 +37,20 @@ function useRange(since, until, tag) {
   useEffect(() => {
     void load();
     return () => active.current?.abort();
-  }, [load]);
+  }, [load, revision]);
 
   return { ...state, reload: load };
 }
 
 // One calendar period (month or year) for the main report.
-export function useReport(period) {
+export function useReport(period, revision = 0) {
   const bounds = period ? periodBounds(period) : null;
-  const { tag, ...rest } = useRange(bounds?.since, bounds?.until, period);
+  const { tag, ...rest } = useRange(bounds?.since, bounds?.until, period, revision);
   return { ...rest, period: tag };
 }
 
 // One local day for the day panel; `day` null (panel closed) keeps the last day.
-export function useDayReport(day) {
-  const { tag, ...rest } = useRange(day, day, day);
+export function useDayReport(day, revision = 0) {
+  const { tag, ...rest } = useRange(day, day, day, revision);
   return { ...rest, day: tag };
 }

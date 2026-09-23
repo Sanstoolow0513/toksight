@@ -12,6 +12,7 @@ import { createFormatter } from './format.js';
 import { pathExists } from './fsutils.js';
 import { createWebServer } from './webserver.js';
 import { createWebDataService } from './webservice.js';
+import { createUsageDatabase } from './database.js';
 import { parseArgs } from './args.js';
 import { printEmpty, printWarnings, renderCommand, renderJson } from './render.js';
 
@@ -30,6 +31,7 @@ Commands
   models        Usage grouped by model
   sessions      Top sessions by cost
   web           Launch the local dashboard (token usage & cost report)
+  refresh       Rebuild the local SQLite usage database
   env           Show detected data sources and pricing state
   help          Show this help
 
@@ -52,7 +54,7 @@ Options
   --version        Print version
   --help           Print this help
 
-Data stays on your machine: toksight only reads your agents' session files.
+Data stays on your machine: toksight reads agent files and writes only its own SQLite database.
 Pricing: built-in estimates, refreshed from LiteLLM (1h disk cache), overridable
 in ${path.join('<config>', 'toksight', 'pricing.json')} — see README.
 Inspired by tokscale.`;
@@ -77,6 +79,8 @@ export async function runWeb(opts) {
   const built = await pathExists(path.join(outDir, 'index.html'));
 
   const getData = createWebDataService(opts);
+  try { await getData.initialize(); }
+  catch (err) { getData.close(); throw err; }
 
   const server = createWebServer({
     host: opts.host,
@@ -86,7 +90,9 @@ export async function runWeb(opts) {
     getData,
   });
 
-  const { url } = await server.start();
+  let url;
+  try { ({ url } = await server.start()); }
+  catch (err) { getData.close(); throw err; }
   console.log(`toksight web`);
   console.log(`  ${url}${opts.apiOnly ? '  (api-only)' : ''}`);
   if (!opts.apiOnly && !built) {
@@ -122,6 +128,20 @@ export async function main(argv = process.argv.slice(2)) {
   try {
     if (opts.command === 'web') {
       await runWeb(opts);
+      return 0;
+    }
+
+    if (opts.command === 'refresh') {
+      const database = createUsageDatabase();
+      const getData = createWebDataService(opts, { database });
+      try {
+        const result = await getData.refresh();
+        if (opts.json) console.log(JSON.stringify(result));
+        else {
+          console.log(`Refreshed ${result.entries} entries in ${result.database} at ${result.refreshedAt}`);
+          if (result.warnings.length) printWarnings(result.warnings, fmt);
+        }
+      } finally { getData.close(); }
       return 0;
     }
 

@@ -24,7 +24,7 @@ test('defaults: no arguments means the overview command', () => {
 });
 
 test('accepts every known command and rejects unknown ones', () => {
-  for (const cmd of ['overview', 'daily', 'monthly', 'models', 'sessions', 'web', 'env', 'help']) {
+  for (const cmd of ['overview', 'daily', 'monthly', 'models', 'sessions', 'web', 'refresh', 'env', 'help']) {
     assert.equal(parse([cmd]).command, cmd);
   }
   assert.throws(() => parse(['bogus']), /unknown command "bogus"/);

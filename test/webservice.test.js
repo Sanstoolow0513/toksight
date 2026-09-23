@@ -11,19 +11,21 @@ import { parseArgs } from '../src/args.js';
 import { calendarDaysBetween, parseDateArg } from '../src/dates.js';
 import { localDate } from '../src/aggregate.js';
 import { createWebServer } from '../src/webserver.js';
+import { createUsageDatabase } from '../src/database.js';
 
 const base = parseArgs(['--offline']);
 const now = () => new Date(2026, 8, 8, 12).getTime();
 const at = (day) => new Date(2026, 8, day, 12).getTime();
 const entry = (over = {}) => ({ client: 'claude', model: 'model-a', sessionId: 's1', timestamp: at(8), inputTokens: 100, outputTokens: 10, reasoningTokens: 0, cacheReadTokens: 50, cacheWriteTokens: 0, costUsd: 1, directory: null, title: null, ...over });
 const raw = (entries) => ({ entries, warnings: [], perClient: [], reportedCosts: new WeakSet(), pricing: { priceFor: () => ({ source: 'builtin' }), sources: { builtin: true }, configDir: '/fixture' } });
-const service = (entries, opts = base) => createWebDataService(opts, { collect: async () => raw(entries), now });
+const memoryDatabase = () => createUsageDatabase({ file: ':memory:' });
+const service = (entries, opts = base) => createWebDataService(opts, { collect: async () => raw(entries), database: memoryDatabase(), now });
 const query = (text) => new URLSearchParams(text);
 
-test('concurrent filters share collection without sharing filtered payloads, and later calls re-collect', async () => {
+test('concurrent initial requests share collection; later reads use the committed snapshot until refresh', async () => {
   let count = 0, release;
   const gate = new Promise((resolve) => { release = resolve; });
-  const get = createWebDataService(base, { now, collect: async () => {
+  const get = createWebDataService(base, { now, database: memoryDatabase(), collect: async () => {
     count++; await gate;
     return raw([entry(), entry({ client: 'codex', costUsd: 3, sessionId: 's2' })]);
   } });
@@ -34,27 +36,37 @@ test('concurrent filters share collection without sharing filtered payloads, and
   assert.deepEqual(Object.keys(claude.clients), ['claude']);
   assert.deepEqual(Object.keys(codex.clients), ['codex']);
   assert.equal(claude.totals.costUsd, 1); assert.equal(codex.totals.costUsd, 3);
+  await get(query('client=claude')); assert.equal(count, 1);
+  await get.refresh(); assert.equal(count, 2);
   await get(query('client=claude')); assert.equal(count, 2);
+  assert.ok((await get()).snapshot.refreshedAt);
+  get.close();
 });
 
-test('a failed collection is not cached', async () => {
+test('a failed refresh keeps the previous committed snapshot', async () => {
   let count = 0;
-  const get = createWebDataService(base, { now, collect: async () => {
-    if (++count === 1) throw new Error('fixture failure');
-    return raw([entry()]);
+  const get = createWebDataService(base, { now, database: memoryDatabase(), collect: async () => {
+    if (++count === 2) throw new Error('fixture failure');
+    return raw([entry({ costUsd: count })]);
   } });
-  await assert.rejects(get(), /fixture failure/);
+  await get.initialize();
+  await assert.rejects(get.refresh(), /fixture failure/);
   assert.equal((await get()).totals.requests, 1);
+  assert.equal((await get()).totals.costUsd, 1);
+  await get.refresh();
+  assert.equal((await get()).totals.costUsd, 3);
+  get.close();
 });
 
 test('invalid dates, ranges, agents and duplicate parameters fail before collection', async () => {
   let count = 0;
-  const get = createWebDataService(base, { now, collect: async () => { count++; return raw([]); } });
+  const get = createWebDataService(base, { now, database: memoryDatabase(), collect: async () => { count++; return raw([]); } });
   for (const value of ['period=bad', 'since=2026-02-30', 'since=2026-13-01', 'since=2026-09-09&until=2026-09-08', 'client=unknown', 'client=constructor', 'client=__proto__', 'client=', 'period=custom', 'period=7d&since=2026-09-01', 'since=2026-09-01&since=2026-09-02', 'offline=true']) {
     await assert.rejects(get(query(value)), (err) => err.status === 400 && err.code === 'BAD_QUERY', value);
   }
   assert.equal(count, 0);
   assert.throws(() => parseDateArg('2026-02-30', 'start'), /invalid date/);
+  get.close();
 });
 
 test('filters intersect the startup scope; previous periods outside it are unavailable', async () => {
@@ -150,6 +162,7 @@ test('real collection preserves agent-reported cost provenance alongside compute
   assert.ok(data.costCoverage.sources.reported.requests > 0);
   assert.equal(data.costCoverage.sources.builtin.requests, 1);
   assert.equal(data.costCoverage.sources.reported.costUsd, data.clients.opencode.costUsd);
+  get.close();
 });
 
 test('calendar comparisons keep equal day counts through DST', async (t) => {
@@ -158,13 +171,14 @@ test('calendar comparisons keep equal day counts through DST', async (t) => {
   t.after(() => { if (previousTZ == null) delete process.env.TZ; else process.env.TZ = previousTZ; });
   const spring = new Date(2026, 2, 9, 12).getTime();
   assert.equal(calendarDaysBetween(new Date(2026, 2, 7), new Date(2026, 2, 9)), 2);
-  const get = createWebDataService(base, { collect: async () => raw([]), now: () => spring });
+  const get = createWebDataService(base, { database: memoryDatabase(), collect: async () => raw([]), now: () => spring });
   const data = await get(query('since=2026-03-07&until=2026-03-09'));
   assert.equal(data.comparison.days, 3);
   assert.equal(localDate(data.comparison.previous.since), '2026-03-04');
   assert.equal(localDate(data.comparison.previous.until), '2026-03-06');
   assert.equal(data.selection.rows.length, 3);
   assert.notEqual(data.comparison.current.until - data.comparison.current.since, data.comparison.previous.until - data.comparison.previous.since);
+  get.close();
 });
 
 test('cost coverage separates reports, estimates, unpriced requests and actual cache fallbacks', async (t) => {

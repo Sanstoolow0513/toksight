@@ -6,20 +6,33 @@ import { buildCostCoverage } from './costcoverage.js';
 import { resolveWebQuery } from './webquery.js';
 import { calendarDaysBetween, endOfDay, startOfDay, stepDay } from './dates.js';
 import { localDate } from './aggregate.js';
+import { createUsageDatabase } from './database.js';
 
-// Concurrent requests share collection, then independently filter and render.
-// No settled result is cached, and no query can widen the CLI's startup scope.
-export function createWebDataService(base, { collect = collectAll, env, home, now = Date.now } = {}) {
-  let inflight = null;
-  async function snapshot() {
-    if (!inflight) {
-      const run = Promise.resolve().then(() => collect({ ...base, clients: null, since: null, until: null }, { env, home }));
-      inflight = run;
-      run.then(() => { if (inflight === run) inflight = null; }, () => { if (inflight === run) inflight = null; });
+// The database is loaded before serving. Requests reuse its in-memory snapshot;
+// refreshes share a single collection/write and swap only after commit.
+export function createWebDataService(base, { collect = collectAll, env, home, database = createUsageDatabase({ env, home }), now = Date.now } = {}) {
+  let inflightRefresh = null;
+  async function refresh() {
+    if (!inflightRefresh) {
+      const run = Promise.resolve()
+        .then(() => collect({ ...base, clients: null, since: null, until: null }, { env, home }))
+        .then((raw) => database.replace(raw));
+      inflightRefresh = run;
+      run.then(() => { if (inflightRefresh === run) inflightRefresh = null; }, () => { if (inflightRefresh === run) inflightRefresh = null; });
     }
-    return inflight;
+    const raw = await inflightRefresh;
+    return { refreshedAt: raw.refreshedAt, entries: raw.entries.length, database: database.file, warnings: raw.warnings };
   }
-  return async (params = new URLSearchParams()) => {
+  async function initialize() {
+    if (!database.read()) await refresh();
+  }
+  async function snapshot() {
+    const current = database.read();
+    if (current) return current;
+    await refresh();
+    return database.read();
+  }
+  const getData = async (params = new URLSearchParams()) => {
     const time = now();
     let opts;
     try { opts = resolveWebQuery(params, base, time); }
@@ -48,6 +61,7 @@ export function createWebDataService(base, { collect = collectAll, env, home, no
     }
     return {
       ...payload,
+      snapshot: { refreshedAt: raw.refreshedAt, entries: raw.entries.length },
       scopeRange: activityRange(scope),
       selection,
       costCoverage: buildCostCoverage(ctx.entries, raw),
@@ -59,4 +73,8 @@ export function createWebDataService(base, { collect = collectAll, env, home, no
       },
     };
   };
+  getData.initialize = initialize;
+  getData.refresh = refresh;
+  getData.close = () => database.close();
+  return getData;
 }

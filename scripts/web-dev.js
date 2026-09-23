@@ -49,7 +49,7 @@ async function main() {
   const apiPort = port(values['api-port'], '--api-port');
   if (uiPort === apiPort) throw new Error('--port and --api-port must be different');
   await access(nextCli).catch(() => {
-    throw new Error('Dashboard dependencies missing. Run `npm run web:ci` first (Node >=20.9).');
+    throw new Error('Dashboard dependencies missing. Run `npm run web:ci` first (Node >=22.5).');
   });
 
   const opts = parseArgs(['web', '--api-only', '--no-open', '--port', String(apiPort)]);

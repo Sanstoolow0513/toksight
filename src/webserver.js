@@ -1,7 +1,6 @@
 // Minimal zero-dependency HTTP server for `toksight web`.
-// Serves the prebuilt static dashboard from web/out and a live, read-only
-// JSON API at /api/data. The data API re-collects on every request, so a
-// browser refresh always reflects the latest session files.
+// Serves the prebuilt static dashboard and a SQLite-backed JSON API. GETs
+// read a committed snapshot; POST /api/refresh explicitly collects and writes.
 
 import http from 'node:http';
 import { isIP } from 'node:net';
@@ -99,6 +98,22 @@ function sendJson(res, status, payload, method = 'GET', extraHeaders = {}) {
   res.end(method === 'HEAD' ? undefined : JSON.stringify(payload));
 }
 
+const isLoopbackHost = (host) => host?.toLowerCase() === 'localhost' || isLoopbackAddress(host);
+
+function isAllowedRefreshOrigin(req, localHostHeader, host) {
+  if (req.headers['sec-fetch-site'] === 'cross-site') return false;
+  if (!req.headers.origin) return true; // local CLI clients need no Origin
+  try {
+    const origin = new URL(req.headers.origin);
+    if (!['http:', 'https:'].includes(origin.protocol)) return false;
+    if (origin.host.toLowerCase() === req.headers.host?.toLowerCase()) return true;
+    // Next dev proxies /api/* from its own loopback port to the API port.
+    return isLoopbackHost(host) && localHostHeader && isLocalHostHeader(origin.host);
+  } catch {
+    return false;
+  }
+}
+
 export function createWebServer({
   host = '127.0.0.1',
   port = 4729,
@@ -189,24 +204,34 @@ export function createWebServer({
     // 127.0.0.1 is still remoteAddress-loopback, but its Host header is not.
     const localHostHeader = isLocalHostHeader(req.headers.host);
 
-    if (pathname === '/api/data') {
+    if (pathname === '/api/data' || pathname === '/api/refresh') {
       // Loopback-bound servers (the default) reject foreign Host headers;
       // a user who deliberately binds --host 0.0.0.0 exposes the dashboard
       // to the LAN on purpose, so the Host check would only break that.
-      if (isLoopbackAddress(host) && !localHostHeader) {
+      if (isLoopbackHost(host) && !localHostHeader) {
         sendJson(res, 403, { error: 'requests with a foreign Host header are not accepted', code: 'HOST_NOT_ALLOWED' }, req.method);
         return;
       }
-      if (req.method !== 'GET' && req.method !== 'HEAD') {
-        sendJson(res, 405, { error: 'method not allowed', code: 'METHOD_NOT_ALLOWED' }, req.method, { allow: 'GET, HEAD' });
+      const refresh = pathname === '/api/refresh';
+      const allowed = refresh ? req.method === 'POST' : req.method === 'GET' || req.method === 'HEAD';
+      if (!allowed) {
+        sendJson(res, 405, { error: 'method not allowed', code: 'METHOD_NOT_ALLOWED' }, req.method, { allow: refresh ? 'POST' : 'GET, HEAD' });
+        return;
+      }
+      if (refresh && !isAllowedRefreshOrigin(req, localHostHeader, host)) {
+        sendJson(res, 403, { error: 'cross-origin refresh is not accepted', code: 'ORIGIN_NOT_ALLOWED' }, req.method);
         return;
       }
       try {
-        const payload = await getData(url.searchParams);
+        if (refresh && !getData.refresh) {
+          sendJson(res, 501, { error: 'refresh is not configured', code: 'NOT_IMPLEMENTED' }, req.method);
+          return;
+        }
+        const payload = refresh ? await getData.refresh() : await getData(url.searchParams);
         sendJson(res, 200, payload, req.method);
       } catch (err) {
         const status = err?.status === 400 ? 400 : 500;
-        if (status === 500) logger?.warn?.(`toksight web: /api/data failed: ${err?.message || err}`);
+        if (status === 500) logger?.warn?.(`toksight web: ${pathname} failed: ${err?.message || err}`);
         sendJson(res, status, { error: String(err?.message || err), ...(err?.code ? { code: err.code } : {}) }, req.method);
       }
       return;
@@ -261,7 +286,12 @@ export function createWebServer({
       });
     },
     close() {
-      return new Promise((resolve) => server.close(resolve));
+      return new Promise((resolve, reject) => server.close((err) => {
+        try { getData?.close?.(); }
+        catch (closeError) { reject(closeError); return; }
+        if (err) reject(err);
+        else resolve();
+      }));
     },
   };
 }

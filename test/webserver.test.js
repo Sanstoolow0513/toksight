@@ -52,7 +52,7 @@ async function withServer(opts, fn) {
   }
 }
 
-test('/api/data serves fresh JSON with no-store and no CORS', async () => {
+test('/api/data serves JSON with no-store and no CORS', async () => {
   let calls = 0;
   await withServer(
     {
@@ -71,12 +71,12 @@ test('/api/data serves fresh JSON with no-store and no CORS', async () => {
       assert.equal(res.headers.get('access-control-allow-origin'), null);
       assert.deepEqual(await res.json(), { ...payload, calls: 1 });
       const second = await fetch(`${url}/api/data`);
-      assert.deepEqual(await second.json(), { ...payload, calls: 2 }); // re-collected per request
+      assert.deepEqual(await second.json(), { ...payload, calls: 2 });
     },
   );
 });
 
-test('/api/data is read-only and other /api paths are JSON 404s', async () => {
+test('/api/data remains read-only and other /api paths are JSON 404s', async () => {
   await withServer({}, async (url) => {
     const posted = await fetch(`${url}/api/data`, { method: 'POST', body: '{}' });
     assert.equal(posted.status, 405);
@@ -89,6 +89,29 @@ test('/api/data is read-only and other /api paths are JSON 404s', async () => {
       assert.match(res.headers.get('content-type'), /application\/json/);
       assert.equal((await res.json()).code, 'NOT_FOUND');
     }
+  });
+});
+
+test('POST /api/refresh calls the refresh service and rejects cross-origin requests', async () => {
+  let refreshes = 0;
+  const getData = async () => payload;
+  getData.refresh = async () => ({ refreshedAt: '2026-09-08T12:00:00.000Z', entries: ++refreshes });
+  await withServer({ getData }, async (url) => {
+    const good = await fetch(`${url}/api/refresh`, { method: 'POST' });
+    assert.equal(good.status, 200);
+    assert.deepEqual(await good.json(), { refreshedAt: '2026-09-08T12:00:00.000Z', entries: 1 });
+
+    const get = await fetch(`${url}/api/refresh`);
+    assert.equal(get.status, 405);
+    assert.equal(get.headers.get('allow'), 'POST');
+    const foreign = await fetch(`${url}/api/refresh`, { method: 'POST', headers: { Origin: 'https://evil.example' } });
+    assert.equal(foreign.status, 403);
+    assert.equal((await foreign.json()).code, 'ORIGIN_NOT_ALLOWED');
+    assert.equal(refreshes, 1);
+
+    const localDev = await fetch(`${url}/api/refresh`, { method: 'POST', headers: { Origin: 'http://127.0.0.1:3000' } });
+    assert.equal(localDev.status, 200);
+    assert.equal(refreshes, 2);
   });
 });
 
@@ -140,7 +163,7 @@ function rawRequest(port, request) {
 
 const rawGet = (route, host) => `GET ${route} HTTP/1.1\r\nHost: ${host}\r\nConnection: close\r\n\r\n`;
 
-test('/api/data rejects a forged Host header (DNS rebinding)', async () => {
+test('/api/data and /api/refresh reject a forged Host header (DNS rebinding)', async () => {
   await withServer({}, async (url) => {
     const port = Number(new URL(url).port);
 
@@ -149,6 +172,10 @@ test('/api/data rejects a forged Host header (DNS rebinding)', async () => {
     const forged = await rawRequest(port, rawGet('/api/data', 'evil.example'));
     assert.ok(forged.startsWith('HTTP/1.1 403'), `foreign Host must 403, got: ${forged.split('\r\n')[0]}`);
     assert.match(forged, /HOST_NOT_ALLOWED/);
+
+    const refresh = await rawRequest(port, `POST /api/refresh HTTP/1.1\r\nHost: evil.example\r\nContent-Length: 0\r\nConnection: close\r\n\r\n`);
+    assert.ok(refresh.startsWith('HTTP/1.1 403'));
+    assert.match(refresh, /HOST_NOT_ALLOWED/);
 
     // Localhost Hosts keep working, port or not.
     for (const host of ['127.0.0.1', `localhost:${port}`]) {

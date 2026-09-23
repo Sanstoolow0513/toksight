@@ -70,11 +70,14 @@ export default function Page() {
   const [metrics, setMetrics] = useState(() => Object.fromEntries(prefs.CARD_IDS.map((id) => [id, 'tokens'])));
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState(null);
+  const [refreshError, setRefreshError] = useState(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const [refreshRevision, setRefreshRevision] = useState(0);
   const [selectedDay, setSelectedDay] = useState(null);
   const [dayMetric, setDayMetric] = useState('tokens');
   const reportRef = useRef(null);
-  const report = useReport(period);
-  const dayReport = useDayReport(selectedDay);
+  const report = useReport(period, refreshRevision);
+  const dayReport = useDayReport(selectedDay, refreshRevision);
   const { data } = report;
   const shown = report.period;
 
@@ -129,10 +132,20 @@ export default function Page() {
     prefs.writeLocale(value);
     setLocale(value);
   };
-  const onRefresh = () => {
-    setToday(dayKey(new Date()));
-    void report.reload();
-    if (selectedDay) void dayReport.reload();
+  const onRefresh = async () => {
+    setRefreshing(true);
+    setRefreshError(null);
+    try {
+      const res = await fetch('/api/refresh', { method: 'POST', cache: 'no-store' });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error || `HTTP ${res.status}`);
+      setToday(dayKey(new Date()));
+      setRefreshRevision((n) => n + 1);
+    } catch (err) {
+      setRefreshError(String(err?.message || err));
+    } finally {
+      setRefreshing(false);
+    }
   };
   // Clicking the open day again closes the panel.
   const onSelectDay = useCallback((date) => setSelectedDay((d) => (d === date ? null : date)), []);
@@ -172,7 +185,7 @@ export default function Page() {
       <StateCard icon={<TriangleAlert size={22} strokeWidth={1.8} aria-hidden="true" />} title={tx('errorTitle')}>
         <p>{coded(tx('errorBody', { error: report.error }))}</p>
         <p>{coded(tx('errorHint'))}</p>
-        <button type="button" className="btn-secondary" onClick={onRefresh}>
+        <button type="button" className="btn-secondary" onClick={() => void report.reload()}>
           <RefreshCw size={15} strokeWidth={2} aria-hidden="true" />
           {tx('retry')}
         </button>
@@ -238,7 +251,7 @@ export default function Page() {
             <BrandMark size={14} />
             toksight v{data.version}
           </span>
-          <span>{tx('footGenerated', { time: fmtDateTime(data.generatedAt) })}</span>
+          <span>{tx('footRefreshed', { time: fmtDateTime(data.snapshot?.refreshedAt ?? data.generatedAt) })}</span>
           {data.timezone ? <span>{tx('footTimezone', { tz: data.timezone })}</span> : null}
           <span>{tx('footEstimate')}</span>
           <span>{tx('footLocal')}</span>
@@ -250,6 +263,7 @@ export default function Page() {
 
   const notices = [
     data && report.error ? tx('errorBody', { error: report.error }) : null,
+    refreshError ? tx('refreshFailed', { error: refreshError }) : null,
     exportError ? tx('exportFailed', { error: exportError }) : null,
   ].filter(Boolean);
 
@@ -265,7 +279,7 @@ export default function Page() {
         theme={theme}
         onTheme={onTheme}
         onLocale={onLocale}
-        loading={report.loading}
+        loading={report.loading || refreshing}
         onRefresh={onRefresh}
         exporting={exporting}
         onExport={onExport}

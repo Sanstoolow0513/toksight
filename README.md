@@ -29,9 +29,8 @@ npm install -g toksight
 npx toksight
 ```
 
-Requires Node.js >= 20. On Node >= 22.5 the ZCode and OpenCode SQLite databases are read with the
-built-in `node:sqlite`; older versions automatically fall back to ZCode rollout logs and OpenCode's
-legacy JSON storage.
+Requires Node.js >= 22.5. The built-in `node:sqlite` reads ZCode and OpenCode databases and
+stores toksight's own local usage database; no runtime package is installed.
 
 ## Usage
 
@@ -42,6 +41,7 @@ toksight monthly      # grouped by month
 toksight models       # grouped by model
 toksight sessions     # top sessions by cost
 toksight web          # local usage & cost report (heatmap, agents, models, image export)
+toksight refresh      # rescan agents and update the local SQLite database
 toksight env          # show detected data sources + pricing state
 ```
 
@@ -121,10 +121,18 @@ price) so costs are never silently undercounted. Models with proper cache prices
 ## Web dashboard
 
 `toksight web` starts a small local server (zero-dependency `node:http`) that serves a
-statically-exported [Next.js](https://nextjs.org) dashboard plus a live JSON API, and prints
+statically-exported [Next.js](https://nextjs.org) dashboard plus a JSON API, and prints
 the URL (default `http://127.0.0.1:4729`). Pass `--open` to open that URL in a browser. It
-binds to localhost only and re-aggregates your session files on every request — data never
-leaves your machine.
+binds to localhost only. On first launch it scans agent files and creates
+`<config>/toksight/usage.sqlite` (`TOKSIGHT_CONFIG_DIR` overrides the directory). Later launches
+preload that database; ordinary report and day requests read its committed snapshot without
+rescanning agents. Data never leaves your machine.
+
+Click the toolbar's refresh button, call `POST /api/refresh`, or run `toksight refresh` to rescan
+all agents and update the database in one transaction. A failed refresh keeps the previous
+snapshot. The web server notices a refresh made by another toksight process. Refreshing also
+updates the displayed report and open day card; the footer shows when the database was last
+refreshed. `toksight refresh --offline` skips the pricing fetch.
 
 The dashboard is a one-page **token usage & cost report** for a calendar month or a whole year,
 in Claude's warm light/dark palette on a sparse dot grid (visual spec: `design-spec.md`). The
@@ -163,13 +171,16 @@ The API accepts e.g. `GET /api/data?period=custom&since=2026-09-01&until=2026-09
 report requests; the day panel asks for a single day the same way) or `?client=claude&period=7d`. `period` is `all` (default) / `today` / `7d` /
 `30d` / `month` / `custom` (`custom` needs both `since` and `until`); `since`/`until` may also be
 used alone; presets cannot combine with explicit dates. Unknown, duplicate or invalid parameters
-return HTTP 400.
+return HTTP 400. `POST /api/refresh` updates the database and returns its refresh time and entry
+count and collection warnings. The web API's additive `snapshot` field exposes the refresh time
+and count. Cross-origin refresh
+requests are rejected.
 
 ### Dashboard bundle
 
 The npm package ships with the prebuilt static files in `web/out/` — installed users just run
 `toksight web`, no build and no Next runtime. To preview the production dashboard from a source
-checkout (requires Node >=20.9; the installed CLI still runs on >=20):
+checkout (requires Node >=22.5):
 
 ```bash
 npm run web:ci && npm run web:build && node bin/toksight.js web
@@ -190,17 +201,19 @@ them to expose fresh input and keep this formula meaningful across agents.
 
 ## Privacy
 
-toksight is local-first and read-only: the CLI and the web report only **read** your agents'
-session files — nothing is uploaded and nothing is written back. The single external network call
+toksight is local-first: the CLI and web report only **read** your agents' session files. Refresh
+writes toksight's own SQLite database under its config directory; nothing is uploaded or written
+back to agent files. The single external network call
 is the anonymous LiteLLM pricing fetch; run `--offline` to disable even that. Report images are
 rendered in your browser and saved only where you download them.
 
 ## JSON output
 
-Every command accepts `--json` (e.g. `toksight daily --json`). Shape: `totals`, `cacheHitRate`,
+Report commands accept `--json` (e.g. `toksight daily --json`). Shape: `totals`, `cacheHitRate`,
 `clients`, `models`, `daily`, `monthly`, `sessions`, `pricing` (incl. `unpricedModels`), `warnings`.
 Each `clients` entry is that agent's totals plus its own `cacheHitRate`; the map is built from the
 filtered entries, so `--client` / `--since` / `--until` apply to it like every other slice.
+`toksight refresh --json` instead returns the database path, refresh time, entry count and warnings.
 
 `warnings` surfaces collection problems (a directory that cannot be read, a SQLite database that
 exists but cannot be opened) and data caveats — notably, entries without a timestamp that were
@@ -213,7 +226,8 @@ from `GET /api/data` on its own origin. Session rows carry both `durationMs` (ra
 and `activeMs` (inter-request gaps capped at 5 minutes); `longestSession` ranks by `activeMs`, so
 a session left open overnight no longer counts its idle hours.
 
-The web API additionally exposes `view` (server date, selectable agents and startup scope),
+The web API additionally exposes `snapshot` (database refresh time and entry count),
+`view` (server date, selectable agents and startup scope),
 `scopeRange` (first/last activity within the startup scope, whatever period was requested — the
 report's navigation bounds), `selection` (selected trends/heatmap, null without date filters),
 `costCoverage` (cost sources, unpriced and fallback-cache request counts), and `comparison`
@@ -237,8 +251,8 @@ pricing fetch. For two-terminal work run `node bin/toksight.js web --api-only` p
 builds always export static files). `web:install` remains for updating web dependencies.
 
 The CLI keeps **zero runtime dependencies**; dashboard dependencies live only in
-`web/package.json`, needed just to (re)build `web/out/`. The two flows: session files →
-parsers → `collectAll` → CLI output or `/api/data`; `web/` source → Next build → `web/out/` →
+`web/package.json`, needed just to (re)build `web/out/`. The flows: session files →
+parsers → `collectAll` → CLI output or SQLite refresh → `/api/data`; `web/` source → Next build → `web/out/` →
 the CLI's HTTP server. Per-module notes live in [AGENTS.md](./AGENTS.md).
 
 ```bash

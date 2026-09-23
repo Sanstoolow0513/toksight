@@ -7,7 +7,7 @@ async function main() {
   const web = fileURLToPath(new URL('../web/', import.meta.url));
   const cli = path.join(web, 'node_modules', 'next', 'dist', 'bin', 'next');
   await access(cli).catch(() => {
-    throw new Error('Dashboard dependencies missing. Run `npm run web:ci` first (Node >=20.9).');
+    throw new Error('Dashboard dependencies missing. Run `npm run web:ci` first (Node >=22.5).');
   });
   const { code, signal } = await startNode([cli, 'build', ...process.argv.slice(2)], { cwd: web }).done;
   if (code !== 0) throw new Error(`Dashboard build failed (${signal || code})`);

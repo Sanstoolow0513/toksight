@@ -75,7 +75,8 @@ async function main() {
     const fixture = path.join(temp, 'fixtures');
     const claude = path.join(fixture, 'claude');
     await mkdir(path.join(claude, 'projects', 'smoke'), { recursive: true });
-    await writeFile(path.join(claude, 'projects', 'smoke', 'session.jsonl'), JSON.stringify({
+    const sessionFile = path.join(claude, 'projects', 'smoke', 'session.jsonl');
+    await writeFile(sessionFile, JSON.stringify({
       type: 'assistant', sessionId: 'package-smoke', timestamp: '2026-08-29T10:00:00Z',
       message: { id: 'package-smoke', model: 'claude-sonnet-4-5', usage: { input_tokens: 100, output_tokens: 20 } },
     }) + '\n');
@@ -154,6 +155,19 @@ async function main() {
     assert.equal(emptyMonth.scopeRange.firstAt, month.scopeRange.firstAt);
     assert.equal((await fetch(url + '/api/config')).status, 404);
     console.log('OK report periods and scope range: isolated fixtures');
+
+    const databaseFile = path.join(env.TOKSIGHT_CONFIG_DIR, 'usage.sqlite');
+    assert.equal((await readFile(databaseFile)).subarray(0, 16).toString(), 'SQLite format 3\0');
+    await writeFile(sessionFile, JSON.stringify({
+      type: 'assistant', sessionId: 'package-smoke', timestamp: '2026-08-29T10:00:00Z',
+      message: { id: 'package-smoke', model: 'claude-sonnet-4-5', usage: { input_tokens: 200, output_tokens: 20 } },
+    }) + '\n');
+    assert.equal((await (await fetch(url + '/api/data')).json()).totals.totalTokens, 120);
+    const refreshed = await fetch(url + '/api/refresh', { method: 'POST' });
+    assert.equal(refreshed.status, 200);
+    assert.equal((await refreshed.json()).entries, 1);
+    assert.equal((await (await fetch(url + '/api/data')).json()).totals.totalTokens, 220);
+    console.log('OK SQLite preload, explicit refresh and committed report reads');
     console.log(`Package check passed: toksight ${pkg.version}`);
   } catch (err) {
     if (output) console.error(output);
