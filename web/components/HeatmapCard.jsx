@@ -7,7 +7,7 @@ import Tooltip from '@/components/Tooltip';
 import { calendarWeeks, periodBounds } from '@/lib/period';
 import { cacheHitRate, dailyMap, heatLevel, heatSummary, metricValue } from '@/lib/report';
 import { fmtCost, fmtInt, fmtMetric, fmtPct, fmtTokens } from '@/lib/format';
-import { MONTHS, WEEKDAYS, dayLabel, periodLabel } from '@/lib/i18n';
+import { MONTHS, WEEKDAYS, dayLabel, periodLabel, weekdayLabel } from '@/lib/i18n';
 
 function Stat({ label, value, sub }) {
   return (
@@ -19,15 +19,17 @@ function Stat({ label, value, sub }) {
   );
 }
 
-function cellClass(base, level, date, today) {
+function cellClass(base, level, date, today, selected) {
   let cls = `${base} lv-${level}`;
   if (date > today) cls += ' is-future';
   if (date === today) cls += ' is-today';
+  if (date === selected) cls += ' is-selected';
   return cls;
 }
 
 // Memoized so the hover tooltip re-renders only itself, not every cell.
-const MonthGrid = memo(function MonthGrid({ weeks, days, metric, max, today, locale }) {
+// Past days are buttons (clicks bubble to the card's delegated handler).
+const MonthGrid = memo(function MonthGrid({ weeks, days, metric, max, today, selected, locale, tx }) {
   return (
     <div className="mheat">
       {WEEKDAYS[locale].map((w) => (
@@ -36,18 +38,38 @@ const MonthGrid = memo(function MonthGrid({ weeks, days, metric, max, today, loc
       {weeks.flat().map((date, i) => {
         if (!date) return <span key={`pad-${i}`} className="mcell is-pad" />;
         const value = metricValue(days.get(date), metric);
-        return (
-          <div key={date} data-date={date} className={cellClass('mcell', heatLevel(value, max), date, today)}>
+        const cls = cellClass('mcell', heatLevel(value, max), date, today, selected);
+        const body = (
+          <>
             <span className="mcell-day">{Number(date.slice(8))}</span>
             {value > 0 ? <span className="mcell-val">{fmtMetric(value, metric, true)}</span> : null}
-          </div>
+          </>
+        );
+        if (date > today) {
+          return (
+            <div key={date} data-date={date} className={cls}>
+              {body}
+            </div>
+          );
+        }
+        return (
+          <button
+            key={date}
+            type="button"
+            data-date={date}
+            className={cls}
+            aria-pressed={date === selected}
+            aria-label={`${dayLabel(locale, date, true)} · ${value > 0 ? fmtMetric(value, metric) : tx('tipIdle')}`}
+          >
+            {body}
+          </button>
         );
       })}
     </div>
   );
 });
 
-const YearGrid = memo(function YearGrid({ weeks, days, metric, max, today, locale, year }) {
+const YearGrid = memo(function YearGrid({ weeks, days, metric, max, today, selected, locale, year }) {
   const monthCols = MONTHS[locale].map((label, m) => {
     const first = `${year}-${String(m + 1).padStart(2, '0')}-01`;
     return { label, col: weeks.findIndex((week) => week.includes(first)) };
@@ -71,7 +93,7 @@ const YearGrid = memo(function YearGrid({ weeks, days, metric, max, today, local
               <i
                 key={date}
                 data-date={date}
-                className={cellClass('ycell', heatLevel(metricValue(days.get(date), metric), max), date, today)}
+                className={cellClass('ycell', heatLevel(metricValue(days.get(date), metric), max), date, today, selected)}
                 style={{ gridColumn: w + 2, gridRow: d + 2 }}
               />
             ) : null,
@@ -83,11 +105,10 @@ const YearGrid = memo(function YearGrid({ weeks, days, metric, max, today, local
 });
 
 function DayTip({ date, row, today, locale, tx }) {
-  const weekday = WEEKDAYS[locale][(new Date(`${date}T00:00:00`).getDay() + 6) % 7];
   return (
     <>
       <div className="tip-title">
-        {dayLabel(locale, date, true)} · {locale === 'en' ? weekday : `周${weekday}`}
+        {dayLabel(locale, date, true)} · {weekdayLabel(locale, date)}
       </div>
       {date > today ? (
         <div className="tip-muted">{tx('tipFuture')}</div>
@@ -105,7 +126,7 @@ function DayTip({ date, row, today, locale, tx }) {
   );
 }
 
-export default function HeatmapCard({ data, period, today, metric, onMetric, locale, tx, index, handleProps }) {
+export default function HeatmapCard({ data, period, today, selected, onSelect, metric, onMetric, locale, tx, index, handleProps }) {
   const [tip, setTip] = useState(null);
   const { since, until } = periodBounds(period);
   const days = useMemo(() => dailyMap(data.daily), [data.daily]);
@@ -117,6 +138,10 @@ export default function HeatmapCard({ data, period, today, metric, onMetric, loc
     const date = e.target.closest?.('[data-date]')?.dataset.date;
     if (!date) return setTip(null);
     setTip({ date, x: e.clientX, y: e.clientY });
+  };
+  const onClick = (e) => {
+    const date = e.target.closest?.('[data-date]')?.dataset.date;
+    if (date && date <= today) onSelect(date);
   };
 
   return (
@@ -147,18 +172,20 @@ export default function HeatmapCard({ data, period, today, metric, onMetric, loc
       </div>
       <div
         className="heat-body"
-        role="img"
+        role="group"
         aria-label={tx('heatAria', { period: label })}
         onMouseMove={onMove}
         onMouseLeave={() => setTip(null)}
+        onClick={onClick}
       >
         {period.mode === 'year' ? (
-          <YearGrid weeks={weeks} days={days} metric={metric} max={summary.max} today={today} locale={locale} year={period.year} />
+          <YearGrid weeks={weeks} days={days} metric={metric} max={summary.max} today={today} selected={selected} locale={locale} year={period.year} />
         ) : (
-          <MonthGrid weeks={weeks} days={days} metric={metric} max={summary.max} today={today} locale={locale} />
+          <MonthGrid weeks={weeks} days={days} metric={metric} max={summary.max} today={today} selected={selected} locale={locale} tx={tx} />
         )}
       </div>
       <div className="heat-legend">
+        <span className="heat-hint no-export">{tx('dayHint')}</span>
         <span>{tx('heatLess')}</span>
         {[0, 1, 2, 3, 4].map((level) => (
           <i key={level} className={`lv-${level}`} />

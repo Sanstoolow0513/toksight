@@ -142,6 +142,13 @@ requests come three chapter cards:
 3. **By model** — models merged across agents and ranked the same way; past eight models, the
    tail folds into one "N other models" row so the card keeps a fixed height.
 
+Click any day on the heatmap to open the **day card** beside the report: that day's tokens, cost,
+cache hit rate and requests, a 24-hour breakdown, the same agent and model rankings, and its
+sessions (title, time span, active time, directory, models). On wide screens the report column
+glides aside and the card unfolds from its edge, the pair staying centred; on narrow ones it floats
+over the page. Step days with ‹ ›, close with × / Esc or by clicking the day again. The card is
+never part of the exported image.
+
 Drag a card by its handle (or focus the handle and press ↑ / ↓) to reorder the chapters. The
 order, period mode, card metrics, theme and language are remembered in `localStorage`.
 **Export image** saves the header, the three cards in their current order and the footer as one
@@ -153,7 +160,7 @@ Startup filters (`--client`, `--since`, `--until`, `--today/--week/--month`) bou
 server can see; the report never widens that scope.
 
 The API accepts e.g. `GET /api/data?period=custom&since=2026-09-01&until=2026-09-30` (what the
-report requests) or `?client=claude&period=7d`. `period` is `all` (default) / `today` / `7d` /
+report requests; the day panel asks for a single day the same way) or `?client=claude&period=7d`. `period` is `all` (default) / `today` / `7d` /
 `30d` / `month` / `custom` (`custom` needs both `since` and `until`); `since`/`until` may also be
 used alone; presets cannot combine with explicit dates. Unknown, duplicate or invalid parameters
 return HTTP 400.

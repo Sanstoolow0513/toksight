@@ -5,7 +5,8 @@
 `toksight` — a Node.js CLI (zero runtime dependencies, ESM only, Node >= 20) that tracks token
 usage, cost, and cache hit rate of AI coding agents by reading the local session files those
 agents already write, plus the `toksight web` local report: one page per calendar month or year
-with three reorderable cards (heatmap · agents · models) and PNG export (there is no TUI).
+with three reorderable cards (heatmap · agents · models), a click-a-day detail card and PNG
+export (there is no TUI).
 Local-first and read-only: nothing is written to agent files. The sole network call is the
 LiteLLM pricing fetch (skippable with `--offline`).
 
@@ -69,9 +70,11 @@ src/fsutils.js      walkFiles/walkFilesMany/readJsonl/readJson/pathExists (warni
  semantics: root ENOENT silent, other read failures warn)
 web/                Next.js (App Router, JS, no Tailwind), statically exported to web/out
  and served by the CLI. Single page `/`: toolbar → report (hero + KPIs,
- SortableCards of HeatmapCard/AgentsCard/ModelsCard, footer). lib/period.js
- (local YYYY-MM-DD month/year math, Monday-start weeks) and lib/report.js
- (pure aggregations) are node:test-covered; lib/prefs.js owns every
+ SortableCards of HeatmapCard/AgentsCard/ModelsCard, footer) + DayPanel
+ (non-modal card for one heatmap day in a `.day-dock` slot beside the
+ column, outside `.report`).
+ lib/period.js (local YYYY-MM-DD day/month/year math, Monday-start weeks)
+ and lib/report.js (pure aggregations) are node:test-covered; lib/prefs.js owns every
  localStorage key; lib/exportImage.js (modern-screenshot) renders
  `.report` minus `.no-export`; lib/i18n.js (zh-CN / en). Visual rules
  locked in design-spec.md
@@ -157,9 +160,12 @@ cost (only OpenCode does).
   (`period=custom&since=<first day>&until=<last day>`, local dates) and derives everything from
   that payload — heatmap from `daily`, agents from `clients`, models from `models` merged by
   name. `useReport` aborts/sequence-checks so a stale period never replaces a newer one, and
-  keeps the previous payload (tagged with its period) on screen while loading. Day keys are
-  `YYYY-MM-DD` strings built from local `Date` parts — never `toISOString()`. The web server has
-  no write routes; do not reintroduce agent-config endpoints.
+ keeps the previous payload (tagged with its period) on screen while loading. The day panel
+ (`useDayReport`, same loader) requests one day as `since=until=<day>` and reads that payload's
+ `totals`/`hourly`/`clients`/`models`/`topSessions`; it never feeds the main report, and the
+ selected-day ring is suppressed during export via `.report.is-exporting`. Day keys are
+ `YYYY-MM-DD` strings built from local `Date` parts — never `toISOString()`. The web server has
+ no write routes; do not reintroduce agent-config endpoints.
 - Windows compatibility matters (paths, fixtures use `C:\\...` directories); `pathExists`
   handles `ENOTDIR` for files.
 

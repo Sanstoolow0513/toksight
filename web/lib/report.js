@@ -59,6 +59,10 @@ export function heatSummary(days, { since, until, today }, metric) {
   return { max, activeDays, elapsedDays: elapsed.length, average: activeDays ? total / activeDays : 0, peak, longestStreak };
 }
 
+function tokenParts(row, keys = TOKEN_PARTS, total = row.totalTokens) {
+  return keys.map((key) => (total > 0 ? (row[key] || 0) / total : 0));
+}
+
 function rank(rows, metric) {
   const total = rows.reduce((sum, row) => sum + metricValue(row, metric), 0);
   return rows
@@ -66,7 +70,7 @@ function rank(rows, metric) {
       ...row,
       value: metricValue(row, metric),
       share: total > 0 ? metricValue(row, metric) / total : 0,
-      parts: TOKEN_PARTS.map((key) => (row.totalTokens > 0 ? (row[key] || 0) / row.totalTokens : 0)),
+      parts: tokenParts(row),
       cacheHitRate: cacheHitRate(row),
       pricing: pricing(row),
     }))
@@ -103,4 +107,43 @@ export function modelRows(models = [], metric = 'tokens', limit = 8) {
   others.share = tail.reduce((sum, row) => sum + row.share, 0);
   others.count = tail.length;
   return { rows: ranked.slice(0, limit - 1), others, count: ranked.length };
+}
+
+// The payload's `hourly` rows use short token keys (input/cacheRead/…/tokens).
+const HOUR_PARTS = ['input', 'cacheRead', 'cacheWrite', 'output'];
+
+// 24 local-hour bars scaled linearly to the busiest hour; missing hours are
+// zero bars so the axis always spans the whole day.
+export function hourlyBars(hourly = [], metric = 'tokens') {
+  const byHour = new Map(hourly.map((row) => [row.hour, row]));
+  const bars = Array.from({ length: 24 }, (_, hour) => {
+    const row = byHour.get(hour) ?? { hour };
+    return { hour, row, value: (metric === 'cost' ? row.costUsd : row.tokens) || 0, parts: tokenParts(row, HOUR_PARTS, row.tokens) };
+  });
+  const max = bars.reduce((best, bar) => Math.max(best, bar.value), 0);
+  for (const bar of bars) bar.height = max > 0 ? bar.value / max : 0;
+  return { bars, max, peak: max > 0 ? bars.find((bar) => bar.value === max) : null };
+}
+
+// Sessions are named by their title, else the working directory's last
+// segment (either path separator); null when neither is usable.
+export function sessionName(row) {
+  const title = typeof row.title === 'string' ? row.title.replace(/\s+/g, ' ').trim() : '';
+  if (title) return title;
+  const dir = typeof row.directory === 'string' ? row.directory.split(/[\\/]+/).filter(Boolean).pop() : '';
+  return dir || null;
+}
+
+// The server already ranks `topSessions` by tokens; shares are of the whole
+// day (`totals`), not just of the sessions shown.
+export function sessionRows(sessions = [], totals = {}, metric = 'tokens', limit = 10) {
+  const total = metricValue(totals, metric);
+  return sessions.slice(0, limit).map((row) => ({
+    ...row,
+    name: sessionName(row),
+    value: metricValue(row, metric),
+    share: total > 0 ? metricValue(row, metric) / total : 0,
+    parts: tokenParts(row),
+    pricing: pricing(row),
+  }));
 }

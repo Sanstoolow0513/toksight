@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { t, DEFAULT_LOCALE, tables, periodLabel, dayLabel, WEEKDAYS, MONTHS } from '../web/lib/i18n.js';
+import { t, DEFAULT_LOCALE, tables, periodLabel, dayLabel, durationLabel, weekdayLabel, WEEKDAYS, MONTHS } from '../web/lib/i18n.js';
 
 test('i18n returns Chinese by default and interpolates', () => {
   assert.equal(DEFAULT_LOCALE, 'zh-CN');
@@ -35,4 +35,16 @@ test('period and day labels are localized', () => {
     assert.equal(WEEKDAYS[locale].length, 7);
     assert.equal(MONTHS[locale].length, 12);
   }
+  assert.equal(weekdayLabel('zh-CN', '2026-09-12'), '周六');
+  assert.equal(weekdayLabel('en', '2026-09-14'), 'Mon');
+});
+
+test('active durations are localized and rounded to minutes', () => {
+  assert.equal(durationLabel('en', 20_000), '<1m');
+  assert.equal(durationLabel('zh-CN', 0), '不到 1 分钟');
+  assert.equal(durationLabel('en', 35 * 60_000), '35m');
+  assert.equal(durationLabel('en', 80 * 60_000), '1h 20m');
+  assert.equal(durationLabel('en', 120 * 60_000), '2h');
+  assert.equal(durationLabel('zh-CN', 80 * 60_000), '1 小时 20 分');
+  assert.equal(durationLabel('zh-CN', 35 * 60_000), '35 分钟');
 });

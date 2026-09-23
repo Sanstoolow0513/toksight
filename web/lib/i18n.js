@@ -1,3 +1,5 @@
+import { weekdayIndex } from './period.js';
+
 export const DEFAULT_LOCALE = 'zh-CN';
 export const LOCALES = ['zh-CN', 'en'];
 
@@ -107,6 +109,22 @@ export const tables = {
     footEstimate: '费用按公开价格估算，仅供参考',
     footLocal: '数据只来自本机会话文件',
     footUnpriced: '未定价模型：{models}',
+    dayHint: '点击日期查看当天详情',
+    dayPanel: '单日详情',
+    dayPrev: '前一天',
+    dayNext: '后一天',
+    dayClose: '关闭详情',
+    dayToday: '今天',
+    dayEmpty: '这一天没有记录。',
+    secHourly: '时段分布',
+    secSessions: '会话',
+    hourlyPeak: '峰值 {hour}',
+    hourlyAria: '{day}每小时分布',
+    sessionsAll: '按 Tokens 排序 · 共 {n} 个',
+    sessionsAllOne: '按 Tokens 排序 · 共 {n} 个',
+    sessionsTop: '按 Tokens 排序 · 前 {shown} 个 / 共 {n} 个',
+    sessionActive: '活跃 {time}',
+    sessionUntitled: '未命名会话',
   },
   en: {
     docTitle: 'toksight · Token usage & cost report',
@@ -197,6 +215,22 @@ export const tables = {
     footEstimate: 'Costs are estimates from public prices',
     footLocal: 'Data comes only from this machine',
     footUnpriced: 'Unpriced models: {models}',
+    dayHint: 'Click a day for its details',
+    dayPanel: 'Day detail',
+    dayPrev: 'Previous day',
+    dayNext: 'Next day',
+    dayClose: 'Close details',
+    dayToday: 'Today',
+    dayEmpty: 'Nothing recorded on this day.',
+    secHourly: 'By hour',
+    secSessions: 'Sessions',
+    hourlyPeak: 'peak {hour}',
+    hourlyAria: 'Hourly breakdown for {day}',
+    sessionsAll: 'by tokens · {n} sessions',
+    sessionsAllOne: 'by tokens · {n} session',
+    sessionsTop: 'by tokens · top {shown} of {n}',
+    sessionActive: '{time} active',
+    sessionUntitled: 'Untitled session',
   },
 };
 
@@ -221,4 +255,20 @@ export function dayLabel(locale, key, withYear = false) {
   const [y, m, d] = key.split('-').map(Number);
   if (locale === 'en') return `${MONTHS.en[m - 1]} ${d}${withYear ? `, ${y}` : ''}`;
   return `${withYear ? `${y}年` : ''}${m}月${d}日`;
+}
+
+// 'YYYY-MM-DD' → "周六" / "Sat".
+export function weekdayLabel(locale, key) {
+  const name = WEEKDAYS[locale === 'en' ? 'en' : 'zh-CN'][weekdayIndex(key)];
+  return locale === 'en' ? name : `周${name}`;
+}
+
+// Rounded to whole minutes: "1 小时 20 分" / "1h 20m"; "<1m" below a minute.
+export function durationLabel(locale, ms) {
+  const minutes = Math.round((Number(ms) || 0) / 60000);
+  if (minutes < 1) return locale === 'en' ? '<1m' : '不到 1 分钟';
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  if (locale === 'en') return h ? `${h}h${m ? ` ${m}m` : ''}` : `${m}m`;
+  return h ? `${h} 小时${m ? ` ${m} 分` : ''}` : `${m} 分钟`;
 }

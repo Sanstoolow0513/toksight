@@ -96,7 +96,7 @@ test('session rows group per client, compute duration, sort by tokens', () => {
     // codex s1 (same id, different client → separate session), bigger tokens
     entry({ client: 'codex', sessionId: 's1', inputTokens: 500, cacheReadTokens: 900, timestamp: new Date(2026, 7, 10, 12).getTime() }),
     // unknown timestamps → no duration, sorted by tokens only
-    entry({ client: 'claude', sessionId: 's2', inputTokens: 5, timestamp: null }),
+    entry({ client: 'claude', sessionId: 's2', inputTokens: 5, timestamp: null, costUsd: null }),
   ];
   const { topSessions, longestSession } = buildSessionRows(entries, { top: 10 });
 
@@ -104,6 +104,8 @@ test('session rows group per client, compute duration, sort by tokens', () => {
   assert.equal(topSessions[0].client, 'codex'); // 1400 tokens wins
   assert.equal(topSessions[0].cacheReadTokens, 900);
   assert.equal(topSessions[0].activeMs, 0); // single request contributes no measurable time
+  assert.equal(topSessions[1].pricedRequests, 2);
+  assert.equal(topSessions[2].pricedRequests, 0); // unpriced: a $0 cost must not read as free
   assert.equal(topSessions[1].client, 'claude');
   assert.equal(topSessions[1].sessionId, 's1');
   assert.equal(topSessions[1].title, 'Fix bug');

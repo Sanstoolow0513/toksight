@@ -13,6 +13,7 @@ const KEYS = {
   order: 'toksight-card-order',
   mode: 'toksight-period-mode',
   metrics: 'toksight-card-metrics',
+  dayMetric: 'toksight-day-metric',
 };
 
 function read(key) {
@@ -68,6 +69,12 @@ export function readMetrics() {
   return Object.fromEntries(CARD_IDS.map((id) => [id, METRICS.includes(v[id]) ? v[id] : 'tokens']));
 }
 export const writeMetrics = (v) => write(KEYS.metrics, JSON.stringify(v));
+
+export function readDayMetric() {
+  const v = read(KEYS.dayMetric);
+  return METRICS.includes(v) ? v : 'tokens';
+}
+export const writeDayMetric = (v) => write(KEYS.dayMetric, v);
 
 export function resolveTheme(pref) {
   if (pref !== 'system') return pref;

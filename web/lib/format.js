@@ -49,10 +49,30 @@ export function fmtPct(p, digits = 1) {
   return `${(p * 100).toFixed(digits)}%`;
 }
 
-export function fmtDateTime(ts) {
-  if (ts == null) return '—';
+const pad2 = (n) => String(n).padStart(2, '0');
+
+function toDate(ts) {
+  if (ts == null) return null;
   const d = new Date(ts);
-  if (Number.isNaN(d.getTime())) return '—';
-  const p = (n) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+export function fmtDateTime(ts) {
+  const d = toDate(ts);
+  if (!d) return '—';
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+}
+
+// Local wall-clock "HH:MM".
+export function fmtClock(ts) {
+  const d = toDate(ts);
+  return d ? `${pad2(d.getHours())}:${pad2(d.getMinutes())}` : '—';
+}
+
+// "09:12–11:40", a single time when both ends share a minute, null without times.
+export function fmtClockRange(start, end) {
+  if (toDate(start) == null) return null;
+  const a = fmtClock(start);
+  const b = toDate(end) == null ? a : fmtClock(end);
+  return a === b ? a : `${a}–${b}`;
 }

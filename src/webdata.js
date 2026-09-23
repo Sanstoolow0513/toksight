@@ -184,6 +184,7 @@ function sessionRow(r, activeMs) {
     cacheWriteTokens: r.totals.cacheWriteTokens,
     totalTokens: r.totals.totalTokens,
     costUsd: roundUsd(r.totals.costUsd),
+    pricedRequests: r.totals.pricedRequests,
     cacheHitRate: cacheHitRate(r.totals),
     startedAt,
     endedAt,

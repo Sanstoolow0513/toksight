@@ -2,7 +2,7 @@ import { fmtCost, fmtInt, fmtMetric, fmtPct, fmtTokens } from '@/lib/format';
 
 const PART_KEYS = ['compInput', 'compCacheRead', 'compCacheWrite', 'compOutput'];
 
-function costText(row, tx) {
+export function costText(row, tx) {
   if (row.pricing === 'none') return tx('rowUnpriced');
   const cost = fmtCost(row.costUsd);
   return row.pricing === 'partial' ? `${cost} (${tx('rowPartial')})` : cost;
@@ -10,6 +10,16 @@ function costText(row, tx) {
 
 // Bar length is the row's share of the period total. In token mode the bar
 // is split by token class; in cost mode it is one solid accent bar.
+export function ShareBar({ share, parts, metric }) {
+  return (
+    <div className="rank-track">
+      <div className={metric === 'cost' ? 'rank-fill is-cost' : 'rank-fill'} style={{ width: share > 0 ? `max(4px, ${share * 100}%)` : 0 }}>
+        {metric === 'tokens' ? parts.map((part, i) => (part > 0 ? <i key={i} className={`part-${i}`} style={{ flexGrow: part }} /> : null)) : null}
+      </div>
+    </div>
+  );
+}
+
 export function RankRow({ rank, name, mono = false, lead, row, metric, tx, muted = false }) {
   const meta = [
     lead,
@@ -30,13 +40,7 @@ export function RankRow({ rank, name, mono = false, lead, row, metric, tx, muted
         <span className="rank-value">{value}</span>
         <span className="rank-share">{fmtPct(row.share)}</span>
       </div>
-      <div className="rank-track">
-        <div className={metric === 'cost' ? 'rank-fill is-cost' : 'rank-fill'} style={{ width: row.share > 0 ? `max(4px, ${row.share * 100}%)` : 0 }}>
-          {metric === 'tokens'
-            ? row.parts.map((part, i) => (part > 0 ? <i key={i} className={`part-${i}`} style={{ flexGrow: part }} /> : null))
-            : null}
-        </div>
-      </div>
+      <ShareBar share={row.share} parts={row.parts} metric={metric} />
       <div className="rank-meta">{meta.join(' · ')}</div>
     </li>
   );

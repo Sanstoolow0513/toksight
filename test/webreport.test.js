@@ -1,10 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  calendarWeeks, currentPeriod, dayKey, eachDayKey, periodBounds, periodKey, periodNav, shiftPeriod, weekdayIndex, withMode,
+  calendarWeeks, currentPeriod, dayKey, dayNav, eachDayKey, periodBounds, periodKey, periodNav, shiftDay, shiftPeriod, weekdayIndex, withMode,
 } from '../web/lib/period.js';
-import { agentRows, dailyMap, heatLevel, heatSummary, modelRows } from '../web/lib/report.js';
-import { fmtCostShort, fmtTokens } from '../web/lib/format.js';
+import { agentRows, dailyMap, heatLevel, heatSummary, hourlyBars, modelRows, sessionName, sessionRows } from '../web/lib/report.js';
+import { fmtClock, fmtClockRange, fmtCostShort, fmtTokens } from '../web/lib/format.js';
 
 const usage = (over = {}) => {
   const row = { requests: 1, sessions: 1, inputTokens: 100, cacheReadTokens: 300, cacheWriteTokens: 0, outputTokens: 100, reasoningTokens: 0, costUsd: 1, pricedRequests: 1, ...over };
@@ -103,6 +103,63 @@ test('model rows merge agents, fold the tail into one row and keep shares whole'
   const shares = rows.reduce((sum, r) => sum + r.share, others.share);
   assert.ok(Math.abs(shares - 1) < 1e-9);
   assert.equal(modelRows(models.slice(0, 3), 'tokens', 8).others, null);
+});
+
+test('day stepping crosses month, year and leap-day boundaries in local time', () => {
+  assert.equal(shiftDay('2026-09-30', 1), '2026-10-01');
+  assert.equal(shiftDay('2026-01-01', -1), '2025-12-31');
+  assert.equal(shiftDay('2028-02-28', 1), '2028-02-29');
+  assert.equal(shiftDay('2028-03-01', -1), '2028-02-29');
+  // A DST switch day still steps by exactly one calendar day.
+  assert.equal(shiftDay('2026-03-08', 1), '2026-03-09');
+  assert.equal(shiftDay('2026-11-01', -1), '2026-10-31');
+  assert.deepEqual(dayNav('2026-09-12', { firstDay: '2026-08-29', today: '2026-09-22' }), { canPrev: true, canNext: true });
+  assert.deepEqual(dayNav('2026-08-29', { firstDay: '2026-08-29', today: '2026-09-22' }), { canPrev: false, canNext: true });
+  assert.deepEqual(dayNav('2026-09-22', { firstDay: null, today: '2026-09-22' }), { canPrev: false, canNext: false });
+});
+
+test('hourly bars span all 24 hours and scale linearly to the busiest hour', () => {
+  const hourly = [
+    { hour: 9, input: 100, cacheRead: 300, cacheWrite: 0, output: 100, tokens: 500, costUsd: 2, requests: 3, sessions: 1 },
+    { hour: 14, input: 0, cacheRead: 0, cacheWrite: 0, output: 1000, tokens: 1000, costUsd: 1, requests: 1, sessions: 1 },
+  ];
+  const tokens = hourlyBars(hourly, 'tokens');
+  assert.equal(tokens.bars.length, 24);
+  assert.equal(tokens.max, 1000);
+  assert.equal(tokens.peak.hour, 14);
+  assert.equal(tokens.bars[9].height, 0.5);
+  assert.deepEqual(tokens.bars[9].parts, [0.2, 0.6, 0, 0.2]);
+  assert.deepEqual([tokens.bars[0].value, tokens.bars[0].height], [0, 0]);
+  assert.equal(hourlyBars(hourly, 'cost').peak.hour, 9);
+  assert.equal(hourlyBars([], 'tokens').peak, null);
+});
+
+test('day sessions are named by title, then directory, and share the whole day', () => {
+  assert.equal(sessionName({ title: '  fix\n the  heatmap ', directory: '/tmp/x' }), 'fix the heatmap');
+  assert.equal(sessionName({ title: '', directory: 'C:\\Users\\me\\toksight\\' }), 'toksight');
+  assert.equal(sessionName({ directory: '/home/me/proj' }), 'proj');
+  assert.equal(sessionName({ title: null, directory: null }), null);
+  const sessions = [
+    { client: 'claude', sessionId: 'a', title: 'A', ...usage({ inputTokens: 900, costUsd: 3 }) },
+    { client: 'codex', sessionId: 'b', directory: '/w/b', ...usage({ pricedRequests: 0 }) },
+  ];
+  const totals = usage({ inputTokens: 2000, costUsd: 8 });
+  const rows = sessionRows(sessions, totals, 'tokens', 1);
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].name, 'A');
+  assert.equal(rows[0].share, 1300 / 2400);
+  assert.equal(rows[0].pricing, 'full');
+  const byCost = sessionRows(sessions, totals, 'cost');
+  assert.deepEqual([byCost[1].name, byCost[1].share, byCost[1].pricing], ['b', 1 / 8, 'none']);
+});
+
+test('clock times are local and collapse equal minutes', () => {
+  const start = new Date(2026, 8, 12, 9, 5).getTime();
+  assert.equal(fmtClock(start), '09:05');
+  assert.equal(fmtClockRange(start, new Date(2026, 8, 12, 11, 40).getTime()), '09:05–11:40');
+  assert.equal(fmtClockRange(start, start + 20_000), '09:05');
+  assert.equal(fmtClockRange(null, start), null);
+  assert.equal(fmtClock(null), '—');
 });
 
 test('compact formatting fits calendar cells', () => {

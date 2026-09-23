@@ -318,9 +318,14 @@ code {
 
 /* ---------- page column ---------- */
 
+.workspace {
+  display: flex;
+  justify-content: center;
+}
+
 .main {
-  max-width: 1000px;
-  margin: 0 auto;
+  flex: 0 1 1000px;
+  min-width: 0;
   padding: 4px 20px 72px;
 }
 
@@ -591,6 +596,29 @@ code {
   box-shadow: 0 0 0 2px var(--surface), 0 0 0 3.5px var(--accent-strong);
 }
 
+button.mcell {
+  width: 100%;
+  border: 0;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+button.mcell:hover {
+  outline: 1.5px solid var(--border-strong);
+  outline-offset: -1.5px;
+}
+
+button.mcell:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Selection is an on-screen state only: export drops it (lib/exportImage.js). */
+.report:not(.is-exporting) .mcell.is-selected {
+  box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--text);
+}
+
 .mcell-day {
   font-size: 11.5px;
   line-height: 1;
@@ -646,8 +674,23 @@ code {
   box-shadow: 0 0 0 1.5px var(--text-2);
 }
 
+.ycell:not(.is-future) {
+  cursor: pointer;
+}
+
+.ycell:not(.is-future):hover {
+  outline: 1.5px solid var(--text-3);
+  outline-offset: 0;
+}
+
+.report:not(.is-exporting) .ycell.is-selected {
+  z-index: 1;
+  box-shadow: 0 0 0 1.5px var(--surface), 0 0 0 3px var(--text);
+}
+
 .heat-legend {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: flex-end;
   gap: 4px;
@@ -658,6 +701,10 @@ code {
 
 .heat-legend span {
   margin: 0 4px;
+}
+
+.heat-legend .heat-hint {
+  margin: 0 auto 0 0;
 }
 
 .heat-legend i {
@@ -961,6 +1008,321 @@ code {
   }
 }
 
+/* ---------- day card ---------- */
+
+/* --dock-top lines the card up with the top of `.report`
+   (58px top bar + 4px main + 16px report padding). */
+.page {
+  --panel-w: clamp(360px, 28vw, 420px);
+  --dock-top: 78px;
+  --dock-time: 0.36s;
+  --dock-ease: cubic-bezier(0.22, 0.8, 0.24, 1);
+}
+
+/* Narrow screens: the card floats over the page, inset from the edges. */
+.day-panel {
+  position: fixed;
+  top: 12px;
+  right: 12px;
+  bottom: 12px;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  width: min(var(--panel-w), calc(100vw - 24px));
+  overflow: hidden;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-lift);
+  opacity: 0;
+  transform: translateX(24px) scale(0.98);
+  transform-origin: right center;
+  visibility: hidden;
+  transition:
+    opacity 0.2s ease,
+    transform var(--dock-time) var(--dock-ease),
+    visibility 0s linear var(--dock-time);
+}
+
+.day-dock.is-open .day-panel {
+  opacity: 1;
+  transform: none;
+  visibility: visible;
+  transition:
+    opacity 0.26s ease 0.06s,
+    transform var(--dock-time) var(--dock-ease);
+}
+
+.day-panel:focus,
+.day-panel:focus-visible {
+  outline: none;
+}
+
+.panel-head {
+  flex-shrink: 0;
+  padding: 16px 24px 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.panel-top,
+.panel-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.panel-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.panel-title {
+  margin: 6px 0 4px;
+  font-family: var(--serif);
+  font-size: 32px;
+  font-weight: 400;
+  line-height: 1.15;
+  letter-spacing: -0.01em;
+  font-variant-numeric: lining-nums;
+}
+
+.panel-sub {
+  margin: 0;
+  color: var(--text-3);
+  font-size: 13px;
+}
+
+.panel-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 20px 24px 36px;
+}
+
+.panel-content {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  transition: opacity 0.2s;
+}
+
+.panel-content.is-loading {
+  opacity: 0.55;
+  pointer-events: none;
+}
+
+.panel-kpis {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin: 0;
+}
+
+.panel-stat {
+  padding: 11px 14px 12px;
+  background: var(--surface-2);
+  border-radius: 12px;
+}
+
+.panel-stat dt {
+  color: var(--text-3);
+  font-size: 12px;
+}
+
+.panel-stat dd {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin: 2px 0 0;
+}
+
+.panel-section {
+  padding-top: 20px;
+  border-top: 1px solid var(--border);
+}
+
+.panel-section-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.panel-section-head h3 {
+  margin: 0;
+  font-family: var(--serif);
+  font-size: 18px;
+  font-weight: 500;
+}
+
+.panel-section-head span {
+  color: var(--text-3);
+  font-size: 12px;
+  text-align: right;
+}
+
+.day-panel .rank-list {
+  gap: 14px;
+}
+
+.day-panel .rank-name {
+  font-size: 14px;
+}
+
+.day-panel .rank-name.is-mono {
+  font-size: 13px;
+}
+
+.day-panel .rank-value {
+  font-size: 14px;
+}
+
+.day-panel .parts-legend {
+  margin-top: 12px;
+  padding-top: 0;
+  border-top: 0;
+}
+
+.session-detail {
+  margin-top: 3px;
+  overflow: hidden;
+  color: var(--text-3);
+  font-family: var(--mono);
+  font-size: 11.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hourly {
+  position: relative;
+  padding-bottom: 20px;
+}
+
+.hourly-bars {
+  display: grid;
+  grid-template-columns: repeat(24, minmax(0, 1fr));
+  grid-template-rows: 112px;
+  gap: 3px;
+  border-bottom: 1px solid var(--border);
+}
+
+.hour-col {
+  display: flex;
+  align-items: flex-end;
+  border-radius: 4px 4px 0 0;
+}
+
+.hour-col:hover {
+  background: var(--surface-2);
+}
+
+.hour-bar {
+  display: flex;
+  flex-direction: column-reverse;
+  width: 100%;
+  overflow: hidden;
+  border-radius: 3px 3px 0 0;
+}
+
+.hour-bar.is-cost {
+  background: var(--accent);
+}
+
+.hour-bar i {
+  display: block;
+  flex-basis: 0;
+  width: 100%;
+}
+
+.hourly-axis {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: 16px;
+  color: var(--text-3);
+  font-size: 11px;
+}
+
+.hourly-axis span {
+  position: absolute;
+  top: 3px;
+  transform: translateX(-50%);
+  font-variant-numeric: tabular-nums;
+}
+
+.hourly-axis span:first-child {
+  transform: none;
+}
+
+.hourly-axis span:last-child {
+  transform: translateX(-100%);
+}
+
+.panel-empty {
+  margin: 4px 0;
+  color: var(--text-3);
+}
+
+.panel-error {
+  margin: 0 0 16px;
+}
+
+.panel-error p {
+  margin: 0 0 8px;
+}
+
+.panel-skel {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+/* Wide screens: `.day-dock` opens a slot right of the report column and the
+   pair re-centres, so the column glides left while the card unfolds from
+   its edge. The dock's -20px margin tucks the card into the column's side
+   padding: 24px to the report cards, 44px to the pair's right edge
+   (mirroring the column's left inset). The top bar widens with the pair. */
+@media (min-width: 1180px) {
+  .topbar-inner {
+    transition: max-width var(--dock-time) var(--dock-ease);
+  }
+
+  .page.has-panel .topbar-inner {
+    max-width: calc(1024px + var(--panel-w));
+  }
+
+  .day-dock {
+    flex: 0 0 0px;
+    min-width: 0;
+    overflow-x: clip;
+    transition:
+      flex-basis var(--dock-time) var(--dock-ease),
+      margin-left var(--dock-time) var(--dock-ease);
+  }
+
+  .day-dock.is-open {
+    flex-basis: calc(var(--panel-w) + 44px);
+    margin-left: -20px;
+  }
+
+  .day-panel {
+    position: sticky;
+    top: var(--dock-top);
+    right: auto;
+    bottom: auto;
+    z-index: auto;
+    width: var(--panel-w);
+    height: calc(100vh - var(--dock-top) - 24px);
+    box-shadow: var(--shadow);
+    transform: translateX(-16px);
+    transform-origin: left center;
+  }
+}
+
 /* ---------- responsive ---------- */
 
 @media (max-width: 760px) {
@@ -1004,6 +1366,21 @@ code {
   .mcell {
     height: 48px;
     padding: 6px 7px;
+  }
+
+  .day-panel {
+    top: 8px;
+    right: 8px;
+    bottom: 8px;
+    width: calc(100vw - 16px);
+  }
+
+  .panel-head {
+    padding: 12px 16px 14px;
+  }
+
+  .panel-body {
+    padding: 16px 16px 28px;
   }
 }
 

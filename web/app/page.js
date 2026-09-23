@@ -2,7 +2,10 @@
 
 // toksight report: a centred column on a dot grid — hero (period + KPIs),
 // three reorderable chapter cards (heatmap · agents · models) and a footer.
-// Everything inside `.report` is what "Export image" captures.
+// Everything inside `.report` is what "Export image" captures. Clicking a
+// heatmap day opens the day card beside the column (the pair re-centres on
+// wide screens; it floats over the page on narrow ones); the card never
+// enters the exported image.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Inbox, RefreshCw, TriangleAlert } from 'lucide-react';
@@ -11,19 +14,15 @@ import SortableCards from '@/components/SortableCards';
 import HeatmapCard from '@/components/HeatmapCard';
 import AgentsCard from '@/components/AgentsCard';
 import ModelsCard from '@/components/ModelsCard';
+import DayPanel from '@/components/DayPanel';
 import BrandMark from '@/components/BrandMark';
-import { useReport } from '@/lib/useReport';
-import { currentPeriod, dayKey, periodBounds, periodKey, periodNav, shiftPeriod, withMode } from '@/lib/period';
+import { useDayReport, useReport } from '@/lib/useReport';
+import { currentPeriod, dayKey, dayNav, periodBounds, periodKey, periodNav, shiftDay, shiftPeriod, withMode } from '@/lib/period';
 import { fmtCost, fmtDateTime, fmtInt, fmtPct, fmtTokens } from '@/lib/format';
 import { DEFAULT_LOCALE, dayLabel, periodLabel, t } from '@/lib/i18n';
 import { exportReportImage } from '@/lib/exportImage';
 import * as prefs from '@/lib/prefs';
-
-function coded(text) {
-  return String(text)
-    .split(/`([^`]+)`/)
-    .map((part, i) => (i % 2 ? <code key={i}>{part}</code> : part));
-}
+import { coded } from '@/components/Coded';
 
 function Kpi({ label, value, sub }) {
   return (
@@ -71,8 +70,11 @@ export default function Page() {
   const [metrics, setMetrics] = useState(() => Object.fromEntries(prefs.CARD_IDS.map((id) => [id, 'tokens'])));
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState(null);
+  const [selectedDay, setSelectedDay] = useState(null);
+  const [dayMetric, setDayMetric] = useState('tokens');
   const reportRef = useRef(null);
   const report = useReport(period);
+  const dayReport = useDayReport(selectedDay);
   const { data } = report;
   const shown = report.period;
 
@@ -82,6 +84,7 @@ export default function Page() {
     setTheme(prefs.readTheme());
     setOrder(prefs.readOrder());
     setMetrics(prefs.readMetrics());
+    setDayMetric(prefs.readDayMetric());
     setToday(dayKey(now));
     setPeriod(currentPeriod(prefs.readMode(), now));
   }, []);
@@ -109,7 +112,10 @@ export default function Page() {
   const agentLabel = useCallback((id) => labels.get(id) ?? id, [labels]);
 
   const firstAt = data?.scopeRange?.firstAt;
-  const nav = period && data ? periodNav(period, { firstDay: firstAt != null ? dayKey(new Date(firstAt)) : null, today }) : { canPrev: false, canNext: false };
+  const firstDay = firstAt != null ? dayKey(new Date(firstAt)) : null;
+  const nav = period && data ? periodNav(period, { firstDay, today }) : { canPrev: false, canNext: false };
+  const panelDay = selectedDay ?? dayReport.day;
+  const panelNav = panelDay ? dayNav(panelDay, { firstDay, today }) : { canPrev: false, canNext: false };
 
   const onMode = (mode) => {
     prefs.writeMode(mode);
@@ -126,6 +132,15 @@ export default function Page() {
   const onRefresh = () => {
     setToday(dayKey(new Date()));
     void report.reload();
+    if (selectedDay) void dayReport.reload();
+  };
+  // Clicking the open day again closes the panel.
+  const onSelectDay = useCallback((date) => setSelectedDay((d) => (d === date ? null : date)), []);
+  const onStepDay = (delta) => setSelectedDay((d) => (d ? shiftDay(d, delta) : d));
+  const onCloseDay = useCallback(() => setSelectedDay(null), []);
+  const onDayMetric = (value) => {
+    prefs.writeDayMetric(value);
+    setDayMetric(value);
   };
   const onReorder = (next) => {
     prefs.writeOrder(next);
@@ -212,7 +227,7 @@ export default function Page() {
         <SortableCards order={order} onReorder={onReorder} handleLabel={tx('dragHandle')}>
           {(id, { index, handleProps }) => {
             const shared = { ...cardProps, index, handleProps, metric: metrics[id], onMetric: onMetric(id) };
-            if (id === 'heatmap') return <HeatmapCard {...shared} today={today} />;
+            if (id === 'heatmap') return <HeatmapCard {...shared} today={today} selected={selectedDay} onSelect={onSelectDay} />;
             if (id === 'agents') return <AgentsCard {...shared} />;
             return <ModelsCard {...shared} />;
           }}
@@ -239,7 +254,7 @@ export default function Page() {
   ].filter(Boolean);
 
   return (
-    <div className="page">
+    <div className={selectedDay ? 'page has-panel' : 'page'}>
       <Toolbar
         locale={locale}
         tx={tx}
@@ -256,28 +271,44 @@ export default function Page() {
         onExport={onExport}
         canExport={hasData && !report.loading}
       />
-      <main className="main">
-        {notices.map((text) => (
-          <div key={text} className="notice is-error" role="alert">
-            <TriangleAlert size={15} strokeWidth={2} aria-hidden="true" />
-            <span>{coded(text)}</span>
-          </div>
-        ))}
-        {data?.warnings?.length ? (
-          <details className="notice is-warn">
-            <summary>
+      <div className="workspace">
+        <main className="main">
+          {notices.map((text) => (
+            <div key={text} className="notice is-error" role="alert">
               <TriangleAlert size={15} strokeWidth={2} aria-hidden="true" />
-              {tx('warnings', { n: data.warnings.length })}
-            </summary>
-            <ul>
-              {data.warnings.map((w, i) => (
-                <li key={i}>{w}</li>
-              ))}
-            </ul>
-          </details>
-        ) : null}
-        {content}
-      </main>
+              <span>{coded(text)}</span>
+            </div>
+          ))}
+          {data?.warnings?.length ? (
+            <details className="notice is-warn">
+              <summary>
+                <TriangleAlert size={15} strokeWidth={2} aria-hidden="true" />
+                {tx('warnings', { n: data.warnings.length })}
+              </summary>
+              <ul>
+                {data.warnings.map((w, i) => (
+                  <li key={i}>{w}</li>
+                ))}
+              </ul>
+            </details>
+          ) : null}
+          {content}
+        </main>
+        <DayPanel
+          open={Boolean(selectedDay)}
+          day={panelDay}
+          report={dayReport}
+          nav={panelNav}
+          today={today}
+          metric={dayMetric}
+          onMetric={onDayMetric}
+          onStep={onStepDay}
+          onClose={onCloseDay}
+          locale={locale}
+          tx={tx}
+          agentLabel={agentLabel}
+        />
+      </div>
     </div>
   );
 }

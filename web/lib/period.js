@@ -49,6 +49,17 @@ export function periodNav(p, { firstDay, today }) {
   return { canPrev: firstDay != null && firstDay < since, canNext: until < today };
 }
 
+export function shiftDay(key, delta) {
+  const date = parseKey(key);
+  date.setDate(date.getDate() + delta);
+  return dayKey(date);
+}
+
+// The day panel steps back to the first active day and never past today.
+export function dayNav(key, { firstDay, today }) {
+  return { canPrev: firstDay != null && firstDay < key, canNext: key < today };
+}
+
 export function eachDayKey(since, until) {
   const out = [];
   const cursor = parseKey(since);
