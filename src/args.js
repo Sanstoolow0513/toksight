@@ -8,7 +8,7 @@
 import { resolveClientIds } from './clients/index.js';
 import { endOfDay, parseDateArg, startOfDay, startOfMonth, stepDay } from './dates.js';
 
-const COMMANDS = ['overview', 'daily', 'monthly', 'models', 'sessions', 'web', 'env', 'help'];
+const COMMANDS = ['overview', 'daily', 'monthly', 'models', 'sessions', 'web', 'refresh', 'env', 'help'];
 
 export function parseArgs(argv, { now = Date.now() } = {}) {
   const opts = {

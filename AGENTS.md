@@ -2,13 +2,13 @@
 
 ## What this is
 
-`toksight` — a Node.js CLI (zero runtime dependencies, ESM only, Node >= 20) that tracks token
+`toksight` — a Node.js CLI (zero runtime dependencies, ESM only, Node >= 22.5) that tracks token
 usage, cost, and cache hit rate of AI coding agents by reading the local session files those
 agents already write, plus the `toksight web` local report: one page per calendar month or year
 with three reorderable cards (heatmap · agents · models), a click-a-day detail card and PNG
 export (there is no TUI).
-Local-first and read-only: nothing is written to agent files. The sole network call is the
-LiteLLM pricing fetch (skippable with `--offline`).
+Local-first: nothing is written to agent files. Refresh writes toksight's own SQLite database.
+The sole external network call is the LiteLLM pricing fetch (skippable with `--offline`).
 
 ## Commands
 
@@ -18,22 +18,22 @@ LiteLLM pricing fetch (skippable with `--offline`).
 - `node bin/toksight.js` (or `npm run smoke`) — run the CLI from source against real agent data.
 - `npm run web:ci` — install locked dashboard dependencies (needs network the first time).
 - `npm run web:build` — build + verify the static export into `web/out/` (never installs).
-  Source web builds/dev need Node >=20.9. Required once before `toksight web` shows the UI;
+  Source web builds/dev need Node >=22.5. Required once before `toksight web` shows the UI;
   until then `/` serves a setup page while `/api/data` works.
 - `npm run web:dev` — loopback API (4729) + Next dev server (3000) together; accepts
   `-- --port <ui> --api-port <api> --offline`; Ctrl+C stops both. `web:dev:ui` runs only Next —
   pair it with `web --api-only` and point its proxy at `TOKSIGHT_DEV_API`. Production builds
   always export regardless of that env var.
 - `npm run check:package` — pack, install the tarball offline in a temp dir, then exercise its
- CLI against fixtures: the page, static resources and `/api/data` (filters, report periods,
- `scopeRange`). CI and release gates run it on Ubuntu/Windows (Node 22).
+ CLI against fixtures: the page, static resources, `/api/data` (filters, report periods,
+ `scopeRange`) and SQLite refresh. CI and release gates run it on Ubuntu/Windows (Node 22).
 - No linter or typechecker; plain JavaScript ESM throughout.
 
 ## Architecture
 
 ```
 bin/toksight.js     executable entry → src/cli.js main()
-src/cli.js          dispatch only: parse → help/version → web (runWeb) → collect → render;
+src/cli.js          dispatch only: parse → help/version → web/refresh → collect → render;
                     no collection or rendering logic lives here
 scripts/            source-only dev supervisor (web-dev reuses cli.runWeb and owns its
                     lifetime), build helpers, installed-package verification; npm-excluded
@@ -42,8 +42,10 @@ src/collect.js      collectAll — the one pipeline for CLI/--json/web (env/home
                     perClient rows carry { id, label, roots, entries }; filterEntries shared
                     with web; reportedCosts WeakSet keeps agent-reported cost provenance
                     without adding fields to normalized entries
-src/webservice.js   createWebDataService — concurrent requests share only the unfiltered
-                    collection promise; no settled snapshot cache
+src/database.js     project-owned SQLite usage snapshot (transactional refresh, pricing
+                    provenance, preload, cross-process change detection)
+src/webservice.js   createWebDataService — GETs filter the committed snapshot; concurrent
+                    refreshes share one collection/write promise
 src/webquery.js     query-param validation; intersects startup scope (never widens);
                     invalid/duplicate params → HTTP 400
 src/comparison.js   adjacent equal-calendar-day comparison, contributions, coverage,
@@ -57,13 +59,14 @@ src/dates.js        the ONLY home for local-time date math (startOfDay/endOfDay/
                     invalid calendar dates rejected, never normalized; DST-safe local
                     midnights, never blind `+24h`; do not re-implement day math elsewhere
 src/clients/        one parser per agent; index.js holds clients + clientAliases;
-                    sqlite.js centralizes the dynamic node:sqlite readOnly open
+                    sqlite.js centralizes the node:sqlite readOnly open
 src/pricing.js      builtin → LiteLLM (1h disk cache) → user overrides; { exact, suffix }
                     lookup maps (suffix pre-index is O(1))
 src/aggregate.js    grouping/totals (summarize, byModel/Day/Month/Session, cacheHitRate)
 src/webdata.js      pure dashboard aggregations (heatmap, trend, hourly, sessions…); day
  math imported only from src/dates.js
-src/webserver.js    zero-dep node:http — static web/out + read-only GET/HEAD /api/data;
+src/webserver.js    zero-dep node:http — static web/out + GET/HEAD /api/data and
+                    POST /api/refresh (same-origin guarded);
  any other /api/* path is a JSON 404. Serving rules → Gotchas
 src/format.js       ANSI tables & number formatting
 src/fsutils.js      walkFiles/walkFilesMany/readJsonl/readJson/pathExists (warning
@@ -103,8 +106,7 @@ cost (only OpenCode does).
   costs are honored as-is).
 - **ZCode double-count guard**: the SQLite db (`~/.zcode/cli/db/db.sqlite`, `model_usage` table)
   is the source of truth; `~/.zcode/cli/rollout/*.jsonl` is a fallback only when the db is absent
-  (silently) or unreadable (warning). Never collect from both. `node:sqlite` needs Node >= 22.5;
-  on older Node the db test skips and parsing falls back to rollout. ZCode's `input_tokens`
+  (silently) or unreadable (warning). Never collect from both. ZCode's `input_tokens`
   counts the whole prompt **with cache reads included**, so both paths subtract `cacheRead` to
   emit fresh input — otherwise the hit-rate denominator and `computeCost` double-count cached tokens.
 - **Parsers must never throw** on bad data: tolerate malformed/unreadable files, push messages
@@ -127,10 +129,12 @@ cost (only OpenCode does).
   through the whole pipeline (pricing config included), pinned by `test/cli.test.js`.
 - **`--json` output is a user-facing contract**: shape is `totals, cacheHitRate, clients, models,
   daily, monthly, sessions, pricing (incl. unpricedModels), warnings` — don't break it
-  (`buildPayload` in `src/payload.js`). `GET /api/data` reuses this exact payload and layers the
+  (`buildPayload` in `src/payload.js`). `toksight refresh --json` returns database status instead.
+  `GET /api/data` reuses the report payload and layers the
   `src/webdata.js` extras additively (heatmap, trend, trendByAgent, hourly, today, last7Days,
   thisMonth, topSessions, longestSession — ranked by activeMs with idle gaps capped at 5min —
- activityRange, timezone) plus newer additive extras: `view`, `scopeRange` (activity range of
+ activityRange, timezone) plus newer additive extras: `snapshot` (database refresh time/count),
+ `view`, `scopeRange` (activity range of
  the startup scope, independent of the requested period — the report's navigation bounds),
  `selection`, `costCoverage`, `comparison`; legacy extras must stay present. Each `clients`
   entry is that agent's totals plus its own `cacheHitRate` built from the **filtered** entries,
@@ -143,10 +147,13 @@ cost (only OpenCode does).
   per-model views (a model's cache can only hit for that same model).
 - **Zero runtime dependencies**: do not add packages to the root CLI; use `node:` builtins
   (`package-lock.json` only records the root package). `web/` is the only place allowed to have
-  dependencies (Next/React, build-time only, declared in `web/package.json`).
-- **Web serving rules**: `toksight web` re-collects on every request (fresh data — the
-  single-flight in `createWebDataService` dedupes only CONCURRENT requests onto one collection
-  run, no TTL); binds 127.0.0.1 by default (never 0.0.0.0); static assets under
+  dependencies (Next/React, build-time only, declared in `web/package.json`). Node >=22.5 is
+  required for the built-in SQLite database.
+- **Web serving rules**: `toksight web` preloads the committed SQLite snapshot; first launch
+  without a snapshot scans all agents and creates one. GET requests filter it without rescanning.
+  `toksight refresh` and `POST /api/refresh` rescan and transactionally replace the snapshot;
+  a failed refresh keeps the old data. SQLite `data_version` detects another process's refresh.
+  The server binds 127.0.0.1 by default (never 0.0.0.0); static assets under
   `web/out/_next/` are immutable-cached, everything else `no-cache`; path traversal → 403; if
   `web/out/index.html` is missing, `/` serves the built-in setup page instead of failing.
   `/api/data` accepts `period=all/today/7d/30d/month/custom`, `client`, `since`, `until`, each
@@ -154,7 +161,8 @@ cost (only OpenCode does).
   trend/heatmap rows capped at the last 366 days (totals/comparison stay complete); without a
   start date comparison uses seven days ending on the selected end date/today, and is
   unavailable if the previous window falls outside startup scope. A loopback-bound server
-  rejects `/api/data` requests whose Host header is not a localhost name (DNS rebinding);
+  rejects `/api/data` and `/api/refresh` requests whose Host header is not a localhost name
+  (DNS rebinding); refresh also rejects cross-origin browser requests;
   `--host 0.0.0.0` opts out on purpose.
 - **Web report**: the page requests one calendar period at a time
   (`period=custom&since=<first day>&until=<last day>`, local dates) and derives everything from
@@ -163,9 +171,9 @@ cost (only OpenCode does).
  keeps the previous payload (tagged with its period) on screen while loading. The day panel
  (`useDayReport`, same loader) requests one day as `since=until=<day>` and reads that payload's
  `totals`/`hourly`/`clients`/`models`/`topSessions`; it never feeds the main report, and the
- selected-day ring is suppressed during export via `.report.is-exporting`. Day keys are
- `YYYY-MM-DD` strings built from local `Date` parts — never `toISOString()`. The web server has
- no write routes; do not reintroduce agent-config endpoints.
+ selected-day ring is suppressed during export via `.report.is-exporting`. Refresh POSTs the
+ database update, then reloads the current report and open day card. Day keys are `YYYY-MM-DD`
+ strings built from local `Date` parts — never `toISOString()`. Do not add agent-config write routes.
 - Windows compatibility matters (paths, fixtures use `C:\\...` directories); `pathExists`
   handles `ENOTDIR` for files.
 

@@ -4,8 +4,8 @@ import { t, DEFAULT_LOCALE, tables, periodLabel, dayLabel, durationLabel, weekda
 
 test('i18n returns Chinese by default and interpolates', () => {
   assert.equal(DEFAULT_LOCALE, 'zh-CN');
-  assert.equal(t('zh-CN', 'refresh'), '刷新');
-  assert.equal(t('en', 'refresh'), 'Refresh');
+  assert.equal(t('zh-CN', 'refresh'), '刷新数据库');
+  assert.equal(t('en', 'refresh'), 'Refresh database');
   assert.equal(t('zh-CN', 'statStreakValue', { n: 12 }), '12 天');
   assert.equal(t('en', 'others', { n: 3 }), '3 other models');
   assert.equal(t('en', 'heroAgents', { n: 1 }), '1 agent');

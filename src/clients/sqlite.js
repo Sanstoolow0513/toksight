@@ -1,8 +1,6 @@
 // Shared read-only SQLite opener for client parsers (OpenCode, ZCode).
-// `node:sqlite` requires Node >= 22.5, so it is imported dynamically and this
-// helper throws on older Node — callers catch that and fall back to their
-// legacy file layout with a warning (the db-first guard stays in each
-// parser; this only centralizes the open boilerplate).
+// `node:sqlite` is available on the supported Node >= 22.5. Keep the dynamic
+// import so callers can catch open failures and use their legacy file layout.
 
 export async function openSqliteReadOnly(dbPath) {
   const { DatabaseSync } = await import('node:sqlite');

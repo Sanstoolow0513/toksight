@@ -28,8 +28,8 @@ npm install -g toksight
 npx toksight
 ```
 
-需要 Node.js >= 20。Node >= 22.5 时用内置 `node:sqlite` 直接读取 ZCode 与 OpenCode 的
-SQLite 数据库，旧版本会自动回退到各自的日志/JSON 存储。
+需要 Node.js >= 22.5。内置 `node:sqlite` 用于读取 ZCode 与 OpenCode 数据库，并保存
+toksight 自己的本地用量数据库；无需安装运行时依赖。
 
 ## 使用
 
@@ -40,6 +40,7 @@ toksight monthly      # 按月统计
 toksight models       # 按模型统计
 toksight sessions     # 按成本排序的会话
 toksight web          # 本地用量与成本报告（热力图、Agent、模型，可导出图片）
+toksight refresh      # 重新扫描 Agent 并更新本地 SQLite 数据库
 toksight env          # 查看检测到的数据源与定价状态
 ```
 
@@ -116,9 +117,16 @@ OpenCode 自带的价格（`cost` 字段）会被直接采用。
 ## 网页仪表盘
 
 `toksight web` 启动一个小型本地服务器（零依赖 `node:http`），托管静态导出的
-[Next.js](https://nextjs.org) 仪表盘和实时 JSON API，并打印地址
-（默认 `http://127.0.0.1:4729`）。加上 `--open` 会用浏览器打开该地址。只绑定本机回环地址，
-每次请求都重新聚合会话文件——数据不出你的机器。
+[Next.js](https://nextjs.org) 仪表盘和 JSON API，并打印地址
+（默认 `http://127.0.0.1:4729`）。加上 `--open` 会用浏览器打开该地址。默认只绑定本机回环地址。
+首次启动会扫描 Agent 文件并创建 `<config>/toksight/usage.sqlite`（可用 `TOKSIGHT_CONFIG_DIR`
+覆盖目录）。以后启动会预读取数据库，普通报告和单日请求使用已提交的快照，不会重新扫描 Agent。
+数据始终留在本机。
+
+点击顶栏刷新按钮、调用 `POST /api/refresh`，或运行 `toksight refresh`，会重新扫描所有 Agent，
+并在一个事务中更新数据库。刷新失败时保留旧快照；网页服务器也会发现其他 toksight 进程写入的
+新快照。刷新后报告与打开的单日卡片一同更新，页脚显示数据库上次刷新时间。
+`toksight refresh --offline` 可跳过价格拉取。
 
 仪表盘是一页**按月或按年的 token 用量与成本报告**，采用 Claude 的暖色明暗配色，铺在稀疏的
 点阵背景上（视觉规范见 `design-spec.md`）。顶栏切换**月 / 年**并逐期前后翻看（最早到第一条
@@ -148,12 +156,14 @@ OpenCode 自带的价格（`cost` 字段）会被直接采用。
 API 可以这样调用：`GET /api/data?period=custom&since=2026-09-01&until=2026-09-30`（报告本身
 就这样请求，单日侧栏也用同样方式请求某一天）或 `?client=claude&period=7d`。`period` 可为 `all`（默认）/ `today` / `7d` /
 `30d` / `month` / `custom`（须同时给出 `since` 与 `until`）；`since` / `until` 可单独使用；
-预设周期不能与显式日期混用；未知、重复或无效参数返回 HTTP 400。
+预设周期不能与显式日期混用；未知、重复或无效参数返回 HTTP 400。`POST /api/refresh`
+会更新数据库，并返回刷新时间、记录数和采集警告；网页 API 新增的 `snapshot` 字段包含刷新时间和记录数。
+跨来源刷新请求会被拒绝。
 
 ### 仪表盘构建产物
 
 npm 包已包含 `web/out/` 中预构建好的静态文件——安装后直接 `toksight web` 即可，无需构建，
-也不运行 Next。从源码预览发布版页面（需 Node >=20.9；安装包的 CLI 仍支持 >=20）：
+也不运行 Next。从源码预览发布版页面需要 Node >=22.5：
 
 ```bash
 npm run web:ci && npm run web:build && node bin/toksight.js web
@@ -173,16 +183,18 @@ npm run web:ci && npm run web:build && node bin/toksight.js web
 
 ## 隐私
 
-toksight 是本地优先且只读的：CLI 与网页报告只**读取**各 Agent 的会话文件，不上传数据，也不
-写回任何文件。唯一的外部网络请求是匿名的 LiteLLM 价格拉取；`--offline` 可以连它也关掉。
+toksight 本地优先：CLI 与网页报告只**读取**各 Agent 的会话文件。刷新会写入 toksight 自己的
+SQLite 数据库，不上传数据，也不写回 Agent 文件。唯一的外部网络请求是匿名的 LiteLLM 价格拉取；
+`--offline` 可以连它也关掉。
 报告图片在浏览器里生成，只保存到你下载的位置。
 
 ## JSON 输出
 
-所有命令都支持 `--json`（如 `toksight daily --json`）。结构包含：`totals`、`cacheHitRate`、
+报告命令支持 `--json`（如 `toksight daily --json`）。结构包含：`totals`、`cacheHitRate`、
 `clients`、`models`、`daily`、`monthly`、`sessions`、`pricing`（含 `unpricedModels`）、`warnings`。
 `clients` 的每一项是该 Agent 的 totals 外加它自己的 `cacheHitRate`；该映射由**过滤后**的
 entries 构建，`--client` / `--since` / `--until` 对它与其余切片一样生效。
+`toksight refresh --json` 则返回数据库路径、刷新时间、记录数和采集警告。
 
 `warnings` 会披露采集问题（无法读取的目录、存在但打不开的 SQLite 数据库）和数据口径问题——
 尤其是被 `--since` / `--until` 过滤排除的“无时间戳”条目，会在这里报告而不是无声消失。
@@ -194,7 +206,8 @@ entries 构建，`--client` / `--since` / `--until` 对它与其余切片一样�
 （请求间隔按 5 分钟封口后的活跃时长）；`longestSession` 按 `activeMs` 排名，挂机过夜的
 会话不会再把空闲时间算成时长。
 
-网页 API 另增 `view`（本机日期、可选 Agent 与启动范围）、`scopeRange`（启动范围内第一条与
+网页 API 另增 `snapshot`（数据库刷新时间与记录数）、`view`（本机日期、可选 Agent 与启动范围）、
+`scopeRange`（启动范围内第一条与
 最后一条记录的时间，与所请求的周期无关，报告用它确定翻页边界）、`selection`（所选时段的
 趋势/热力图，没有日期筛选时为 null）、`costCoverage`（金额来源、未定价与缓存价格回退请求数）
 和 `comparison`（本期/上期、变化量及贡献项；无法比较时含原因）。原有 CLI `--json` 字段保持不变。
@@ -216,7 +229,7 @@ npm run web:dev       # 同时启动 API（4729）和前端（3000），支持�
 `web:install` 保留给需要更新网页依赖的开发者。
 
 CLI 本体保持**零运行时依赖**，仪表盘依赖只存在于 `web/package.json`，仅在（重新）构建
-`web/out/` 时需要。两条流程：会话文件 → 解析器 → `collectAll` → CLI 输出或 `/api/data`；
+`web/out/` 时需要。数据流程：会话文件 → 解析器 → `collectAll` → CLI 输出或 SQLite 刷新 → `/api/data`；
 `web/` 源码 → Next 构建 → `web/out/` → CLI 内置 HTTP 服务器。逐模块说明见
 [AGENTS.md](./AGENTS.md)。
 
