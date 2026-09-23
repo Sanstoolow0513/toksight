@@ -1,477 +1,283 @@
 'use client';
 
-// toksight dashboard — Brutalism phosphor worksheet (design-spec v6): a 2px
-// framed mosaic. Masthead → 4-cell KPI strip → 12-col sheet (trend, heatmap,
-// agent/model, hour/month/pace, sessions). Hard invert on hover, no chrome
-// radius/blur/shadow. Icons only mark actions and states; last-fetch time
-// comes from generatedAt.
+// toksight report: a centred column on a dot grid — hero (period + KPIs),
+// three reorderable chapter cards (heatmap · agents · models) and a footer.
+// Everything inside `.report` is what "Export image" captures.
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Inbox, RefreshCw, TriangleAlert, Filter } from 'lucide-react';
-import Link from 'next/link';
-import { fmtTokens, fmtCost, fmtPct, fmtDateTime, fmtDuration } from '@/lib/format';
-import Heatmap from '@/components/Heatmap';
-import TrendChart from '@/components/TrendChart';
-import AgentsPanel from '@/components/AgentsPanel';
-import ModelBars from '@/components/ModelBars';
-import { HourBars, MonthlyBars } from '@/components/Bars';
-import DashboardFilters from '@/components/DashboardFilters';
-import CostDetails from '@/components/CostDetails';
-import PeriodComparison from '@/components/PeriodComparison';
-import { useDashboardData } from '@/lib/useDashboardData';
-import { DEFAULT_LOCALE, readStoredLocale, t, writeStoredLocale } from '@/lib/i18n';
-
-const CLIENT_LABELS = {
-  zcode: 'ZCode',
-  claude: 'Claude Code',
-  codex: 'Codex CLI',
-  opencode: 'OpenCode',
-  kimi: 'Kimi Code',
-};
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Inbox, RefreshCw, TriangleAlert } from 'lucide-react';
+import Toolbar from '@/components/Toolbar';
+import SortableCards from '@/components/SortableCards';
+import HeatmapCard from '@/components/HeatmapCard';
+import AgentsCard from '@/components/AgentsCard';
+import ModelsCard from '@/components/ModelsCard';
+import BrandMark from '@/components/BrandMark';
+import { useReport } from '@/lib/useReport';
+import { currentPeriod, dayKey, periodBounds, periodKey, periodNav, shiftPeriod, withMode } from '@/lib/period';
+import { fmtCost, fmtDateTime, fmtInt, fmtPct, fmtTokens } from '@/lib/format';
+import { DEFAULT_LOCALE, dayLabel, periodLabel, t } from '@/lib/i18n';
+import { exportReportImage } from '@/lib/exportImage';
+import * as prefs from '@/lib/prefs';
 
 function coded(text) {
-  const parts = String(text).split(/`([^`]+)`/);
-  return parts.map((p, i) => (i % 2 ? <code key={i}>{p}</code> : p));
+  return String(text)
+    .split(/`([^`]+)`/)
+    .map((part, i) => (i % 2 ? <code key={i}>{part}</code> : part));
 }
 
-function Cell({ title, desc, extra, span = 12, children }) {
+function Kpi({ label, value, sub }) {
   return (
-    <section className={`cell span-${span}`}>
-      <div className="cell-head">
-        <h2>{title}</h2>
-        {desc ? <span className="cell-desc">{desc}</span> : null}
-        {extra ? <div className="cell-extra">{extra}</div> : null}
-      </div>
+    <div className="kpi">
+      <dt>{label}</dt>
+      <dd>
+        <span className="kpi-value">{value}</span>
+        <span className="kpi-sub">{sub}</span>
+      </dd>
+    </div>
+  );
+}
+
+function StateCard({ icon, title, children }) {
+  return (
+    <section className="state-card">
+      <div className="state-icon">{icon}</div>
+      <h1>{title}</h1>
       {children}
     </section>
   );
 }
 
-function Stat({ label, value, sub, tone }) {
-  return (
-    <div className={tone ? `stat stat-${tone}` : 'stat'}>
-      <span className="stat-label">{label}</span>
-      <span className="stat-value">{value}</span>
-      {sub ? <span className="stat-sub">{sub}</span> : null}
-    </div>
-  );
-}
-
-const clientLabel = (id) => CLIENT_LABELS[id] || id;
-const dateOnly = (ts) => (ts == null ? '—' : fmtDateTime(ts).slice(0, 10));
-const sessionName = (s) => s.title || s.directory || s.sessionId || '—';
-
-function LangSwitch({ locale, onChange, label }) {
-  return (
-    <div className="seg" role="group" aria-label={label}>
-      <button type="button" className={locale === 'zh-CN' ? 'on' : ''} onClick={() => onChange('zh-CN')}>
-        中文
-      </button>
-      <button type="button" className={locale === 'en' ? 'on' : ''} onClick={() => onChange('en')}>
-        EN
-      </button>
-    </div>
-  );
-}
-
 function Skeleton() {
   return (
-    <>
-      <div className="skel-kpis">
-        {[0, 1, 2, 3].map((i) => (
-          <div key={i}>
-            <div className="skel" style={{ height: 11, width: 76, marginBottom: 12 }} />
-            <div className="skel" style={{ height: 34, width: 140 }} />
-          </div>
-        ))}
+    <div className="report" aria-busy="true">
+      <div className="hero">
+        <div className="skel" style={{ width: 180, height: 14 }} />
+        <div className="skel" style={{ width: 280, height: 44, marginTop: 14 }} />
+        <div className="skel skel-kpis" />
       </div>
-      <div className="skel-cell">
-        <div className="skel" style={{ height: 14, width: 140, marginBottom: 24 }} />
-        <div className="skel" style={{ height: 300 }} />
-      </div>
-      <div className="skel-cell">
-        <div className="skel" style={{ height: 14, width: 140, marginBottom: 24 }} />
-        <div className="skel" style={{ height: 180 }} />
-      </div>
-    </>
-  );
-}
-
-function Rhythm({ streaks, peakDay, longest, tx }) {
-  return (
-    <dl className="rhythm">
-      <div className="rhythm-row">
-        <dt>{tx('statStreak')}</dt>
-        <dd>
-          {Number.isFinite(streaks.current) ? <b>{tx('statStreakValue', { n: streaks.current })}</b> : '—'}
-          {Number.isFinite(streaks.longest) ? ` · ${tx('statStreakLongest', { n: streaks.longest })}` : ''}
-        </dd>
-      </div>
-      <div className="rhythm-row">
-        <dt>{tx('statPeak')}</dt>
-        <dd>{peakDay ? <><b>{fmtTokens(peakDay.tokens)}</b> · {peakDay.date}</> : '—'}</dd>
-      </div>
-      <div className="rhythm-row">
-        <dt>{tx('statLongest')}</dt>
-        <dd>
-          {longest ? (
-            <>
-              <b>{fmtDuration(longest.activeMs)}</b> · {clientLabel(longest.client)}
-              {longest.durationMs != null ? ` · ${tx('statLongestSpan', { duration: fmtDuration(longest.durationMs) })}` : ''}
-            </>
-          ) : (
-            '—'
-          )}
-        </dd>
-      </div>
-    </dl>
-  );
-}
-
-function SessionTable({ rows, tx }) {
-  if (!rows.length) return <div className="muted">{tx('sessEmpty')}</div>;
-  return (
-    <div className="table-scroll">
-      <table className="tbl">
-        <thead>
-          <tr>
-            <th>{tx('thRank')}</th>
-            <th>{tx('thAgent')}</th>
-            <th>{tx('thSession')}</th>
-            <th className="num">{tx('thTokens')}</th>
-            <th className="num">{tx('thRequests')}</th>
-            <th className="num">{tx('thHitRate')}</th>
-            <th className="num">{tx('thCost')}</th>
-            <th>{tx('thStarted')}</th>
-            <th className="num">{tx('thActive')}</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((s, i) => {
-            const name = sessionName(s);
-            return (
-              <tr key={`${s.client}/${s.sessionId}`}>
-                <td className="num dim">{i + 1}</td>
-                <td>{clientLabel(s.client)}</td>
-                <td>
-                  <span className="sess-name" title={name}>
-                    {name}
-                  </span>
-                </td>
-                <td className="num">{fmtTokens(s.totalTokens)}</td>
-                <td className="num">{s.requests}</td>
-                <td className="num">{fmtPct(s.cacheHitRate)}</td>
-                <td className="num">{fmtCost(s.costUsd)}</td>
-                <td className="dim">{dateOnly(s.startedAt)}</td>
-                <td className="num">{fmtDuration(s.activeMs)}</td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
+      {[320, 260, 300].map((h) => (
+        <div key={h} className="skel skel-card" style={{ height: h }} />
+      ))}
     </div>
   );
 }
 
 export default function Page() {
-  const { data, view, error, loading, load, query, applyQuery } = useDashboardData();
-  const [auto, setAuto] = useState(false);
-  const [locale, setLocaleState] = useState(DEFAULT_LOCALE);
+  const [locale, setLocale] = useState(DEFAULT_LOCALE);
+  const [theme, setTheme] = useState(null);
+  const [period, setPeriod] = useState(null);
+  const [today, setToday] = useState(null);
+  const [order, setOrder] = useState(prefs.CARD_IDS);
+  const [metrics, setMetrics] = useState(() => Object.fromEntries(prefs.CARD_IDS.map((id) => [id, 'tokens'])));
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState(null);
+  const reportRef = useRef(null);
+  const report = useReport(period);
+  const { data } = report;
+  const shown = report.period;
 
-  const setLocale = useCallback((next) => {
-    setLocaleState(next);
-    writeStoredLocale(next);
+  useEffect(() => {
+    const now = new Date();
+    setLocale(prefs.readLocale());
+    setTheme(prefs.readTheme());
+    setOrder(prefs.readOrder());
+    setMetrics(prefs.readMetrics());
+    setToday(dayKey(now));
+    setPeriod(currentPeriod(prefs.readMode(), now));
   }, []);
 
   useEffect(() => {
-    setLocaleState(readStoredLocale());
-  }, []);
+    if (!theme) return undefined;
+    const apply = () => {
+      document.documentElement.dataset.theme = prefs.resolveTheme(theme);
+    };
+    apply();
+    if (theme !== 'system') return undefined;
+    const media = window.matchMedia('(prefers-color-scheme: dark)');
+    media.addEventListener('change', apply);
+    return () => media.removeEventListener('change', apply);
+  }, [theme]);
 
   useEffect(() => {
     document.documentElement.lang = locale;
     document.title = t(locale, 'docTitle');
   }, [locale]);
 
-  useEffect(() => {
-    if (!auto) return undefined;
-    const id = setInterval(() => load({ silent: true }), 30_000);
-    return () => clearInterval(id);
-  }, [auto, load]);
-
-  const agents = useMemo(() => {
-    if (!data?.clients) return [];
-    return Object.entries(data.clients)
-      .map(([id, row]) => ({ id, ...row }))
-      .sort((a, b) => b.totalTokens - a.totalTokens);
-  }, [data]);
-
   const tx = useCallback((key, vars) => t(locale, key, vars), [locale]);
 
-  const masthead = (
-    <header className="masthead">
-      <div className="brand">
-        <h1 className="logo-chip">toksight</h1>
-        {data && <span className="fetch-meta">{tx('live', { time: fmtDateTime(data.generatedAt) })}</span>}
-      </div>
-      <div className="head-actions">
-        <nav className="top-nav" aria-label={tx('navAria')}>
-          <Link className="active" href="/" aria-current="page">{tx('navDashboard')}</Link>
-          <Link href="/config">{tx('navConfig')}</Link>
-        </nav>
-        <LangSwitch locale={locale} onChange={setLocale} label={tx('langGroup')} />
-        <label className="auto-label">
-          <input type="checkbox" checked={auto} onChange={(e) => setAuto(e.target.checked)} />
-          {tx('autoRefresh')}
-        </label>
-        <button className="btn" type="button" onClick={load} disabled={loading}>
-          <RefreshCw size={14} strokeWidth={2} className={loading ? 'icon-spin' : undefined} aria-hidden="true" />
-          {loading ? tx('refreshing') : tx('refresh')}
-        </button>
-      </div>
-    </header>
-  );
+  const labels = useMemo(() => new Map((data?.view?.availableClients ?? []).map((c) => [c.id, c.label])), [data]);
+  const agentLabel = useCallback((id) => labels.get(id) ?? id, [labels]);
 
-  const shell = (body) => (
-    <div className="wrap">
-      <div className="frame">
-        {masthead}
-        <DashboardFilters key={query} query={query} view={view} tx={tx} loading={loading} onApply={applyQuery} />
-        {error && data && <div className="banner error" role="alert">{tx('errorFail', { error })}</div>}
-        {body}
-      </div>
-    </div>
-  );
+  const firstAt = data?.scopeRange?.firstAt;
+  const nav = period && data ? periodNav(period, { firstDay: firstAt != null ? dayKey(new Date(firstAt)) : null, today }) : { canPrev: false, canNext: false };
 
-  if (error && !data) {
-    return shell(
-      <div className="state-card" role="alert">
-        <h1>
-          <TriangleAlert size={18} strokeWidth={2} aria-hidden="true" />
-          {tx('errorTitle')}
-        </h1>
-        <p>{coded(tx('errorFail', { error }))}</p>
+  const onMode = (mode) => {
+    prefs.writeMode(mode);
+    setPeriod((p) => withMode(p, mode, today));
+  };
+  const onTheme = (value) => {
+    prefs.writeTheme(value);
+    setTheme(value);
+  };
+  const onLocale = (value) => {
+    prefs.writeLocale(value);
+    setLocale(value);
+  };
+  const onRefresh = () => {
+    setToday(dayKey(new Date()));
+    void report.reload();
+  };
+  const onReorder = (next) => {
+    prefs.writeOrder(next);
+    setOrder(next);
+  };
+  const onMetric = (card) => (value) =>
+    setMetrics((m) => {
+      const next = { ...m, [card]: value };
+      prefs.writeMetrics(next);
+      return next;
+    });
+  const onExport = async () => {
+    setExporting(true);
+    setExportError(null);
+    try {
+      await exportReportImage(reportRef.current, `toksight-${periodKey(shown)}.png`);
+    } catch (err) {
+      setExportError(String(err?.message || err));
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const hasData = Boolean(data && firstAt != null);
+
+  let content;
+  if (!data && report.error) {
+    content = (
+      <StateCard icon={<TriangleAlert size={22} strokeWidth={1.8} aria-hidden="true" />} title={tx('errorTitle')}>
+        <p>{coded(tx('errorBody', { error: report.error }))}</p>
         <p>{coded(tx('errorHint'))}</p>
-        <button className="btn" type="button" onClick={load}>
-          <RefreshCw size={14} strokeWidth={2} aria-hidden="true" />
+        <button type="button" className="btn-secondary" onClick={onRefresh}>
+          <RefreshCw size={15} strokeWidth={2} aria-hidden="true" />
           {tx('retry')}
         </button>
-      </div>,
+      </StateCard>
     );
-  }
+  } else if (!data || !shown) {
+    content = <Skeleton />;
+  } else if (!hasData) {
+    content = (
+      <StateCard icon={<Inbox size={22} strokeWidth={1.8} aria-hidden="true" />} title={tx('emptyTitle')}>
+        <p>{coded(tx('emptyBody'))}</p>
+      </StateCard>
+    );
+  } else {
+    const totals = data.totals ?? {};
+    const { since, until } = periodBounds(shown);
+    const unpriced = data.pricing?.unpricedModels ?? [];
+    const modelCount = new Set((data.models ?? []).map((m) => m.model)).size;
+    const heroSub = [
+      tx('heroRange', { since: dayLabel(locale, since, true), until: dayLabel(locale, until) }),
+      since <= today && today <= until ? tx('heroAsOf', { date: dayLabel(locale, today) }) : null,
+      tx('heroAgents', { n: Object.keys(data.clients ?? {}).length }),
+      tx('heroModels', { n: modelCount }),
+    ].filter(Boolean);
+    const cardProps = { data, period: shown, locale, tx, agentLabel };
 
-  if (!data) {
-    return shell(<Skeleton />);
-  }
+    content = (
+      <div ref={reportRef} className={report.loading ? 'report is-loading' : 'report'}>
+        <section className="hero">
+          <p className="eyebrow">{tx('eyebrow')}</p>
+          <h1 className="hero-title">{periodLabel(locale, shown)}</h1>
+          <p className="hero-sub">{heroSub.join(' · ')}</p>
+          <dl className="kpis">
+            <Kpi
+              label={tx('kpiTokens')}
+              value={fmtTokens(totals.totalTokens)}
+              sub={tx('kpiTokensSub', {
+                input: fmtTokens((totals.inputTokens ?? 0) + (totals.cacheReadTokens ?? 0) + (totals.cacheWriteTokens ?? 0)),
+                output: fmtTokens(totals.outputTokens),
+              })}
+            />
+            <Kpi
+              label={tx('kpiCost')}
+              value={fmtCost(totals.costUsd)}
+              sub={unpriced.length ? tx('kpiCostUnpriced', { n: unpriced.length }) : tx('kpiCostAll')}
+            />
+            <Kpi label={tx('kpiCache')} value={fmtPct(data.cacheHitRate)} sub={tx('kpiCacheSub', { tokens: fmtTokens(totals.cacheReadTokens) })} />
+            <Kpi label={tx('kpiRequests')} value={fmtInt(totals.requests)} sub={tx('kpiRequestsSub', { n: fmtInt(totals.sessions) })} />
+          </dl>
+        </section>
 
-  const totals = data.totals ?? {};
-  const unpriced = data.pricing?.unpricedModels ?? [];
-  const longest = data.longestSession;
-  const heatmap = data.selection?.heatmap ?? data.heatmap;
-  const heatDays = heatmap?.days ?? [];
-  const activeWindowDays = heatDays.filter((d) => d.tokens > 0).length;
-  const streaks = data.streaks ?? {};
-  const peakDay = data.peakDay;
-  const filtered = Boolean(data.clientsFilter?.length || data.range?.since != null || data.range?.until != null);
-  const heatDesc = [tx('heatDesc', { weeks: heatmap?.weeks ?? 53 }), activeWindowDays ? tx('heatActive', { n: activeWindowDays }) : null]
-    .filter(Boolean)
-    .join(' · ');
-  const topSessions = (data.topSessions ?? []).slice(0, 10);
+        <SortableCards order={order} onReorder={onReorder} handleLabel={tx('dragHandle')}>
+          {(id, { index, handleProps }) => {
+            const shared = { ...cardProps, index, handleProps, metric: metrics[id], onMetric: onMetric(id) };
+            if (id === 'heatmap') return <HeatmapCard {...shared} today={today} />;
+            if (id === 'agents') return <AgentsCard {...shared} />;
+            return <ModelsCard {...shared} />;
+          }}
+        </SortableCards>
 
-  const rangeChips = [
-    { key: 'today', label: tx('rangeToday'), r: data.today },
-    { key: '7d', label: tx('range7d'), r: data.last7Days },
-    { key: '30d', label: tx('range30d'), r: data.last30Days },
-    { key: 'month', label: tx('rangeMonth'), r: data.thisMonth },
-  ];
-
-  const footer = (
-    <footer className="foot">
-      <span>{tx('footTimezone', { tz: data.timezone ?? '—' })}</span>
-      <span>
-        {tx('footRange', {
-          range: data.activityRange?.firstAt
-            ? `${fmtDateTime(data.activityRange.firstAt)} → ${fmtDateTime(data.activityRange.lastAt)}`
-            : '—',
-        })}
-      </span>
-      <span>{tx('footGenerated', { time: fmtDateTime(data.generatedAt) })}</span>
-      {unpriced.length > 0 && <span>{tx('footUnpriced', { models: unpriced.join(', ') })}</span>}
-      <span>{tx('footLocal', { version: data.version })}</span>
-    </footer>
-  );
-
-  const banners = (
-    <>
-      {data.warnings?.length > 0 && (
-        <div className="banner warn">
-          <TriangleAlert size={14} strokeWidth={2} aria-hidden="true" />
-          <div>
-            {data.warnings.map((w, i) => (
-              <div key={i}>
-                {tx('warnPrefix')}
-                {w}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-      {filtered && (
-        <div className="banner filter">
-          <Filter size={14} strokeWidth={2} aria-hidden="true" />
-          <span>
-            {tx('filterNote')}
-            {[
-              data.clientsFilter?.length ? tx('filterClient', { clients: data.clientsFilter.map(clientLabel).join(', ') }) : null,
-              data.range?.since != null ? tx('filterSince', { date: data.view?.since || fmtDateTime(data.range.since).slice(0, 10) }) : null,
-              data.range?.until != null ? tx('filterUntil', { date: data.view?.until || fmtDateTime(data.range.until).slice(0, 10) }) : null,
-            ]
-              .filter(Boolean)
-              .join(' · ')}
+        <footer className="report-foot">
+          <span className="foot-brand">
+            <BrandMark size={14} />
+            toksight v{data.version}
           </span>
-        </div>
-      )}
-    </>
-  );
-
-  if (totals.requests === 0) {
-    return shell(
-      <>
-        {banners}
-        <PeriodComparison comparison={data.comparison} timezone={data.timezone} tx={tx} clientLabel={clientLabel} />
-        <div className="state-card">
-          <h1>
-            <Inbox size={18} strokeWidth={2} aria-hidden="true" />
-            {tx('emptyTitle')}
-          </h1>
-          <p>{coded(tx(query || filtered ? 'filterEmpty' : 'emptyBody'))}</p>
-        </div>
-        {footer}
-      </>,
+          <span>{tx('footGenerated', { time: fmtDateTime(data.generatedAt) })}</span>
+          {data.timezone ? <span>{tx('footTimezone', { tz: data.timezone })}</span> : null}
+          <span>{tx('footEstimate')}</span>
+          <span>{tx('footLocal')}</span>
+          {unpriced.length ? <span className="foot-unpriced">{tx('footUnpriced', { models: unpriced.join(', ') })}</span> : null}
+        </footer>
+      </div>
     );
   }
 
-  return shell(
-    <>
-      {banners}
-      <section className="kpis" aria-label={tx('heroAria')}>
-        <Stat
-          label={tx('statTokens')}
-          tone="lime"
-          value={fmtTokens(totals.totalTokens)}
-          sub={tx('statTokensSub', { requests: totals.requests ?? 0, sessions: totals.sessions ?? 0 })}
-        />
-        <Stat
-          label={tx('statCost')}
-          value={fmtCost(totals.costUsd)}
-          sub={tx('costCoverage', { priced: totals.pricedRequests ?? 0, total: totals.requests ?? 0 })}
-        />
-        <Stat
-          label={tx('statCache')}
-          tone="green"
-          value={fmtPct(data.cacheHitRate)}
-          sub={tx('statCacheSub', { tokens: fmtTokens(totals.cacheReadTokens) })}
-        />
-        <Stat
-          label={tx('statActiveDays')}
-          value={data.activeDays ?? activeWindowDays}
-          sub={data.activityRange?.firstAt ? tx('statActiveSince', { date: dateOnly(data.activityRange.firstAt) }) : '—'}
-        />
-      </section>
+  const notices = [
+    data && report.error ? tx('errorBody', { error: report.error }) : null,
+    exportError ? tx('exportFailed', { error: exportError }) : null,
+  ].filter(Boolean);
 
-      <CostDetails coverage={data.costCoverage} pricing={data.pricing} tx={tx} />
-      <PeriodComparison comparison={data.comparison} timezone={data.timezone} tx={tx} clientLabel={clientLabel} />
-      <div className="sheet">
-        <Cell
-          title={tx('trendTitle')}
-          desc={data.selection ? tx(data.selection.truncated ? 'selectedTruncated' : 'selectedCharts') : tx('trendDesc')}
-          extra={!data.selection &&
-            <div className="range-chips">
-              {rangeChips.map(({ key, label, r }) => (
-                <span key={key} className="range-chip">
-                  <span className="range-chip-label">{label}</span>
-                  <b>{fmtTokens(r?.tokens ?? 0)}</b>
-                  <span className="range-chip-cost">{fmtCost(r?.costUsd ?? 0)}</span>
-                </span>
+  return (
+    <div className="page">
+      <Toolbar
+        locale={locale}
+        tx={tx}
+        period={period}
+        nav={nav}
+        onMode={onMode}
+        onShift={(delta) => setPeriod((p) => shiftPeriod(p, delta))}
+        theme={theme}
+        onTheme={onTheme}
+        onLocale={onLocale}
+        loading={report.loading}
+        onRefresh={onRefresh}
+        exporting={exporting}
+        onExport={onExport}
+        canExport={hasData && !report.loading}
+      />
+      <main className="main">
+        {notices.map((text) => (
+          <div key={text} className="notice is-error" role="alert">
+            <TriangleAlert size={15} strokeWidth={2} aria-hidden="true" />
+            <span>{coded(text)}</span>
+          </div>
+        ))}
+        {data?.warnings?.length ? (
+          <details className="notice is-warn">
+            <summary>
+              <TriangleAlert size={15} strokeWidth={2} aria-hidden="true" />
+              {tx('warnings', { n: data.warnings.length })}
+            </summary>
+            <ul>
+              {data.warnings.map((w, i) => (
+                <li key={i}>{w}</li>
               ))}
-            </div>
-          }
-        >
-          <TrendChart
-            selection={data.selection}
-            trends={{ 7: data.trend7, 30: data.trend, 90: data.trend90 }}
-            trendsByAgent={data.trendByAgent ?? {}}
-            agents={agents.map((a) => ({ id: a.id, label: clientLabel(a.id) }))}
-            locale={locale}
-          />
-        </Cell>
-
-        <Cell title={tx('heatTitle')} desc={data.selection ? tx('selectedCharts') : heatDesc}>
-          <Heatmap heatmap={heatmap} locale={locale} />
-        </Cell>
-
-        <Cell title={tx('agentsTitle')} desc={tx('agentsDesc')} span={5}>
-          <AgentsPanel
-            agents={agents.map((a) => ({ ...a, label: clientLabel(a.id) }))}
-            models={data.models ?? []}
-            totals={{ totalTokens: totals.totalTokens, costUsd: totals.costUsd, cacheHitRate: data.cacheHitRate }}
-            locale={locale}
-          />
-        </Cell>
-
-        <Cell title={tx('modelTitle')} desc={tx('modelDesc')} span={7}>
-          <ModelBars models={data.models ?? []} totalTokens={totals.totalTokens} locale={locale} />
-          <details className="details">
-            <summary>{tx('details')}</summary>
-            <div className="table-scroll">
-              <table className="tbl">
-                <thead>
-                  <tr>
-                    <th>{tx('thModel')}</th>
-                    <th>{tx('thAgent')}</th>
-                    <th className="num">{tx('thRequests')}</th>
-                    <th className="num">{tx('thInput')}</th>
-                    <th className="num">{tx('thCacheRead')}</th>
-                    <th className="num">{tx('thCacheWrite')}</th>
-                    <th className="num">{tx('thOutput')}</th>
-                    <th className="num">{tx('thHitRate')}</th>
-                    <th className="num">{tx('thCost')}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {(data.models ?? []).map((m) => (
-                    <tr key={`${m.client}/${m.model}`}>
-                      <td className="mono">{m.model}</td>
-                      <td className="dim">{clientLabel(m.client)}</td>
-                      <td className="num">{m.requests}</td>
-                      <td className="num">{fmtTokens(m.inputTokens)}</td>
-                      <td className="num">{fmtTokens(m.cacheReadTokens)}</td>
-                      <td className="num">{fmtTokens(m.cacheWriteTokens)}</td>
-                      <td className="num">{fmtTokens(m.outputTokens)}</td>
-                      <td className="num">{fmtPct(m.cacheHitRate)}</td>
-                      <td className="num">{fmtCost(m.costUsd)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            </ul>
           </details>
-        </Cell>
-
-        <Cell title={tx('hourTitle')} desc={tx('hourDesc')} span={4}>
-          <HourBars hourly={data.hourly} locale={locale} />
-        </Cell>
-        <Cell title={tx('monthTitle')} desc={tx('monthFiltered')} span={4}>
-          <MonthlyBars monthly={data.monthly} locale={locale} />
-        </Cell>
-        <Cell title={tx('rhythmTitle')} desc={tx('rhythmDesc')} span={4}>
-          <Rhythm streaks={streaks} peakDay={peakDay} longest={longest} tx={tx} />
-        </Cell>
-
-        <Cell title={tx('sessTitle')} desc={tx('sessDesc')}>
-          <SessionTable rows={topSessions} tx={tx} />
-        </Cell>
-      </div>
-      {footer}
-    </>,
+        ) : null}
+        {content}
+      </main>
+    </div>
   );
 }

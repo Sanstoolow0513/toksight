@@ -48,6 +48,7 @@ export function createWebDataService(base, { collect = collectAll, env, home, no
     }
     return {
       ...payload,
+      scopeRange: activityRange(scope),
       selection,
       costCoverage: buildCostCoverage(ctx.entries, raw),
       comparison: buildComparison(scope, opts, base, raw, time),

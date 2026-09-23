@@ -11,7 +11,7 @@ async function main() {
   });
   const { code, signal } = await startNode([cli, 'build', ...process.argv.slice(2)], { cwd: web }).done;
   if (code !== 0) throw new Error(`Dashboard build failed (${signal || code})`);
-  for (const file of ['index.html', 'config.html', '_next/static']) {
+  for (const file of ['index.html', '_next/static']) {
     await access(path.join(web, 'out', file)).catch(() => {
       throw new Error(`Static export missing web/out/${file}. Check web/next.config.mjs.`);
     });

@@ -7,8 +7,6 @@ import { spawn } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { clients } from './clients/index.js';
-import { createAgentConfigService } from './agentconfigs.js';
-import { createAgentTransferService } from './agenttransfer.js';
 import { collectAll } from './collect.js';
 import { createFormatter } from './format.js';
 import { pathExists } from './fsutils.js';
@@ -31,7 +29,7 @@ Commands
   monthly       Usage grouped by month
   models        Usage grouped by model
   sessions      Top sessions by cost
-  web           Launch the local dashboard (usage stats + agent config viewer)
+  web           Launch the local dashboard (token usage & cost report)
   env           Show detected data sources and pricing state
   help          Show this help
 
@@ -53,8 +51,7 @@ Options
   --version        Print version
   --help           Print this help
 
-Data stays on your machine: toksight only reads — session files, and the
-agent configuration shown in the web dashboard (previews are redacted).
+Data stays on your machine: toksight only reads your agents' session files.
 Pricing: built-in estimates, refreshed from LiteLLM (1h disk cache), overridable
 in ${path.join('<config>', 'toksight', 'pricing.json')} — see README.
 Inspired by tokscale.`;
@@ -86,8 +83,6 @@ export async function runWeb(opts) {
     outDir,
     apiOnly: opts.apiOnly,
     getData,
-    configService: createAgentConfigService(),
-    transferService: createAgentTransferService(),
   });
 
   const { url } = await server.start();

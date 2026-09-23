@@ -1,9 +1,7 @@
 // Minimal zero-dependency HTTP server for `toksight web`.
-// Serves the prebuilt static dashboard from web/out and a live JSON API at
-// /api/data plus the agent configuration endpoints at /api/config: the
-// read-only inventory, the bundle export, and the (preview → apply) import —
-// the only write path in toksight. The data API re-collects on every request,
-// so a browser refresh always reflects the latest session files.
+// Serves the prebuilt static dashboard from web/out and a live, read-only
+// JSON API at /api/data. The data API re-collects on every request, so a
+// browser refresh always reflects the latest session files.
 
 import http from 'node:http';
 import { isIP } from 'node:net';
@@ -43,15 +41,15 @@ function setupPage() {
   return `<!doctype html>
 <html lang="zh-CN">
 <head><meta charset="utf-8"><title>toksight web — 仪表盘尚未构建</title></head>
-<body style="background:#060609;color:#e8e8f2;font:14px/1.7 ui-monospace,'Cascadia Code',Consolas,monospace;display:grid;place-items:center;min-height:96vh;margin:0">
-  <main style="max-width:560px;padding:32px;border:2px solid #4a4a5e;background:#0e0e15">
-    <h1 style="font-size:14px;letter-spacing:0.08em;text-transform:uppercase;margin:0 0 16px"><span style="background:#c9f24b;color:#060609;padding:2px 8px">toksight</span> web · 仪表盘尚未构建</h1>
-    <p style="color:#82829c">JSON API 已可用：<code style="color:#c9f24b;background:#15151f;border:1px solid #26262f;padding:0 4px">/api/data</code>。要看到完整界面和配置页，请先构建静态资源（约需 1–2 分钟）：</p>
-    <p style="color:#82829c">从源码运行：在仓库根目录执行以下命令，完成后刷新本页。</p>
-    <pre style="background:#15151f;border:1px solid #4a4a5e;padding:14px 16px;overflow:auto"><code>npm run web:ci
+<body style="background:#f5f4ed radial-gradient(circle,rgba(20,20,19,.16) 1px,transparent 1.5px) 0 0/28px 28px;color:#141413;font:15px/1.7 system-ui,-apple-system,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif;display:grid;place-items:center;min-height:96vh;margin:0">
+  <main style="max-width:560px;padding:32px 36px;border:1px solid rgba(31,30,29,.14);border-radius:18px;background:#fffefb;box-shadow:0 8px 28px rgba(20,20,19,.06)">
+    <h1 style="font:500 24px/1.3 Georgia,'Times New Roman',serif;margin:0 0 16px"><span style="color:#d97757">toksight</span> web · 仪表盘尚未构建</h1>
+    <p style="color:#5e5d59">JSON API 已可用：<code style="color:#c6613f;background:#f0eee6;border-radius:6px;padding:1px 6px">/api/data</code>。要看到完整界面，请先构建静态资源（约需 1–2 分钟）：</p>
+    <p style="color:#5e5d59">从源码运行：在仓库根目录执行以下命令，完成后刷新本页。</p>
+    <pre style="background:#f0eee6;border-radius:10px;padding:14px 16px;overflow:auto"><code>npm run web:ci
 npm run web:build</code></pre>
-    <p style="color:#82829c">开发页面可运行 <code>npm run web:dev</code>，它会同时启动前端和 API。</p>
-    <p style="color:#82829c">通过 npm 安装的版本应已包含页面。如果你使用的是安装包，请重新安装 <code>npm install -g toksight</code>，然后重新启动服务。</p>
+    <p style="color:#5e5d59">开发页面可运行 <code>npm run web:dev</code>，它会同时启动前端和 API。</p>
+    <p style="color:#5e5d59">通过 npm 安装的版本应已包含页面。如果你使用的是安装包，请重新安装 <code>npm install -g toksight</code>，然后重新启动服务。</p>
   </main>
 </body>
 </html>
@@ -96,113 +94,6 @@ export function isLocalHostHeader(hostHeader) {
   return host === 'localhost' || isLoopbackAddress(host);
 }
 
-// Fetch-Metadata check: modern browsers stamp every request with
-// Sec-Fetch-Site. same-origin (dashboard → API) and none (address bar,
-// bookmarks) are fine; cross-site means a foreign page initiated the request.
-// Non-browser clients (curl, Node's fetch) do not send the header at all —
-// absence passes, they already cleared the loopback gate.
-export function isCrossSiteRequest(req) {
-  const site = req?.headers?.['sec-fetch-site'];
-  if (site == null) return false;
-  const value = String(site).toLowerCase();
-  return value !== 'same-origin' && value !== 'none';
-}
-
-// Body cap for import requests. The export side never bundles a file above
-// 1 MB, so 10 MB leaves comfortable room for a full five-agent bundle while
-// still bounding memory use.
-export const MAX_IMPORT_BYTES = 10 * 1024 * 1024;
-
-// Write-request gate: requires an application/json content type AND the
-// x-toksight-action header matching the endpoint's action. Both are
-// CORS-safelisted violations, so a browser enforces a preflight before the
-// request is ever sent — and with no CORS headers on this server the
-// preflight fails. A text/plain form POST (the classic no-preflight CSRF
-// shape) is rejected here outright.
-export function guardWriteRequest(req, action) {
-  const contentType = String(req?.headers?.['content-type'] || '').toLowerCase();
-  if (!contentType.startsWith('application/json')) {
-    const err = new Error('import requests must have content-type application/json');
-    err.status = 415;
-    err.code = 'UNSUPPORTED_MEDIA_TYPE';
-    throw err;
-  }
-  if (String(req?.headers?.['x-toksight-action'] || '') !== action) {
-    const err = new Error(`missing or wrong x-toksight-action header (expected "${action}")`);
-    err.status = 403;
-    err.code = 'ACTION_HEADER_REQUIRED';
-    throw err;
-  }
-}
-
-// Reads and JSON-parses a request body with a hard byte cap. On overflow the
-// remaining body is drained (chunks discarded, nothing buffered) and the
-// promise rejects at stream end — the route can then answer with a 413 that
-// reliably reaches the client. Draining rather than destroying the socket
-// avoids a race where the error response is cut off mid-flight; the server is
-// loopback-only anyway, so there is no remote attacker to DoS with a slow
-// body. Rejects with .status/.code attached for the right HTTP status.
-export function readJsonBody(req, limitBytes) {
-  return new Promise((resolve, reject) => {
-    const chunks = [];
-    let total = 0;
-    let overflow = null;
-    req.on('data', (chunk) => {
-      if (overflow) return; // keep draining past the cap, discard
-      total += chunk.length;
-      if (total > limitBytes) {
-        overflow = new Error(`request body exceeds ${limitBytes} bytes`);
-        overflow.status = 413;
-        overflow.code = 'BODY_TOO_LARGE';
-        chunks.length = 0; // nothing is kept from an oversized body
-        return;
-      }
-      chunks.push(chunk);
-    });
-    req.on('end', () => {
-      if (overflow) {
-        reject(overflow);
-        return;
-      }
-      let body;
-      try {
-        body = JSON.parse(Buffer.concat(chunks).toString('utf8'));
-      } catch {
-        const err = new Error('request body is not valid JSON');
-        err.status = 400;
-        err.code = 'BAD_JSON';
-        reject(err);
-        return;
-      }
-      resolve(body);
-    });
-    req.on('error', (err) => {
-      // Overflow already doomed the request — settle with THAT error (the
-      // meaningful 413) so the promise can never hang when the stream errors
-      // mid-drain.
-      reject(overflow ?? err);
-    });
-  });
-}
-
-// Best-effort body drain for requests that get rejected before their body
-// was read (405/415/403/503): answering mid-upload can surface as a
-// connection reset instead of the JSON error on some clients, which is why
-// the 413 path deliberately drains first — this extends the same behavior to
-// every early rejection. Idempotent and safe on any request: finished or
-// destroyed streams return immediately. Like the 413 drain, there is no
-// timeout — the server is loopback-only, so no remote party can hold it
-// open with a slow body.
-export function drainBody(req) {
-  if (req?.readableEnded || req?.destroyed) return Promise.resolve();
-  return new Promise((resolve) => {
-    req.on('end', resolve);
-    req.on('close', resolve);
-    req.on('error', resolve);
-    req.resume();
-  });
-}
-
 function sendJson(res, status, payload, method = 'GET', extraHeaders = {}) {
   res.writeHead(status, { ...JSON_HEADERS, ...extraHeaders });
   res.end(method === 'HEAD' ? undefined : JSON.stringify(payload));
@@ -213,8 +104,6 @@ export function createWebServer({
   port = 4729,
   outDir,
   getData,
-  configService,
-  transferService,
   apiOnly = false,
   logger = console,
 } = {}) {
@@ -238,8 +127,8 @@ export function createWebServer({
       body = await readFile(servedTarget).catch(() => null);
     }
     if (body == null && path.extname(target) === '') {
-      // Next static export emits app/config/page.js as config.html when
-      // trailingSlash is disabled. Preserve the clean browser URL /config.
+      // Next static export emits app/<route>/page.js as <route>.html when
+      // trailingSlash is disabled; keep the clean extensionless URL.
       servedTarget = `${target}.html`;
       body = await readFile(servedTarget).catch(() => null);
     }
@@ -323,168 +212,7 @@ export function createWebServer({
       return;
     }
 
-    if (pathname === '/api/config' || pathname.startsWith('/api/config/')) {
-      if (!isLoopbackAddress(req.socket.remoteAddress)) {
-        sendJson(res, 403, { error: 'configuration endpoint is only available from this machine', code: 'LOOPBACK_ONLY' }, req.method);
-        return;
-      }
-      if (!localHostHeader) {
-        sendJson(res, 403, { error: 'configuration endpoint requires a localhost Host header', code: 'HOST_NOT_ALLOWED' }, req.method);
-        return;
-      }
-      // Fetch-Metadata defense (browsers send Sec-Fetch-Site; curl and
-      // Node's fetch do not, so absence passes): a cross-site browser request
-      // aimed at these endpoints is rejected regardless of anything else.
-      if (isCrossSiteRequest(req)) {
-        sendJson(res, 403, { error: 'cross-site requests are not accepted', code: 'CROSS_SITE_NOT_ALLOWED' }, req.method);
-        return;
-      }
-      if (!configService) {
-        await drainBody(req); // consume an in-flight body before answering
-        sendJson(res, 503, { error: 'configuration service is unavailable', code: 'CONFIG_UNAVAILABLE' }, req.method);
-        return;
-      }
-
-      // Read-only inventory: GET/HEAD only, never a request body.
-      if (pathname === '/api/config') {
-        if (req.method !== 'GET' && req.method !== 'HEAD') {
-          await drainBody(req);
-          sendJson(res, 405, { error: 'method not allowed', code: 'METHOD_NOT_ALLOWED' }, req.method, { allow: 'GET, HEAD' });
-          return;
-        }
-        try {
-          sendJson(res, 200, await configService.inspect(), req.method);
-        } catch (err) {
-          logger?.warn?.(`toksight web: /api/config failed: ${err?.message || err}`);
-          sendJson(res, 500, { error: String(err?.message || err), code: 'CONFIG_ERROR' }, req.method);
-        }
-        return;
-      }
-
-      if (pathname === '/api/config/backups') {
-        if (req.method !== 'GET' && req.method !== 'HEAD') {
-          await drainBody(req);
-          sendJson(res, 405, { error: 'method not allowed', code: 'METHOD_NOT_ALLOWED' }, req.method, { allow: 'GET, HEAD' });
-          return;
-        }
-        if (!transferService?.listBackups) {
-          await drainBody(req);
-          sendJson(res, 503, { error: 'backup service is unavailable', code: 'TRANSFER_UNAVAILABLE' }, req.method);
-          return;
-        }
-        try { sendJson(res, 200, await transferService.listBackups(), req.method); }
-        catch { sendJson(res, 500, { error: 'cannot list backups', code: 'TRANSFER_ERROR' }, req.method); }
-        return;
-      }
-
-      // Bundle export: same GET semantics as the inventory, plus a
-      // Content-Disposition so the dashboard can offer it as a download.
-      if (pathname === '/api/config/export') {
-        if (req.method !== 'GET' && req.method !== 'HEAD') {
-          await drainBody(req);
-          sendJson(res, 405, { error: 'method not allowed', code: 'METHOD_NOT_ALLOWED' }, req.method, { allow: 'GET, HEAD' });
-          return;
-        }
-        if (!transferService) {
-          await drainBody(req);
-          sendJson(res, 503, { error: 'transfer service is unavailable', code: 'TRANSFER_UNAVAILABLE' }, req.method);
-          return;
-        }
-        try {
-          const { bundle, warnings } = await transferService.exportBundle({
-            agents: url.searchParams.get('agents') || undefined,
-            files: url.searchParams.get('files') || undefined,
-          });
-          sendJson(
-            res,
-            200,
-            { ...bundle, warnings },
-            req.method,
-            { 'content-disposition': 'attachment; filename="toksight-agent-configs.json"' },
-          );
-        } catch (err) {
-          logger?.warn?.(`toksight web: /api/config/export failed: ${err?.message || err}`);
-          sendJson(res, 500, { error: String(err?.message || err), code: 'TRANSFER_ERROR' }, req.method);
-        }
-        return;
-      }
-
-      // Import endpoints — the only write path in toksight. Beyond the
-      // loopback/Host/Fetch-Metadata gates shared with the read side, a
-      // browser-initiated write requires a JSON content type AND the
-      // x-toksight-action header: both force a CORS preflight, and this
-      // server answers no preflight (no CORS headers at all), so a foreign
-      // page can never fire a state-changing request at it.
-      if (pathname === '/api/config/import/preview' || pathname === '/api/config/import') {
-        const isPreview = pathname === '/api/config/import/preview';
-        if (req.method !== 'POST') {
-          await drainBody(req);
-          sendJson(res, 405, { error: 'method not allowed', code: 'METHOD_NOT_ALLOWED' }, req.method, { allow: 'POST' });
-          return;
-        }
-        if (!transferService) {
-          await drainBody(req);
-          sendJson(res, 503, { error: 'transfer service is unavailable', code: 'TRANSFER_UNAVAILABLE' }, req.method);
-          return;
-        }
-        try {
-          guardWriteRequest(req, isPreview ? 'import-preview' : 'import');
-          const body = await readJsonBody(req, MAX_IMPORT_BYTES);
-          let bundle = body?.bundle;
-          const restoring = body?.backupId != null;
-          if (restoring ? typeof body.backupId !== 'string' || body.bundle != null : !bundle || typeof bundle !== 'object' || Array.isArray(bundle)) {
-            sendJson(res, 400, { error: 'provide either a bundle object or a backupId string', code: 'BAD_REQUEST' }, req.method);
-            return;
-          }
-          let selected;
-          if (body.selected != null) {
-            if (!Array.isArray(body.selected) || body.selected.some((entry) => typeof entry !== 'string')) {
-              sendJson(res, 400, { error: 'selected must be an array of file ids', code: 'BAD_REQUEST' }, req.method);
-              return;
-            }
-            selected = body.selected;
-          }
-          const options = { selected };
-          if (body.expected != null) {
-            const expected = body.expected;
-            const hash = /^(?:missing|[a-f0-9]{64})$/;
-            if (typeof expected !== 'object' || Array.isArray(expected) || Object.values(expected).some((value) =>
-              !value || typeof value.target !== 'string' || !hash.test(value.target) || typeof value.content !== 'string' || !/^[a-f0-9]{64}$/.test(value.content))) {
-              sendJson(res, 400, { error: 'expected must contain target/content revisions from a preview', code: 'BAD_REQUEST' }, req.method);
-              return;
-            }
-            options.expected = expected;
-          }
-          if (restoring) {
-            try { bundle = await transferService.bundleFromBackup(body.backupId); }
-            catch {
-              sendJson(res, 400, { error: 'backup is unavailable, ambiguous or not a regular allowlisted file', code: 'BAD_BACKUP' }, req.method);
-              return;
-            }
-          }
-          const result = isPreview
-            ? await transferService.planImport(bundle, options)
-            : await transferService.applyImport(bundle, options);
-          if (result.error) {
-            sendJson(res, 400, { error: result.error, code: 'BAD_BUNDLE' }, req.method);
-            return;
-          }
-          sendJson(res, 200, result, req.method);
-        } catch (err) {
-          const status = Number.isFinite(err?.status) ? err.status : 500;
-          if (status >= 500) {
-            logger?.warn?.(`toksight web: ${pathname} failed: ${err?.message || err}`);
-          }
-          // 415/403 fire before the body is read (and 400s after it was);
-          // draining is idempotent, and it guarantees the client reliably
-          // receives this JSON error instead of a mid-upload connection
-          // reset.
-          await drainBody(req);
-          sendJson(res, status, { error: String(err?.message || err), code: err?.code || 'TRANSFER_ERROR' }, req.method);
-        }
-        return;
-      }
-
+    if (pathname.startsWith('/api/')) {
       sendJson(res, 404, { error: 'not found', code: 'NOT_FOUND' }, req.method);
       return;
     }

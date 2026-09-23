@@ -70,6 +70,17 @@ test('filters intersect the startup scope; previous periods outside it are unava
   assert.equal(empty.totals.requests, 0); assert.equal(empty.comparison.reason, 'empty-range');
 });
 
+test('scopeRange spans the whole startup scope regardless of the requested period', async () => {
+  const opts = parseArgs(['--offline', '--since', '2026-09-02']);
+  const get = service([entry({ timestamp: at(1) }), entry({ timestamp: at(3) }), entry({ client: 'codex', timestamp: at(7) }), entry({ timestamp: null })], opts);
+  const month = await get(query('period=custom&since=2026-09-05&until=2026-09-30'));
+  assert.equal(month.totals.requests, 1);
+  assert.equal(month.activityRange.firstAt, at(7));
+  assert.deepEqual(month.scopeRange, { firstAt: at(3), lastAt: at(7) });
+  assert.deepEqual((await get(query('client=claude'))).scopeRange, { firstAt: at(3), lastAt: at(3) });
+  assert.deepEqual((await service([])()).scopeRange, { firstAt: null, lastAt: null });
+});
+
 test('historical selected charts agree with all filtered slices and missing timestamps warn', async () => {
   const entries = [entry({ timestamp: at(1) }), entry({ timestamp: at(2) }), entry({ timestamp: at(3) }), entry({ timestamp: null }), entry({ client: 'codex', timestamp: at(1) })];
   const data = await service(entries)(query('client=claude&period=custom&since=2026-09-01&until=2026-09-02'));

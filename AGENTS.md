@@ -4,11 +4,10 @@
 
 `toksight` — a Node.js CLI (zero runtime dependencies, ESM only, Node >= 20) that tracks token
 usage, cost, and cache hit rate of AI coding agents by reading the local session files those
-agents already write, plus the `toksight web` local dashboard: a read-only view of the agents'
-configuration files with an opt-in bundle export/import (the only write path — backup-first,
-allowlist-scoped; there is no TUI). Local-first: stats scan session files read-only, the config
-page shows redacted previews, and credential files are never displayed, bundled or imported.
-The sole network call is the LiteLLM pricing fetch (skippable with `--offline`).
+agents already write, plus the `toksight web` local report: one page per calendar month or year
+with three reorderable cards (heatmap · agents · models) and PNG export (there is no TUI).
+Local-first and read-only: nothing is written to agent files. The sole network call is the
+LiteLLM pricing fetch (skippable with `--offline`).
 
 ## Commands
 
@@ -25,8 +24,8 @@ The sole network call is the LiteLLM pricing fetch (skippable with `--offline`).
   pair it with `web --api-only` and point its proxy at `TOKSIGHT_DEV_API`. Production builds
   always export regardless of that env var.
 - `npm run check:package` — pack, install the tarball offline in a temp dir, then exercise its
-  CLI: both pages, static resources, APIs and a fixture-only import/restore round trip. CI and
-  release gates run it on Ubuntu/Windows (Node 22).
+ CLI against fixtures: the page, static resources and `/api/data` (filters, report periods,
+ `scopeRange`). CI and release gates run it on Ubuntu/Windows (Node 22).
 - No linter or typechecker; plain JavaScript ESM throughout.
 
 ## Architecture
@@ -62,26 +61,20 @@ src/pricing.js      builtin → LiteLLM (1h disk cache) → user overrides; { ex
                     lookup maps (suffix pre-index is O(1))
 src/aggregate.js    grouping/totals (summarize, byModel/Day/Month/Session, cacheHitRate)
 src/webdata.js      pure dashboard aggregations (heatmap, trend, hourly, sessions…); day
-                    math imported only from src/dates.js
-src/toml.js         tolerant TOML subset parser ({ value, error }, never throws)
-src/agentconfigs.js compatibility re-exports of the config service (inventory, fileDefs, redact)
-src/agenttransfer.js compatibility re-exports of the transfer service + bundle constants
-src/config/         one module per concern: files (allowlist + target paths) · limits ·
-                    parse/redact · summaries · inventory (read-only, redacted previews) ·
-                    compare (redacted bounded diff, revisions, target inspection) ·
-                    transfer (export/plan/apply — the ONLY config write path) · backups
-                    (exclusive copying, metadata-only listing). Invariants → Gotchas
-src/webserver.js    zero-dep node:http — static web/out, /api/data, loopback-only
-                    /api/config (GET inventory/backups/export; POST import preview/apply
-                    are the only write routes). Serving/security rules → Gotchas
+ math imported only from src/dates.js
+src/webserver.js    zero-dep node:http — static web/out + read-only GET/HEAD /api/data;
+ any other /api/* path is a JSON 404. Serving rules → Gotchas
 src/format.js       ANSI tables & number formatting
 src/fsutils.js      walkFiles/walkFilesMany/readJsonl/readJson/pathExists (warning
-                    semantics: root ENOENT silent, other read failures warn)
+ semantics: root ENOENT silent, other read failures warn)
 web/                Next.js (App Router, JS, no Tailwind), statically exported to web/out
-                    and served by the CLI. `/` dashboard, `/config` viewer + export/import/
-                    restore; components per feature, shared components/Tip; lib/i18n.js
-                    (zh-CN / en, localStorage `toksight-locale`); visual rules locked in
-                    design-spec.md — do not ship raw ui-ux-pro-max --persist output
+ and served by the CLI. Single page `/`: toolbar → report (hero + KPIs,
+ SortableCards of HeatmapCard/AgentsCard/ModelsCard, footer). lib/period.js
+ (local YYYY-MM-DD month/year math, Monday-start weeks) and lib/report.js
+ (pure aggregations) are node:test-covered; lib/prefs.js owns every
+ localStorage key; lib/exportImage.js (modern-screenshot) renders
+ `.report` minus `.no-export`; lib/i18n.js (zh-CN / en). Visual rules
+ locked in design-spec.md
 ```
 
 Each client parser exports `id`, `label`, `sourceRoots({ env, home })`, and
@@ -134,10 +127,12 @@ cost (only OpenCode does).
   (`buildPayload` in `src/payload.js`). `GET /api/data` reuses this exact payload and layers the
   `src/webdata.js` extras additively (heatmap, trend, trendByAgent, hourly, today, last7Days,
   thisMonth, topSessions, longestSession — ranked by activeMs with idle gaps capped at 5min —
-  activityRange, timezone) plus newer additive extras: `view`, `selection`, `costCoverage`,
-  `comparison`; legacy extras must stay present. Each `clients` entry is that agent's totals plus
-  its own `cacheHitRate` built from the **filtered** entries, so `--client`/`--since`/`--until`
-  apply like every other slice (pinned by `test/payload.test.js`).
+ activityRange, timezone) plus newer additive extras: `view`, `scopeRange` (activity range of
+ the startup scope, independent of the requested period — the report's navigation bounds),
+ `selection`, `costCoverage`, `comparison`; legacy extras must stay present. Each `clients`
+  entry is that agent's totals plus its own `cacheHitRate` built from the **filtered** entries,
+  so `--client`/`--since`/`--until` apply like every other slice (pinned by
+  `test/payload.test.js`).
 - **Local timezone**: day grouping and `--since`/`--until` use the machine's local time, not UTC.
 - **Cache hit rate** = `cacheRead / (freshInput + cacheRead)`; cache *writes* are excluded (cold
   traffic being stored, not served). Attributed **per request** — each entry carries its own
@@ -155,49 +150,16 @@ cost (only OpenCode does).
   response intersected with startup scope (never widened). `selection` carries historical
   trend/heatmap rows capped at the last 366 days (totals/comparison stay complete); without a
   start date comparison uses seven days ending on the selected end date/today, and is
-  unavailable if the previous window falls outside startup scope. UI request
-  cancellation/sequence checks keep stale responses from replacing newer filters; URL query
-  preserves filter state.
-- **Config viewer scope/redaction**: the config page inventory is strictly read-only. Only
-  user-level files for ZCode, Claude Code, Codex CLI, OpenCode and Kimi Code are allowlisted
-  (`src/config/files.js`, re-exported via `src/agentconfigs.js`); project/managed policy files
-  are out of scope on purpose. Credential files (ZCode `v2/credentials.json`, Claude
-  `.credentials.json`, Codex `auth.json`/`.env`, OpenCode data-dir `auth.json`, Kimi
-  `credentials/`) are probed for existence and whitelisted facts ONLY (auth mode, key names,
-  env-var names) — never previewed, never bundled, never importable (evalEntry rejects
-  kind:'secret'). Everything else gets `redactConfig`: JSON/JSONC parse to a tree (string-aware
-  JSONC stripper, then per-key redaction), TOML/text fall back to line redaction — quote- and
-  multi-line-aware (a sensitive value spanning `"""`/`'''` or unbalanced brackets suppresses its
-  continuation lines). `env` blocks are walked per variable name (SENSITIVE_CONTAINER excludes
-  env deliberately) so Claude relay configs stay readable; `oauth`/`headers`/`credentials`
-  containers collapse whole. Redact complete content BEFORE truncating — never truncate JSON
-  before parsing. Previews cap at 64 KB; files over 1 MB keep metadata only. `GET /api/config`
-  requires loopback clients with a localhost Host header and rejects every other method.
-- **Import safety** (the single write path `POST /api/config/import[/preview]`, served by
-  `src/config/transfer.js`): targets resolve from THIS machine's allowlist only (a bundle's
-  recorded paths are informational); per-file content cap 1 MB, whole request body cap 10 MB.
-  Every existing target is copied EXCLUSIVELY (symlink-refusing, via `backups.js`) to
-  `<config>/toksight/backups/<agentId>/<fileName>.<fileId>.<ts>-<random>` before the
-  temp-file+rename swap; new files use mode 0600, replacements preserve permission bits; targets
-  are re-inspected before rename. Unchanged configs skip writes and backups; unreadable,
-  non-file or oversized targets are blocked. Failed writes clean up temp files and only report
-  backups that actually reached disk. Bundled content is UNREDACTED on purpose (migration needs
-  real values) — the UI warns. Preview diffs are redacted and bounded (64 KB / 600 lines per
-  side). UI applies carry `expected` target/source revisions from preview; stale content fails
-  per-file before writing (legacy bundle-only API calls remain accepted).
-  `GET /api/config/backups` lists metadata only (latest 200). Import preview/apply also accept
-  `{ backupId }` instead of `{ bundle }` (mutually exclusive); the server rebuilds the bundle
-  internally and never returns backup plaintext; backup ids resolve only against known agents
-  and filename patterns, never arbitrary client paths; legacy backup names work only for
-  unambiguous allowlist targets. Restoration flows through applyImport and therefore backs up
-  current content again — do not add a separate restore write endpoint.
-- **Config API gates**: all /api/config routes validate Host against localhost names
-  (DNS-rebinding defense — always, even when `--host` is non-loopback) and reject
-  `Sec-Fetch-Site: cross-site`; write POSTs additionally require application/json + a matching
-  `x-toksight-action` header (both force a CORS preflight this server never answers, so foreign
-  pages cannot fire writes). Those loopback/Host/cross-site gates answer BEFORE reading any
-  body; every later rejection (413/405/415/403/503) drains the body first so local clients get
-  the JSON error, not a connection reset.
+  unavailable if the previous window falls outside startup scope. A loopback-bound server
+  rejects `/api/data` requests whose Host header is not a localhost name (DNS rebinding);
+  `--host 0.0.0.0` opts out on purpose.
+- **Web report**: the page requests one calendar period at a time
+  (`period=custom&since=<first day>&until=<last day>`, local dates) and derives everything from
+  that payload — heatmap from `daily`, agents from `clients`, models from `models` merged by
+  name. `useReport` aborts/sequence-checks so a stale period never replaces a newer one, and
+  keeps the previous payload (tagged with its period) on screen while loading. Day keys are
+  `YYYY-MM-DD` strings built from local `Date` parts — never `toISOString()`. The web server has
+  no write routes; do not reintroduce agent-config endpoints.
 - Windows compatibility matters (paths, fixtures use `C:\\...` directories); `pathExists`
   handles `ENOTDIR` for files.
 
@@ -215,7 +177,8 @@ GitHub Release with auto-generated notes. npm publishing is deliberately NOT aut
 
 `README.md` and `README.zh-CN.md` are bilingual mirrors — update both when changing CLI options,
 data sources, pricing behavior, the web dashboard, or the JSON shape; keep their paragraph
-counts roughly equal. `design-spec.md` is the locked visual spec for the dashboard.
+counts roughly equal. `design-spec.md` is the locked visual and interaction spec for the web
+report (Claude palette, dot grid, card/drag/export behavior).
 `pricing.json` user overrides match model names exactly or by `provider/`-suffix (e.g.
 `zhipuai/glm-5.3` covers `GLM-5.3`). `web/AGENTS.md` is generated by Next.js tooling — keep it
 when committing.

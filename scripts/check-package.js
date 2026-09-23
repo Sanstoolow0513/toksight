@@ -70,8 +70,8 @@ async function main() {
     const installedNames = (await readdir(path.join(installDir, 'node_modules'))).filter((name) => !name.startsWith('.'));
     assert.deepEqual(installedNames, ['toksight'], 'Dashboard dependencies must not be installed at runtime');
 
-    // All agent roots, configuration paths and pricing overrides are isolated.
-    // A real fixture makes the API check prove collection works from the package.
+    // All agent roots and pricing overrides are isolated. A real fixture makes
+    // the API check prove collection works from the package.
     const fixture = path.join(temp, 'fixtures');
     const claude = path.join(fixture, 'claude');
     await mkdir(path.join(claude, 'projects', 'smoke'), { recursive: true });
@@ -79,7 +79,6 @@ async function main() {
       type: 'assistant', sessionId: 'package-smoke', timestamp: '2026-08-29T10:00:00Z',
       message: { id: 'package-smoke', model: 'claude-sonnet-4-5', usage: { input_tokens: 100, output_tokens: 20 } },
     }) + '\n');
-    await writeFile(path.join(claude, 'settings.json'), JSON.stringify({ model: 'claude-sonnet-4-5' }));
     const env = {
       ...process.env,
       CLAUDE_CONFIG_DIR: claude,
@@ -87,8 +86,6 @@ async function main() {
       ZCODE_HOME: path.join(fixture, 'zcode'),
       KIMI_CODE_HOME: path.join(fixture, 'kimi'),
       OPENCODE_PATH: path.join(fixture, 'opencode-data'),
-      OPENCODE_CONFIG_DIR: path.join(fixture, 'opencode-config'),
-      OPENCODE_CONFIG: path.join(fixture, 'opencode-config', 'opencode.json'),
       XDG_CONFIG_HOME: path.join(fixture, 'xdg-config'),
       XDG_DATA_HOME: path.join(fixture, 'xdg-data'),
       XDG_STATE_HOME: path.join(fixture, 'xdg-state'),
@@ -104,7 +101,7 @@ async function main() {
     await waitForServer(url, child);
 
     const assetPaths = new Set();
-    for (const [route, file] of [['/', 'index.html'], ['/config', 'config.html']]) {
+    for (const [route, file] of [['/', 'index.html']]) {
       const expected = await readFile(path.join(installed, 'web', 'out', file), 'utf8');
       const response = await fetch(url + route);
       assert.equal(response.status, 200, route);
@@ -147,35 +144,16 @@ async function main() {
     assert.equal((await emptyFilter.json()).totals.requests, 0);
     assert.equal((await fetch(url + '/api/data?since=2026-02-30')).status, 400);
     console.log('OK dashboard filters, selected charts, comparison and cost coverage');
-    const configResponse = await fetch(url + '/api/config');
-    assert.equal(configResponse.status, 200);
-    const config = await configResponse.json();
-    assert.equal(config.agents.find((agent) => agent.id === 'claude').summary.defaultModel, 'claude-sonnet-4-5');
-    console.log('OK /api/data and /api/config: isolated fixtures');
-    const post = async (route, body) => {
-      const response = await fetch(url + route, {
-        method: 'POST', headers: { 'content-type': 'application/json', 'x-toksight-action': route.endsWith('/preview') ? 'import-preview' : 'import' },
-        body: JSON.stringify(body),
-      });
-      assert.equal(response.status, 200, route);
-      return response.json();
-    };
-    const importSource = { bundle: { format: 'toksight-agent-config-bundle', version: 1, files: [{ id: 'claude.settings', content: '{"model":"package-restore-check"}' }] } };
-    const applyPreview = async (source) => {
-      const preview = await post('/api/config/import/preview', source);
-      const expected = Object.fromEntries(preview.plan.map((row) => [row.id, row.expected]));
-      const applied = await post('/api/config/import', { ...source, expected });
-      assert.equal(applied.results[0].status, 'written');
-    };
-    await applyPreview(importSource);
-    const backupsResponse = await fetch(url + '/api/config/backups');
-    assert.equal(backupsResponse.status, 200);
-    const listing = await backupsResponse.json();
-    assert.equal(listing.backups.length, 1);
-    assert.equal(listing.backups[0].content, undefined);
-    await applyPreview({ backupId: listing.backups[0].backupId });
-    assert.equal(JSON.parse(await readFile(path.join(claude, 'settings.json'), 'utf8')).model, 'claude-sonnet-4-5');
-    console.log('OK configuration import and backup restore: isolated fixtures');
+    const monthResponse = await fetch(url + '/api/data?period=custom&since=2026-08-01&until=2026-08-31');
+    assert.equal(monthResponse.status, 200);
+    const month = await monthResponse.json();
+    assert.equal(month.daily.length, 1);
+    assert.equal(month.scopeRange.firstAt, Date.parse('2026-08-29T10:00:00Z'));
+    const emptyMonth = await (await fetch(url + '/api/data?period=custom&since=2026-07-01&until=2026-07-31')).json();
+    assert.equal(emptyMonth.totals.requests, 0);
+    assert.equal(emptyMonth.scopeRange.firstAt, month.scopeRange.firstAt);
+    assert.equal((await fetch(url + '/api/config')).status, 404);
+    console.log('OK report periods and scope range: isolated fixtures');
     console.log(`Package check passed: toksight ${pkg.version}`);
   } catch (err) {
     if (output) console.error(output);
