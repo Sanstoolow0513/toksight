@@ -2,18 +2,17 @@
 // finds, so a stale or hand-edited value falls back to the default.
 
 import { DEFAULT_LOCALE, LOCALES } from './i18n.js';
+import { SORT_KEYS } from './report.js';
 
 export const CARD_IDS = ['heatmap', 'agents'];
 export const THEMES = ['light', 'dark', 'system'];
-const METRICS = ['tokens', 'cost'];
 
 const KEYS = {
   locale: 'toksight-locale',
   theme: 'toksight-theme',
   order: 'toksight-card-order',
   mode: 'toksight-period-mode',
-  metrics: 'toksight-card-metrics',
-  dayMetric: 'toksight-day-metric',
+  agentSort: 'toksight-agent-sort',
 };
 
 function read(key) {
@@ -73,17 +72,11 @@ export function readOrder() {
 }
 export const writeOrder = (v) => write(KEYS.order, JSON.stringify(v));
 
-export function readMetrics() {
-  const v = readJson(KEYS.metrics) ?? {};
-  return Object.fromEntries(CARD_IDS.map((id) => [id, METRICS.includes(v[id]) ? v[id] : 'tokens']));
+export function readAgentSort() {
+  const v = read(KEYS.agentSort);
+  return SORT_KEYS.includes(v) ? v : 'tokens';
 }
-export const writeMetrics = (v) => write(KEYS.metrics, JSON.stringify(v));
-
-export function readDayMetric() {
-  const v = read(KEYS.dayMetric);
-  return METRICS.includes(v) ? v : 'tokens';
-}
-export const writeDayMetric = (v) => write(KEYS.dayMetric, v);
+export const writeAgentSort = (v) => write(KEYS.agentSort, v);
 
 export function resolveTheme(pref) {
   if (pref !== 'system') return pref;

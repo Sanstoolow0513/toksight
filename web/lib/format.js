@@ -35,11 +35,6 @@ export function fmtCostShort(v) {
   return `$${(num / 1000).toFixed(1)}K`;
 }
 
-export function fmtMetric(v, metric, short = false) {
-  if (metric === 'cost') return short ? fmtCostShort(v) : fmtCost(v);
-  return fmtTokens(v);
-}
-
 export function fmtInt(n) {
   return Math.round(Number(n) || 0).toLocaleString('en-US');
 }

@@ -1,31 +1,17 @@
-import { PartsLegend } from '@/components/RankList';
 import Card from '@/components/Card';
-import Segmented from '@/components/Segmented';
-import AgentModelList from '@/components/AgentModelList';
+import AgentTable from '@/components/AgentTable';
 import { periodLabel } from '@/lib/i18n';
 
-export default function AgentsCard({ data, period, metric, onMetric, agentLabel, locale, tx, handleProps }) {
+export default function AgentsCard({ data, period, sortBy, onSort, agentLabel, locale, tx, handleProps }) {
   const hasRows = Object.keys(data.clients ?? {}).length > 0;
   return (
     <Card
       handleProps={handleProps}
       title={tx('cardAgents')}
-      subtitle={tx(metric === 'cost' ? 'subRankCost' : 'subAgentsTokens', { period: periodLabel(locale, period) })}
-      actions={
-        <Segmented
-          compact
-          label={tx('metricGroup')}
-          value={metric}
-          onChange={onMetric}
-          options={[{ value: 'tokens', label: tx('metricTokens') }, { value: 'cost', label: tx('metricCost') }]}
-        />
-      }
+      subtitle={tx(sortBy === 'cost' ? 'subAgentsCost' : 'subAgentsTokens', { period: periodLabel(locale, period) })}
     >
       {hasRows ? (
-        <>
-          <AgentModelList clients={data.clients} models={data.models} metric={metric} agentLabel={agentLabel} tx={tx} pricing={data.pricing} />
-          {metric === 'tokens' ? <PartsLegend tx={tx} /> : null}
-        </>
+        <AgentTable clients={data.clients} models={data.models} pricing={data.pricing} sortBy={sortBy} onSort={onSort} agentLabel={agentLabel} tx={tx} />
       ) : (
         <p className="card-empty">{tx('emptyPeriod')}</p>
       )}

@@ -1,7 +1,7 @@
 'use client';
 
-// toksight report: a centred column on a dot grid — KPIs, three reorderable
-// chapter cards (heatmap · agents, with each agent's model costs nested) and a footer.
+// toksight report: a centred column on a dot grid — KPIs, two reorderable
+// chapter cards (heatmap · agent table, with each agent's models nested) and a footer.
 // Everything inside `.report` is what "Export image" captures. Clicking a
 // heatmap day opens the day card beside the column (the pair re-centres on
 // wide screens; it floats over the page on narrow ones); the card never
@@ -15,27 +15,16 @@ import SortableCards from '@/components/SortableCards';
 import HeatmapCard from '@/components/HeatmapCard';
 import AgentsCard from '@/components/AgentsCard';
 import DayPanel from '@/components/DayPanel';
+import Kpis from '@/components/Kpis';
 import BrandMark from '@/components/BrandMark';
 import Toasts, { useToasts } from '@/components/Toasts';
 import { useDayReport, useReport } from '@/lib/useReport';
 import { currentPeriod, dayKey, dayNav, periodKey, periodNav, shiftDay, shiftPeriod, withMode } from '@/lib/period';
-import { fmtCost, fmtDateTime, fmtInt, fmtPct, fmtTokens } from '@/lib/format';
+import { fmtDateTime, fmtInt } from '@/lib/format';
 import { DEFAULT_LOCALE, periodLabel, t } from '@/lib/i18n';
 import { exportReportImage } from '@/lib/exportImage';
 import * as prefs from '@/lib/prefs';
 import { coded } from '@/components/Coded';
-
-function Kpi({ label, value, sub }) {
-  return (
-    <div className="kpi">
-      <dt>{label}</dt>
-      <dd>
-        <span className="kpi-value">{value}</span>
-        <span className="kpi-sub">{sub}</span>
-      </dd>
-    </div>
-  );
-}
 
 function StateCard({ icon, title, children }) {
   return (
@@ -64,14 +53,13 @@ export default function Page() {
   const [period, setPeriod] = useState(null);
   const [today, setToday] = useState(null);
   const [order, setOrder] = useState(prefs.CARD_IDS);
-  const [metrics, setMetrics] = useState(() => Object.fromEntries(prefs.CARD_IDS.map((id) => [id, 'tokens'])));
+  const [agentSort, setAgentSort] = useState('tokens');
   const [exporting, setExporting] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [priceUpdating, setPriceUpdating] = useState(false);
   const [importing, setImporting] = useState(false);
   const [refreshRevision, setRefreshRevision] = useState(0);
   const [selectedDay, setSelectedDay] = useState(null);
-  const [dayMetric, setDayMetric] = useState('tokens');
   const reportRef = useRef(null);
   const toasts = useToasts();
   const { push: pushToast } = toasts;
@@ -100,8 +88,7 @@ export default function Page() {
     setLocale(prefs.readLocale());
     setTheme(prefs.readTheme());
     setOrder(prefs.readOrder());
-    setMetrics(prefs.readMetrics());
-    setDayMetric(prefs.readDayMetric());
+    setAgentSort(prefs.readAgentSort());
     setToday(dayKey(now));
     setPeriod(currentPeriod(prefs.readMode(), now));
   }, []);
@@ -210,20 +197,14 @@ export default function Page() {
   const onSelectDay = useCallback((date) => setSelectedDay((d) => (d === date ? null : date)), []);
   const onStepDay = (delta) => setSelectedDay((d) => (d ? shiftDay(d, delta) : d));
   const onCloseDay = useCallback(() => setSelectedDay(null), []);
-  const onDayMetric = (value) => {
-    prefs.writeDayMetric(value);
-    setDayMetric(value);
-  };
+  const onAgentSort = useCallback((value) => {
+    prefs.writeAgentSort(value);
+    setAgentSort(value);
+  }, []);
   const onReorder = (next) => {
     prefs.writeOrder(next);
     setOrder(next);
   };
-  const onMetric = (card) => (value) =>
-    setMetrics((m) => {
-      const next = { ...m, [card]: value };
-      prefs.writeMetrics(next);
-      return next;
-    });
   const onExport = async () => {
     setExporting(true);
     try {
@@ -258,7 +239,6 @@ export default function Page() {
       </StateCard>
     );
   } else {
-    const totals = data.totals ?? {};
     const unpriced = data.pricing?.unpricedModels ?? [];
     const cursorUnpriced = (data.clients?.cursor?.pricedRequests ?? 0) < (data.clients?.cursor?.requests ?? 0);
     const cardProps = { data, period: shown, locale, tx, agentLabel };
@@ -267,30 +247,14 @@ export default function Page() {
       <div ref={reportRef} className={report.loading ? 'report is-loading' : 'report'}>
         <section className="hero">
           <h1 className="visually-hidden">{tx('eyebrow')} · {periodLabel(locale, shown)}</h1>
-          <dl className="kpis">
-            <Kpi
-              label={tx('kpiTokens')}
-              value={fmtTokens(totals.totalTokens)}
-              sub={tx('kpiTokensSub', {
-                input: fmtTokens((totals.inputTokens ?? 0) + (totals.cacheReadTokens ?? 0) + (totals.cacheWriteTokens ?? 0)),
-                output: fmtTokens(totals.outputTokens),
-              })}
-            />
-            <Kpi
-              label={tx('kpiCost')}
-              value={fmtCost(totals.costUsd)}
-              sub={unpriced.length ? tx('kpiCostUnpriced', { n: unpriced.length }) : tx('kpiCostAll')}
-            />
-            <Kpi label={tx('kpiCache')} value={fmtPct(data.cacheHitRate)} sub={tx('kpiCacheSub', { tokens: fmtTokens(totals.cacheReadTokens) })} />
-            <Kpi label={tx('kpiRequests')} value={fmtInt(totals.requests)} sub={tx('kpiRequestsSub', { n: fmtInt(totals.sessions) })} />
-          </dl>
+          <Kpis data={data} tx={tx} />
         </section>
 
         <SortableCards order={order} onReorder={onReorder} handleLabel={tx('dragHandle')}>
           {(id, { handleProps }) => {
-            const shared = { ...cardProps, handleProps, metric: metrics[id], onMetric: onMetric(id) };
+            const shared = { ...cardProps, handleProps };
             if (id === 'heatmap') return <HeatmapCard {...shared} today={today} selected={selectedDay} onSelect={onSelectDay} />;
-            return <AgentsCard {...shared} />;
+            return <AgentsCard {...shared} sortBy={agentSort} onSort={onAgentSort} />;
           }}
         </SortableCards>
 
@@ -348,8 +312,8 @@ export default function Page() {
           report={dayReport}
           nav={panelNav}
           today={today}
-          metric={dayMetric}
-          onMetric={onDayMetric}
+          sortBy={agentSort}
+          onSort={onAgentSort}
           onStep={onStepDay}
           onClose={onCloseDay}
           locale={locale}

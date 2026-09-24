@@ -9,13 +9,13 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronLeft, ChevronRight, RefreshCw, TriangleAlert, X } from 'lucide-react';
-import Segmented from '@/components/Segmented';
 import Tooltip from '@/components/Tooltip';
 import { coded } from '@/components/Coded';
-import { PartsLegend, ShareBar, costText } from '@/components/RankList';
-import AgentModelList from '@/components/AgentModelList';
+import Kpis from '@/components/Kpis';
+import AgentTable from '@/components/AgentTable';
+import { CostValue, PartsLegend, agentStyle } from '@/components/Marks';
 import { hourlyBars, sessionRows } from '@/lib/report';
-import { fmtClockRange, fmtCost, fmtInt, fmtMetric, fmtPct, fmtTokens } from '@/lib/format';
+import { fmtClockRange, fmtCost, fmtInt, fmtTokens } from '@/lib/format';
 import { dayLabel, durationLabel, periodLabel, weekdayLabel } from '@/lib/i18n';
 
 const icon = { size: 15, strokeWidth: 2, 'aria-hidden': true };
@@ -35,43 +35,7 @@ function Section({ title, note, children }) {
   );
 }
 
-function Stat({ label, value, sub }) {
-  return (
-    <div className="panel-stat">
-      <dt>{label}</dt>
-      <dd>
-        <span className="stat-value">{value}</span>
-        <span className="stat-sub">{sub}</span>
-      </dd>
-    </div>
-  );
-}
-
-function DayKpis({ data, tx }) {
-  const totals = data.totals ?? {};
-  const unpriced = data.pricing?.unpricedModels ?? [];
-  return (
-    <dl className="panel-kpis">
-      <Stat
-        label={tx('kpiTokens')}
-        value={fmtTokens(totals.totalTokens)}
-        sub={tx('kpiTokensSub', {
-          input: fmtTokens((totals.inputTokens ?? 0) + (totals.cacheReadTokens ?? 0) + (totals.cacheWriteTokens ?? 0)),
-          output: fmtTokens(totals.outputTokens),
-        })}
-      />
-      <Stat
-        label={tx('kpiCost')}
-        value={fmtCost(totals.costUsd)}
-        sub={unpriced.length ? tx('kpiCostUnpriced', { n: unpriced.length }) : tx('kpiCostAll')}
-      />
-      <Stat label={tx('kpiCache')} value={fmtPct(data.cacheHitRate)} sub={tx('kpiCacheSub', { tokens: fmtTokens(totals.cacheReadTokens) })} />
-      <Stat label={tx('kpiRequests')} value={fmtInt(totals.requests)} sub={tx('kpiRequestsSub', { n: fmtInt(totals.sessions) })} />
-    </dl>
-  );
-}
-
-function HourlyChart({ bars, peak, metric, label, tx }) {
+function HourlyChart({ bars, peak, label, tx }) {
   const [tip, setTip] = useState(null);
   const onMove = (e) => {
     const hour = e.target.closest?.('[data-hour]')?.dataset.hour;
@@ -84,10 +48,8 @@ function HourlyChart({ bars, peak, metric, label, tx }) {
       <div className="hourly-bars">
         {bars.map((bar) => (
           <div key={bar.hour} data-hour={bar.hour} className={bar.hour === peak?.hour ? 'hour-col is-peak' : 'hour-col'}>
-            <div className={metric === 'cost' ? 'hour-bar is-cost' : 'hour-bar'} style={{ height: bar.value > 0 ? `max(3px, ${bar.height * 100}%)` : 0 }}>
-              {metric === 'tokens'
-                ? bar.parts.map((part, i) => (part > 0 ? <i key={i} className={`part-${i}`} style={{ flexGrow: part }} /> : null))
-                : null}
+            <div className="hour-bar" style={{ height: bar.value > 0 ? `max(3px, ${bar.height * 100}%)` : 0 }}>
+              {bar.parts.map((part, i) => (part > 0 ? <i key={i} className={`part-${i}`} style={{ flexGrow: part }} /> : null))}
             </div>
           </div>
         ))}
@@ -119,27 +81,25 @@ function HourlyChart({ bars, peak, metric, label, tx }) {
   );
 }
 
-function SessionRow({ row, metric, agentLabel, locale, tx }) {
+function SessionRow({ row, agentLabel, locale, tx }) {
   const meta = [
     agentLabel(row.client),
     fmtClockRange(row.startedAt, row.endedAt),
     row.activeMs > 0 ? tx('sessionActive', { time: durationLabel(locale, row.activeMs) }) : null,
-    metric === 'cost' ? `${fmtTokens(row.totalTokens)} tokens` : costText(row, tx),
     tx('rowRequests', { n: fmtInt(row.requests) }),
   ].filter(Boolean);
   const detail = [row.directory, (row.models ?? []).join(', ')].filter(Boolean).join(' · ');
   const name = row.name ?? tx('sessionUntitled');
   return (
-    <li className="rank-row">
-      <div className="rank-line">
-        <span className="rank-name" title={row.name ?? row.sessionId}>
+    <li className="session-row" style={agentStyle(row.client)}>
+      <div className="session-line">
+        <span className="session-name" title={row.name ?? row.sessionId}>
           {name}
         </span>
-        <span className="rank-value">{metric === 'cost' && row.pricing === 'none' ? '—' : fmtMetric(row.value, metric)}</span>
-        <span className="rank-share">{fmtPct(row.share)}</span>
+        <span className="cell-value">{fmtTokens(row.totalTokens)}</span>
+        <CostValue row={row} tx={tx} />
       </div>
-      <ShareBar share={row.share} parts={row.parts} metric={metric} />
-      <div className="rank-meta">{meta.join(' · ')}</div>
+      <div className="session-meta">{meta.join(' · ')}</div>
       {detail ? (
         <div className="session-detail" title={detail}>
           {detail}
@@ -149,10 +109,10 @@ function SessionRow({ row, metric, agentLabel, locale, tx }) {
   );
 }
 
-function DayBody({ data, day, metric, locale, tx, agentLabel }) {
+function DayBody({ data, day, sortBy, onSort, locale, tx, agentLabel }) {
   const totals = data.totals ?? {};
-  const hours = useMemo(() => hourlyBars(data.hourly, metric), [data.hourly, metric]);
-  const sessions = useMemo(() => sessionRows(data.topSessions, totals, metric, SESSION_LIMIT), [data.topSessions, totals, metric]);
+  const hours = useMemo(() => hourlyBars(data.hourly), [data.hourly]);
+  const sessions = useMemo(() => sessionRows(data.topSessions, SESSION_LIMIT), [data.topSessions]);
 
   if (!totals.requests) return <p className="panel-empty">{tx('dayEmpty')}</p>;
 
@@ -164,19 +124,19 @@ function DayBody({ data, day, metric, locale, tx, agentLabel }) {
 
   return (
     <>
-      <DayKpis data={data} tx={tx} />
+      <Kpis data={data} tx={tx} grid />
       <Section title={tx('secHourly')} note={hours.peak ? tx('hourlyPeak', { hour: hourText(hours.peak.hour) }) : null}>
-        <HourlyChart bars={hours.bars} peak={hours.peak} metric={metric} label={tx('hourlyAria', { day: dayLabel(locale, day, true) })} tx={tx} />
-        {metric === 'tokens' ? <PartsLegend tx={tx} /> : null}
+        <HourlyChart bars={hours.bars} peak={hours.peak} label={tx('hourlyAria', { day: dayLabel(locale, day, true) })} tx={tx} />
+        <PartsLegend tx={tx} />
       </Section>
-      <Section title={tx('cardAgents')} note={tx(metric === 'cost' ? 'subRankCost' : 'subAgentsTokens', { period: dayLabel(locale, day) })}>
-        <AgentModelList clients={data.clients} models={data.models} metric={metric} agentLabel={agentLabel} tx={tx} pricing={data.pricing} />
+      <Section title={tx('cardAgents')} note={tx(sortBy === 'cost' ? 'subAgentsCost' : 'subAgentsTokens', { period: dayLabel(locale, day) })}>
+        <AgentTable clients={data.clients} models={data.models} pricing={data.pricing} sortBy={sortBy} onSort={onSort} agentLabel={agentLabel} tx={tx} />
       </Section>
       {sessions.length ? (
         <Section title={tx('secSessions')} note={sessionNote}>
-          <ol className="rank-list session-list">
+          <ol className="session-list">
             {sessions.map((row) => (
-              <SessionRow key={`${row.client}/${row.sessionId}`} row={row} metric={metric} agentLabel={agentLabel} locale={locale} tx={tx} />
+              <SessionRow key={`${row.client}/${row.sessionId}`} row={row} agentLabel={agentLabel} locale={locale} tx={tx} />
             ))}
           </ol>
         </Section>
@@ -195,7 +155,7 @@ function PanelSkeleton() {
   );
 }
 
-export default function DayPanel({ open, day, report, nav, today, metric, onMetric, onStep, onClose, locale, tx, agentLabel }) {
+export default function DayPanel({ open, day, report, nav, today, sortBy, onSort, onStep, onClose, locale, tx, agentLabel }) {
   const ref = useRef(null);
   const opener = useRef(null);
   const closeRef = useRef(onClose);
@@ -248,16 +208,7 @@ export default function DayPanel({ open, day, report, nav, today, metric, onMetr
               <h2 className="panel-title" aria-live="polite">
                 {dayLabel(locale, day)}
               </h2>
-              <div className="panel-meta">
-                <p className="panel-sub">{sub.filter(Boolean).join(' · ')}</p>
-                <Segmented
-                  compact
-                  label={tx('metricGroup')}
-                  value={metric}
-                  onChange={onMetric}
-                  options={[{ value: 'tokens', label: tx('metricTokens') }, { value: 'cost', label: tx('metricCost') }]}
-                />
-              </div>
+              <p className="panel-sub">{sub.filter(Boolean).join(' · ')}</p>
             </header>
             <div className="panel-body">
               {report.error ? (
@@ -274,7 +225,7 @@ export default function DayPanel({ open, day, report, nav, today, metric, onMetr
               ) : null}
               {shown ? (
                 <div className={stale ? 'panel-content is-loading' : 'panel-content'}>
-                  <DayBody data={shown.data} day={shown.day} metric={metric} locale={locale} tx={tx} agentLabel={agentLabel} />
+                  <DayBody data={shown.data} day={shown.day} sortBy={sortBy} onSort={onSort} locale={locale} tx={tx} agentLabel={agentLabel} />
                 </div>
               ) : report.error ? null : (
                 <PanelSkeleton />
