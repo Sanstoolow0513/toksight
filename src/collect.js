@@ -49,7 +49,10 @@ export async function collectAll(opts, { env = process.env, home = os.homedir() 
   const reportedCosts = new WeakSet();
   const entries = filteredResult.entries.map((e) => {
     if (e.costUsd != null) reportedCosts.add(e);
-    const costUsd = computeCost(e, pricing.priceFor(e.model));
+    // Cursor's CSV records subscription labels rather than a public-model
+    // bill. Its numeric Cost values are reported charges; Included stays
+    // unknown even when a similarly named model exists in a price table.
+    const costUsd = computeCost(e, e.client === 'cursor' ? null : pricing.priceFor(e.model));
     return costUsd === e.costUsd ? e : { ...e, costUsd };
   });
 

@@ -3,14 +3,41 @@ import assert from 'node:assert/strict';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
 
 import * as claude from '../src/clients/claude.js';
 import * as codex from '../src/clients/codex.js';
+import * as cursor from '../src/clients/cursor.js';
 import * as opencode from '../src/clients/opencode.js';
 import * as kimi from '../src/clients/kimi.js';
 import * as zcode from '../src/clients/zcode.js';
+import { createUsageDatabase } from '../src/database.js';
+import { parseCursorCsv } from '../src/cursorcsv.js';
+import { collectAll } from '../src/collect.js';
+import { parseArgs } from '../src/args.js';
 
 const fixtures = path.join(path.dirname(fileURLToPath(import.meta.url)), 'fixtures');
+
+test('Cursor client reads imported SQLite rows for CLI reports without estimating Included costs', async () => {
+  const tmp = await mkdtemp(path.join(os.tmpdir(), 'toksight-cursor-'));
+  const env = { TOKSIGHT_CONFIG_DIR: tmp };
+  const db = createUsageDatabase({ env, home: tmp });
+  try {
+    const csv = (await readFile(path.join(fixtures, 'cursor', 'usage.csv'), 'utf8')).replaceAll('cursor-test-model', 'gpt-5');
+    const parsed = parseCursorCsv(csv);
+    db.importCursor(parsed.records);
+    const got = await cursor.collect({ env, home: tmp });
+    assert.equal(got.entries.length, 2);
+    assert.deepEqual(got.warnings, []);
+    const result = await collectAll(parseArgs(['--offline', '--client', 'cursor']), { env, home: tmp });
+    assert.equal(result.entries.length, 2);
+    assert.equal(result.entries[0].costUsd, null);
+    assert.equal(result.entries[1].costUsd, 0.25);
+  } finally {
+    db.close();
+    await rm(tmp, { recursive: true, force: true });
+  }
+});
 
 test('claude parser dedupes message ids, keeping the largest usage snapshot', async () => {
   const { entries } = await claude.collect({

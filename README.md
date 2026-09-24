@@ -2,7 +2,8 @@
 
 **Track token usage, cost and cache hit rate of AI coding agents — right from your terminal.**
 
-toksight reads the local session files your AI coding agents already write and turns them into
+toksight reads the local session files your AI coding agents already write, plus imported Cursor
+usage CSVs, and turns them into
 totals, per-model / per-day / per-session breakdowns and cost estimates. It is a Node.js CLI with
 zero runtime dependencies, plus a local web report (`toksight web`) with heatmaps, agent and model
 breakdowns, and one-click image export.
@@ -20,6 +21,7 @@ Inspired by [tokscale](https://github.com/junhoyeo/tokscale) (and in the same sp
 | Codex CLI | `~/.codex/sessions/**/*.jsonl` | `CODEX_HOME` |
 | OpenCode | `~/.local/share/opencode/opencode.db`, fallback `~/.local/share/opencode/storage/message/**/*.json` | `OPENCODE_PATH` |
 | Kimi Code | `~/.kimi-code/sessions/**/agents/*/wire.jsonl` | `KIMI_CODE_HOME` |
+| Cursor | Usage CSV exported from Cursor, imported through `toksight web` | `TOKSIGHT_CONFIG_DIR` (import storage) |
 
 ## Install
 
@@ -71,7 +73,7 @@ zcode   glm-5.3             41   116K    1.99M        0   43.3K  94.5%   $0.870
 ### Options
 
 ```
---client <a,b>   only include these clients (zcode, claude, codex, opencode, kimi)
+--client <a,b>   only include these clients (zcode, claude, codex, opencode, kimi, cursor)
 --since <date>   local date (YYYY-MM-DD), inclusive
 --until <date>   local date (YYYY-MM-DD), inclusive
 --today --week --month   date shortcuts
@@ -113,6 +115,8 @@ Costs are computed per request from token counts, with three layers (later wins)
 `<config>` is `%XDG_CONFIG_HOME% || ~/.config` (override with `TOKSIGHT_CONFIG_DIR`).
 Models without a price are still counted; their cost shows as `—` and they are listed under
 `pricing.unpricedModels` in JSON output. OpenCode costs reported by OpenCode itself are used as-is.
+Cursor CSV `Included` costs have no per-event USD amount and stay unpriced; numeric CSV costs and
+`Free` are used as reported. Public model prices are never applied to Cursor subscription usage.
 
 When a LiteLLM entry has no separate cache prices, cached tokens are billed at that model's input
 price — a deliberately conservative overestimate (real cache reads are usually ~10% of the input
@@ -133,6 +137,17 @@ all agents and update the database in one transaction. A failed refresh keeps th
 snapshot. The web server notices a refresh made by another toksight process. Refreshing also
 updates the displayed report and open day card; the footer shows when the database was last
 refreshed. `toksight refresh --offline` skips the pricing fetch.
+
+To add Cursor history, export **Usage Events** as CSV in Cursor, open `toksight web`, and choose
+**Import Cursor CSV** in the toolbar. The file is sent only to the local toksight server and its
+usage rows are saved in `usage.sqlite`; repeat or overlapping exports are matched by timestamp,
+model and token counts, so changes to billing labels or charges do not add tokens twice. Imports
+remain available after refresh and in CLI reports (`--client cursor`). Rows with zero tokens are
+skipped. Cursor's CSV has no session ID, so Cursor session counts and session details are omitted.
+Its `Cache Read` column allows the same cache hit rate calculation as other agents.
+Cursor exports no event ID, so two truly distinct events with identical timestamp, model and
+token counts cannot be distinguished from one event repeated across files; if Cursor later revises
+a model name or token counts, that event may be counted again. The import reports what it matched.
 
 The dashboard is a one-page **token usage & cost report** for a calendar month or a whole year,
 in Claude's warm light/dark palette on a sparse dot grid (visual spec: `design-spec.md`). The
@@ -173,8 +188,8 @@ report requests; the day panel asks for a single day the same way) or `?client=c
 used alone; presets cannot combine with explicit dates. Unknown, duplicate or invalid parameters
 return HTTP 400. `POST /api/refresh` updates the database and returns its refresh time and entry
 count and collection warnings. The web API's additive `snapshot` field exposes the refresh time
-and count. Cross-origin refresh
-requests are rejected.
+and count. `POST /api/import/cursor` accepts a UTF-8 Cursor usage CSV (up to 20 MB) and returns
+imported, updated-charge, duplicate and skipped row counts. Cross-origin write requests are rejected.
 
 ### Dashboard bundle
 
@@ -197,13 +212,14 @@ after editing the frontend. `npm pack` and `npm publish` rebuild the dashboard a
 request, so a session that switched models splits cleanly across the per-agent / per-model views —
 a model's cache can only ever hit for that same model, so request-level attribution is exact.
 ZCode reports `input_tokens` as the whole prompt with cache reads included, so toksight subtracts
-them to expose fresh input and keep this formula meaningful across agents.
+them to expose fresh input and keep this formula meaningful across agents. Cursor's CSV already
+separates fresh input, cache reads and cache writes.
 
 ## Privacy
 
 toksight is local-first: the CLI and web report only **read** your agents' session files. Refresh
 writes toksight's own SQLite database under its config directory; nothing is uploaded or written
-back to agent files. The single external network call
+back to agent files. Cursor CSV imports are stored in that database. The single external network call
 is the anonymous LiteLLM pricing fetch; run `--offline` to disable even that. Report images are
 rendered in your browser and saved only where you download them.
 
@@ -287,7 +303,7 @@ tarball).
 - [x] Web dashboard (`toksight web`, phase 2)
 - [x] Monthly / yearly report with reorderable cards and image export (`toksight web`)
 - [ ] TUI watch mode
-- [ ] More clients (Cursor, Windsurf, pi…)
+- [ ] More clients (Windsurf, pi…)
 - [ ] `--export csv`, leaderboard-style sharing
 
 ## License

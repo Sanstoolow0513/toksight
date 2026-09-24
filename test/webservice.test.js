@@ -43,6 +43,43 @@ test('concurrent initial requests share collection; later reads use the committe
   get.close();
 });
 
+test('Cursor CSV import is idempotent, filterable and survives refresh in the same snapshot', async () => {
+  const csv = await (await import('node:fs/promises')).readFile(new URL('./fixtures/cursor/usage.csv', import.meta.url), 'utf8');
+  const get = service([entry()]);
+  try {
+    await get.initialize();
+    const first = await get.importCursor(csv);
+    assert.equal(first.imported, 2);
+    assert.equal(first.duplicates, 0);
+    assert.equal(first.zeroUsage, 1);
+    const august = await get(query('client=cursor&period=custom&since=2026-08-01&until=2026-08-31'));
+    assert.equal(august.totals.requests, 2);
+    assert.equal(august.totals.totalTokens, 94);
+    assert.equal(august.totals.sessions, 0);
+    assert.equal(august.sessions.length, 0);
+    assert.equal(august.clients.cursor.cacheHitRate, 50 / 80);
+    assert.equal(august.costCoverage.unpricedRequests, 1);
+    assert.equal(august.costCoverage.sources.reported.requests, 1);
+    assert.equal(august.scopeRange.lastAt, Date.parse('2026-08-31T12:20:00.334Z'));
+    const rebilled = csv
+      .replace('"Included","cursor-test-model","No"', '"User API Key","cursor-test-model","Yes"')
+      .replace('"49","Included"', '"49","$0.75"');
+    const corrected = await get.importCursor(rebilled);
+    assert.equal(corrected.imported, 0);
+    assert.equal(corrected.updated, 1);
+    assert.equal(corrected.duplicates, 1);
+    assert.equal((await get(query('client=cursor'))).totals.costUsd, 1);
+    assert.equal((await get.importCursor(csv)).duplicates, 2);
+    const newRow = csv.split('\n')[1].replace('2026-08-31T12:19:00.334Z', '2026-08-30T12:19:00.334Z');
+    const overlap = await get.importCursor(`${csv.trimEnd()}\n${newRow}\n`);
+    assert.equal(overlap.imported, 1);
+    assert.equal(overlap.duplicates, 2);
+    assert.equal((await get()).totals.requests, 4);
+    await get.refresh();
+    assert.equal((await get()).totals.requests, 4);
+  } finally { get.close(); }
+});
+
 test('a failed refresh keeps the previous committed snapshot', async () => {
   let count = 0;
   const get = createWebDataService(base, { now, database: memoryDatabase(), collect: async () => {

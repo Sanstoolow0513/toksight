@@ -1,0 +1,4 @@
+Date,Cloud Agent ID,Automation ID,Kind,Model,Max Mode,Input (w/ Cache Write),Input (w/o Cache Write),Cache Read,Output Tokens,Total Tokens,Cost
+"2026-08-31T12:19:00.334Z","","","Included","cursor-test-model","No","5","10","30","4","49","Included"
+"2026-08-31T12:20:00.334Z","","","User API Key","deepseek-test","No","0","20","20","5","45","$0.25"
+"2026-08-31T12:21:00.334Z","","","Errored, No Charge","cursor-test-model","No","","","","","","Free"

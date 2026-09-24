@@ -32,7 +32,7 @@ function buildDayBuckets(entries) {
     b.output += e.outputTokens;
     if (e.costUsd != null) b.costUsd += e.costUsd;
     b.requests += 1;
-    b.sessions.add(e.sessionId);
+    if (e.sessionId != null) b.sessions.add(e.sessionId);
   }
   return buckets;
 }
@@ -141,7 +141,7 @@ export function buildHourly(entries) {
     h.output += e.outputTokens;
     if (e.costUsd != null) h.costUsd += e.costUsd;
     h.requests += 1;
-    h.sessions.add(e.sessionId);
+    if (e.sessionId != null) h.sessions.add(e.sessionId);
   }
   return hours.map(({ sessions, ...h }) => ({
     ...h,
@@ -199,6 +199,7 @@ function sessionRow(r, activeMs) {
 export function buildSessionRows(entries, { top = 20 } = {}) {
   const stamps = new Map();
   for (const e of entries) {
+    if (e.sessionId == null) continue;
     const key = `${e.client}/${e.sessionId}`;
     if (!stamps.has(key)) stamps.set(key, []);
     stamps.get(key).push(e.timestamp);

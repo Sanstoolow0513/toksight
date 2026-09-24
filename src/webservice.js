@@ -7,6 +7,7 @@ import { resolveWebQuery } from './webquery.js';
 import { calendarDaysBetween, endOfDay, startOfDay, stepDay } from './dates.js';
 import { localDate } from './aggregate.js';
 import { createUsageDatabase } from './database.js';
+import { parseCursorCsv } from './cursorcsv.js';
 
 // The database is loaded before serving. Requests reuse its in-memory snapshot;
 // refreshes share a single collection/write and swap only after commit.
@@ -75,6 +76,19 @@ export function createWebDataService(base, { collect = collectAll, env, home, da
   };
   getData.initialize = initialize;
   getData.refresh = refresh;
+  getData.importCursor = async (csv) => {
+    const parsed = parseCursorCsv(csv);
+    await snapshot();
+    const { imported, duplicates, updated, snapshot: current } = database.importCursor(parsed.records);
+    let latestAt = null;
+    for (const { entry } of parsed.records) {
+      if (latestAt == null || entry.timestamp > latestAt) latestAt = entry.timestamp;
+    }
+    return {
+      imported, duplicates, updated, skipped: parsed.skipped, zeroUsage: parsed.zeroUsage,
+      rows: parsed.rows, latestAt, entries: current.entries.length, warnings: parsed.warnings,
+    };
+  };
   getData.close = () => database.close();
   return getData;
 }

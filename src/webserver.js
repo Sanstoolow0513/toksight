@@ -1,6 +1,7 @@
 // Minimal zero-dependency HTTP server for `toksight web`.
 // Serves the prebuilt static dashboard and a SQLite-backed JSON API. GETs
-// read a committed snapshot; POST /api/refresh explicitly collects and writes.
+// read a committed snapshot; POST /api/refresh collects and writes, while
+// POST /api/import/cursor imports a local Cursor usage CSV.
 
 import http from 'node:http';
 import { isIP } from 'node:net';
@@ -33,6 +34,38 @@ const JSON_HEADERS = {
   'cache-control': 'no-store',
   'x-content-type-options': 'nosniff',
 };
+
+const MAX_CSV_BYTES = 20 * 1024 * 1024;
+
+async function readCsvBody(req) {
+  const sizeHeader = Number(req.headers['content-length']);
+  if (Number.isFinite(sizeHeader) && sizeHeader > MAX_CSV_BYTES) {
+    req.resume();
+    const err = new Error('Cursor CSV is larger than 20 MB');
+    err.status = 413;
+    err.code = 'CSV_TOO_LARGE';
+    throw err;
+  }
+  const chunks = [];
+  let size = 0;
+  for await (const chunk of req) {
+    size += chunk.length;
+    if (size <= MAX_CSV_BYTES) chunks.push(chunk);
+  }
+  if (size > MAX_CSV_BYTES) {
+    const err = new Error('Cursor CSV is larger than 20 MB');
+    err.status = 413;
+    err.code = 'CSV_TOO_LARGE';
+    throw err;
+  }
+  try { return new TextDecoder('utf-8', { fatal: true }).decode(Buffer.concat(chunks)); }
+  catch {
+    const err = new Error('Cursor CSV must be UTF-8');
+    err.status = 400;
+    err.code = 'BAD_CSV';
+    throw err;
+  }
+}
 
 // Shown at / when web/out has not been built yet; the API keeps working so the
 // dashboard can be developed against live data.
@@ -204,7 +237,7 @@ export function createWebServer({
     // 127.0.0.1 is still remoteAddress-loopback, but its Host header is not.
     const localHostHeader = isLocalHostHeader(req.headers.host);
 
-    if (pathname === '/api/data' || pathname === '/api/refresh') {
+    if (pathname === '/api/data' || pathname === '/api/refresh' || pathname === '/api/import/cursor') {
       // Loopback-bound servers (the default) reject foreign Host headers;
       // a user who deliberately binds --host 0.0.0.0 exposes the dashboard
       // to the LAN on purpose, so the Host check would only break that.
@@ -213,24 +246,26 @@ export function createWebServer({
         return;
       }
       const refresh = pathname === '/api/refresh';
-      const allowed = refresh ? req.method === 'POST' : req.method === 'GET' || req.method === 'HEAD';
+      const importing = pathname === '/api/import/cursor';
+      const writing = refresh || importing;
+      const allowed = writing ? req.method === 'POST' : req.method === 'GET' || req.method === 'HEAD';
       if (!allowed) {
-        sendJson(res, 405, { error: 'method not allowed', code: 'METHOD_NOT_ALLOWED' }, req.method, { allow: refresh ? 'POST' : 'GET, HEAD' });
+        sendJson(res, 405, { error: 'method not allowed', code: 'METHOD_NOT_ALLOWED' }, req.method, { allow: writing ? 'POST' : 'GET, HEAD' });
         return;
       }
-      if (refresh && !isAllowedRefreshOrigin(req, localHostHeader, host)) {
-        sendJson(res, 403, { error: 'cross-origin refresh is not accepted', code: 'ORIGIN_NOT_ALLOWED' }, req.method);
+      if (writing && !isAllowedRefreshOrigin(req, localHostHeader, host)) {
+        sendJson(res, 403, { error: 'cross-origin write is not accepted', code: 'ORIGIN_NOT_ALLOWED' }, req.method);
         return;
       }
       try {
-        if (refresh && !getData.refresh) {
-          sendJson(res, 501, { error: 'refresh is not configured', code: 'NOT_IMPLEMENTED' }, req.method);
+        if ((refresh && !getData.refresh) || (importing && !getData.importCursor)) {
+          sendJson(res, 501, { error: 'operation is not configured', code: 'NOT_IMPLEMENTED' }, req.method);
           return;
         }
-        const payload = refresh ? await getData.refresh() : await getData(url.searchParams);
+        const payload = refresh ? await getData.refresh() : importing ? await getData.importCursor(await readCsvBody(req)) : await getData(url.searchParams);
         sendJson(res, 200, payload, req.method);
       } catch (err) {
-        const status = err?.status === 400 ? 400 : 500;
+        const status = err?.status === 400 || err?.status === 413 ? err.status : 500;
         if (status === 500) logger?.warn?.(`toksight web: ${pathname} failed: ${err?.message || err}`);
         sendJson(res, status, { error: String(err?.message || err), ...(err?.code ? { code: err.code } : {}) }, req.method);
       }

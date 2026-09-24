@@ -1,11 +1,13 @@
-import { ChevronLeft, ChevronRight, ImageDown, LoaderCircle, Monitor, Moon, RefreshCw, Sun } from 'lucide-react';
+import { useRef } from 'react';
+import { ChevronLeft, ChevronRight, ImageDown, LoaderCircle, Monitor, Moon, RefreshCw, Sun, Upload } from 'lucide-react';
 import BrandMark from '@/components/BrandMark';
 import Segmented from '@/components/Segmented';
 import { periodLabel } from '@/lib/i18n';
 
 const icon = { size: 15, strokeWidth: 2, 'aria-hidden': true };
 
-export default function Toolbar({ locale, tx, period, nav, onMode, onShift, theme, onTheme, onLocale, loading, onRefresh, exporting, onExport, canExport }) {
+export default function Toolbar({ locale, tx, period, nav, onMode, onShift, theme, onTheme, onLocale, loading, onRefresh, importing, onImportCursor, exporting, onExport, canExport }) {
+  const fileInput = useRef(null);
   return (
     <header className="topbar">
       <div className="topbar-inner">
@@ -50,6 +52,22 @@ export default function Toolbar({ locale, tx, period, nav, onMode, onShift, them
               onChange={onLocale}
               options={[{ value: 'zh-CN', label: '中' }, { value: 'en', label: 'EN' }]}
             />
+            <input
+              ref={fileInput}
+              className="visually-hidden"
+              type="file"
+              accept=".csv,text/csv"
+              aria-label={tx('importCursor')}
+              onChange={(event) => {
+                const file = event.target.files?.[0];
+                event.target.value = '';
+                if (file) void onImportCursor(file);
+              }}
+            />
+            <button type="button" className="btn-secondary" onClick={() => fileInput.current?.click()} disabled={loading}>
+              {importing ? <LoaderCircle {...icon} className="spin" /> : <Upload {...icon} />}
+              {tx(importing ? 'importingCursor' : 'importCursor')}
+            </button>
             <button type="button" className="icon-btn" onClick={onRefresh} disabled={loading} aria-label={tx(loading ? 'refreshing' : 'refresh')} title={tx(loading ? 'refreshing' : 'refresh')}>
               <RefreshCw {...icon} className={loading ? 'spin' : undefined} />
             </button>

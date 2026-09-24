@@ -8,7 +8,7 @@
 // enters the exported image.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Inbox, RefreshCw, TriangleAlert } from 'lucide-react';
+import { CircleCheck, Inbox, RefreshCw, TriangleAlert } from 'lucide-react';
 import Toolbar from '@/components/Toolbar';
 import SortableCards from '@/components/SortableCards';
 import HeatmapCard from '@/components/HeatmapCard';
@@ -72,6 +72,9 @@ export default function Page() {
   const [exportError, setExportError] = useState(null);
   const [refreshError, setRefreshError] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [importError, setImportError] = useState(null);
+  const [importResult, setImportResult] = useState(null);
   const [refreshRevision, setRefreshRevision] = useState(0);
   const [selectedDay, setSelectedDay] = useState(null);
   const [dayMetric, setDayMetric] = useState('tokens');
@@ -145,6 +148,28 @@ export default function Page() {
       setRefreshError(String(err?.message || err));
     } finally {
       setRefreshing(false);
+    }
+  };
+  const onImportCursor = async (file) => {
+    setImporting(true);
+    setImportError(null);
+    setImportResult(null);
+    try {
+      const res = await fetch('/api/import/cursor', {
+        method: 'POST', headers: { 'content-type': 'text/csv; charset=utf-8' },
+        body: file, cache: 'no-store',
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error || `HTTP ${res.status}`);
+      setImportResult(body);
+      if (body.latestAt != null) {
+        setPeriod((p) => currentPeriod(p?.mode ?? 'month', new Date(Math.min(body.latestAt, Date.now()))));
+      }
+      setRefreshRevision((n) => n + 1);
+    } catch (err) {
+      setImportError(String(err?.message || err));
+    } finally {
+      setImporting(false);
     }
   };
   // Clicking the open day again closes the panel.
@@ -253,7 +278,7 @@ export default function Page() {
           </span>
           <span>{tx('footRefreshed', { time: fmtDateTime(data.snapshot?.refreshedAt ?? data.generatedAt) })}</span>
           {data.timezone ? <span>{tx('footTimezone', { tz: data.timezone })}</span> : null}
-          <span>{tx('footEstimate')}</span>
+          <span>{tx(data.clients?.cursor ? 'footEstimateCursor' : 'footEstimate')}</span>
           <span>{tx('footLocal')}</span>
           {unpriced.length ? <span className="foot-unpriced">{tx('footUnpriced', { models: unpriced.join(', ') })}</span> : null}
         </footer>
@@ -264,6 +289,7 @@ export default function Page() {
   const notices = [
     data && report.error ? tx('errorBody', { error: report.error }) : null,
     refreshError ? tx('refreshFailed', { error: refreshError }) : null,
+    importError ? tx('importFailed', { error: importError }) : null,
     exportError ? tx('exportFailed', { error: exportError }) : null,
   ].filter(Boolean);
 
@@ -279,14 +305,28 @@ export default function Page() {
         theme={theme}
         onTheme={onTheme}
         onLocale={onLocale}
-        loading={report.loading || refreshing}
+        loading={report.loading || refreshing || importing}
         onRefresh={onRefresh}
+        importing={importing}
+        onImportCursor={onImportCursor}
         exporting={exporting}
         onExport={onExport}
         canExport={hasData && !report.loading}
       />
       <div className="workspace">
         <main className="main">
+          {importResult ? (
+            <div className="notice is-success" role="status">
+              <CircleCheck size={15} strokeWidth={2} aria-hidden="true" />
+              <span>{tx('importSuccess', { imported: fmtInt(importResult.imported), updated: fmtInt(importResult.updated), duplicates: fmtInt(importResult.duplicates), skipped: fmtInt(importResult.skipped + importResult.zeroUsage) })}</span>
+            </div>
+          ) : null}
+          {importResult?.warnings?.length ? (
+            <details className="notice is-warn">
+              <summary><TriangleAlert size={15} strokeWidth={2} aria-hidden="true" />{tx('importWarnings', { n: importResult.warnings.length })}</summary>
+              <ul>{importResult.warnings.map((warning, i) => <li key={i}>{warning}</li>)}</ul>
+            </details>
+          ) : null}
           {notices.map((text) => (
             <div key={text} className="notice is-error" role="alert">
               <TriangleAlert size={15} strokeWidth={2} aria-hidden="true" />

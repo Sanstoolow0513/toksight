@@ -156,17 +156,41 @@ async function main() {
     assert.equal((await fetch(url + '/api/config')).status, 404);
     console.log('OK report periods and scope range: isolated fixtures');
 
+    const cursorCsv = await readFile(path.join(root, 'test', 'fixtures', 'cursor', 'usage.csv'), 'utf8');
+    const importResponse = await fetch(url + '/api/import/cursor', {
+      method: 'POST', headers: { 'content-type': 'text/csv; charset=utf-8' }, body: cursorCsv,
+    });
+    assert.equal(importResponse.status, 200);
+    assert.equal((await importResponse.json()).imported, 2);
+    const repeatImport = await fetch(url + '/api/import/cursor', {
+      method: 'POST', headers: { 'content-type': 'text/csv; charset=utf-8' }, body: cursorCsv,
+    });
+    assert.equal((await repeatImport.json()).duplicates, 2);
+    const rebilledCsv = cursorCsv
+      .replace('"Included","cursor-test-model","No"', '"User API Key","cursor-test-model","Yes"')
+      .replace('"49","Included"', '"49","$0.75"');
+    const rebilledImport = await fetch(url + '/api/import/cursor', {
+      method: 'POST', headers: { 'content-type': 'text/csv; charset=utf-8' }, body: rebilledCsv,
+    });
+    assert.equal((await rebilledImport.json()).updated, 1);
+    const cursorData = await (await fetch(url + '/api/data?client=cursor&since=2026-08-31&until=2026-08-31')).json();
+    assert.equal(cursorData.totals.totalTokens, 94);
+    assert.equal(cursorData.totals.sessions, 0);
+    assert.equal(cursorData.costCoverage.unpricedRequests, 0);
+    assert.equal(cursorData.totals.costUsd, 1);
+    console.log('OK installed Cursor CSV import, deduplication and report filters');
+
     const databaseFile = path.join(env.TOKSIGHT_CONFIG_DIR, 'usage.sqlite');
     assert.equal((await readFile(databaseFile)).subarray(0, 16).toString(), 'SQLite format 3\0');
     await writeFile(sessionFile, JSON.stringify({
       type: 'assistant', sessionId: 'package-smoke', timestamp: '2026-08-29T10:00:00Z',
       message: { id: 'package-smoke', model: 'claude-sonnet-4-5', usage: { input_tokens: 200, output_tokens: 20 } },
     }) + '\n');
-    assert.equal((await (await fetch(url + '/api/data')).json()).totals.totalTokens, 120);
+    assert.equal((await (await fetch(url + '/api/data')).json()).totals.totalTokens, 214);
     const refreshed = await fetch(url + '/api/refresh', { method: 'POST' });
     assert.equal(refreshed.status, 200);
-    assert.equal((await refreshed.json()).entries, 1);
-    assert.equal((await (await fetch(url + '/api/data')).json()).totals.totalTokens, 220);
+    assert.equal((await refreshed.json()).entries, 3);
+    assert.equal((await (await fetch(url + '/api/data')).json()).totals.totalTokens, 314);
     console.log('OK SQLite preload, explicit refresh and committed report reads');
     console.log(`Package check passed: toksight ${pkg.version}`);
   } catch (err) {

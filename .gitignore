@@ -7,3 +7,4 @@ node_modules/
 dist/
 web/.next/
 web/out/
+usage-events-*.csv

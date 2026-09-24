@@ -7,6 +7,7 @@ import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 
 import { configDir } from './pricing.js';
+import { selectCursorImports } from './cursorcsv.js';
 
 const SCHEMA_VERSION = 1;
 
@@ -39,6 +40,11 @@ export function createUsageDatabase({ file, env, home } = {}) {
         reported_cost INTEGER NOT NULL CHECK (reported_cost IN (0, 1))
       );
       CREATE INDEX IF NOT EXISTS entries_client_timestamp ON entries (client, timestamp);
+      CREATE TABLE IF NOT EXISTS cursor_imports (
+        fingerprint TEXT PRIMARY KEY,
+        data_json TEXT NOT NULL,
+        reported_cost INTEGER NOT NULL CHECK (reported_cost IN (0, 1))
+      );
     `);
   } catch (err) {
     db.close();
@@ -47,7 +53,15 @@ export function createUsageDatabase({ file, env, home } = {}) {
 
   const getMeta = db.prepare('SELECT * FROM snapshot_meta WHERE id = 1');
   const getEntries = db.prepare('SELECT data_json, reported_cost FROM entries ORDER BY seq');
+  const getCursorImports = db.prepare('SELECT rowid, fingerprint, data_json, reported_cost FROM cursor_imports ORDER BY rowid');
   const insertEntry = db.prepare('INSERT INTO entries (seq, client, timestamp, data_json, reported_cost) VALUES (?, ?, ?, ?, ?)');
+  const putCursor = db.prepare(`
+    INSERT INTO cursor_imports (fingerprint, data_json, reported_cost) VALUES (?, ?, ?)
+    ON CONFLICT(fingerprint) DO UPDATE SET
+      data_json = excluded.data_json,
+      reported_cost = excluded.reported_cost
+  `);
+  const touchMeta = db.prepare('UPDATE snapshot_meta SET refreshed_at = ? WHERE id = 1');
   const putMeta = db.prepare(`
     INSERT INTO snapshot_meta (id, schema_version, refreshed_at, entry_count, warnings_json, pricing_sources_json, pricing_config_dir, model_prices_json)
     VALUES (1, ?, ?, ?, ?, ?, ?, ?)
@@ -70,10 +84,11 @@ export function createUsageDatabase({ file, env, home } = {}) {
     // Metadata and rows must come from the same committed version if another
     // toksight process refreshes while this one is loading the snapshot.
     db.exec('BEGIN');
-    let meta, rows;
+    let meta, rows, imports;
     try {
       meta = getMeta.get();
       rows = meta ? getEntries.all() : null;
+      imports = meta ? getCursorImports.all() : null;
       db.exec('COMMIT');
     } catch (err) {
       db.exec('ROLLBACK');
@@ -86,8 +101,9 @@ export function createUsageDatabase({ file, env, home } = {}) {
     if (rows.length !== meta.entry_count) throw new Error('toksight database snapshot is incomplete');
     const entries = [];
     const reportedCosts = new WeakSet();
-    for (const row of rows) {
-      const entry = JSON.parse(row.data_json);
+    const importWarnings = [];
+    for (const row of [...rows, ...selectCursorImports(imports, importWarnings)]) {
+      const entry = row.entry ?? JSON.parse(row.data_json);
       entries.push(entry);
       if (row.reported_cost) reportedCosts.add(entry);
     }
@@ -95,7 +111,7 @@ export function createUsageDatabase({ file, env, home } = {}) {
     cached = {
       entries,
       reportedCosts,
-      warnings: JSON.parse(meta.warnings_json),
+      warnings: [...JSON.parse(meta.warnings_json), ...importWarnings],
       pricing: {
         sources: JSON.parse(meta.pricing_sources_json),
         configDir: meta.pricing_config_dir,
@@ -108,18 +124,22 @@ export function createUsageDatabase({ file, env, home } = {}) {
   }
 
   function replace(raw, refreshedAt = new Date().toISOString()) {
+    // Cursor imports have their own durable table. The collection pipeline
+    // reads them for CLI reports, while the snapshot references them directly
+    // so importing and refreshing can never count them twice.
+    const scanned = raw.entries.filter((entry) => entry.client !== 'cursor');
     const prices = new Map();
-    for (const entry of raw.entries) {
+    for (const entry of scanned) {
       if (!prices.has(entry.model)) prices.set(entry.model, raw.pricing.priceFor(entry.model) ?? null);
     }
     db.exec('BEGIN IMMEDIATE');
     try {
       db.exec('DELETE FROM entries');
-      raw.entries.forEach((entry, i) => {
+      scanned.forEach((entry, i) => {
         insertEntry.run(i, entry.client, entry.timestamp, JSON.stringify(entry), raw.reportedCosts?.has(entry) ? 1 : 0);
       });
       putMeta.run(
-        SCHEMA_VERSION, refreshedAt, raw.entries.length,
+        SCHEMA_VERSION, refreshedAt, scanned.length,
         JSON.stringify(raw.warnings), JSON.stringify(raw.pricing.sources),
         raw.pricing.configDir, JSON.stringify([...prices]),
       );
@@ -132,10 +152,43 @@ export function createUsageDatabase({ file, env, home } = {}) {
     return read();
   }
 
+  function importCursor(records, importedAt = new Date().toISOString()) {
+    let imported = 0, duplicates = 0, updated = 0;
+    db.exec('BEGIN IMMEDIATE');
+    try {
+      const current = new Map(selectCursorImports(getCursorImports.all()).map((row) => [row.key, row]));
+      for (const { key, entry } of records) {
+        const previous = current.get(key);
+        if (previous) {
+          // A newly reported number can replace Included, and a later numeric
+          // charge can correct an earlier numeric one. An older Included CSV
+          // must not erase a charge already known for that usage event.
+          if (entry.costUsd == null || entry.costUsd === previous.entry.costUsd) {
+            duplicates++;
+            continue;
+          }
+          updated++;
+        } else {
+          imported++;
+        }
+        putCursor.run(key, JSON.stringify(entry), entry.costUsd == null ? 0 : 1);
+        current.set(key, { key, entry, reported_cost: entry.costUsd == null ? 0 : 1 });
+      }
+      if (imported || updated) touchMeta.run(importedAt);
+      db.exec('COMMIT');
+    } catch (err) {
+      db.exec('ROLLBACK');
+      throw err;
+    }
+    cached = null;
+    return { imported, duplicates, updated, snapshot: read() };
+  }
+
   return {
     file: filename,
     read,
     replace,
+    importCursor,
     close() {
       if (!closed) db.close();
       closed = true;

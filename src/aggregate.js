@@ -23,7 +23,7 @@ export function summarize(entries) {
       t.costUsd += e.costUsd;
       t.pricedRequests += 1;
     }
-    sessionIds.add(e.sessionId);
+    if (e.sessionId != null) sessionIds.add(e.sessionId);
   }
   t.sessions = sessionIds.size;
   return t;
@@ -126,7 +126,7 @@ export function byMonth(entries) {
 
 export function bySession(entries) {
   const rows = group(
-    entries,
+    entries.filter((e) => e.sessionId != null),
     (e) => `${e.client}/${e.sessionId}`,
     (g) => ({
       client: g[0].client,

@@ -2,7 +2,7 @@
 
 **在终端里追踪 AI 编程智能体的 token 用量、成本和缓存命中率。**
 
-toksight 读取各 AI 编程智能体已经写在本地磁盘的会话文件，输出总量、按模型 / 按天 / 按会话的
+toksight 读取各 AI 编程智能体已经写在本地磁盘的会话文件，也可导入 Cursor 用量 CSV，输出总量、按模型 / 按天 / 按会话的
 统计以及成本估算。纯 Node.js CLI，零运行时依赖，并自带本地网页报告（`toksight web`）：
 热力图、Agent 与模型分布，一键导出图片。
 
@@ -19,6 +19,7 @@ toksight 读取各 AI 编程智能体已经写在本地磁盘的会话文件，�
 | Codex CLI | `~/.codex/sessions/**/*.jsonl` | `CODEX_HOME` |
 | OpenCode | `~/.local/share/opencode/opencode.db`，数据库不可读时回退 `~/.local/share/opencode/storage/message/**/*.json` | `OPENCODE_PATH` |
 | Kimi Code | `~/.kimi-code/sessions/**/agents/*/wire.jsonl` | `KIMI_CODE_HOME` |
+| Cursor | 从 Cursor 导出的用量 CSV，经 `toksight web` 导入 | `TOKSIGHT_CONFIG_DIR`（导入数据存储位置） |
 
 ## 安装
 
@@ -70,7 +71,7 @@ zcode   glm-5.3             41   116K    1.99M        0   43.3K  94.5%   $0.870
 ### 参数
 
 ```
---client <a,b>   只统计指定客户端（zcode, claude, codex, opencode, kimi）
+--client <a,b>   只统计指定客户端（zcode, claude, codex, opencode, kimi, cursor）
 --since <date>   本地日期（YYYY-MM-DD），含当天
 --until <date>   本地日期（YYYY-MM-DD），含当天
 --today --week --month   日期快捷方式
@@ -109,6 +110,8 @@ zcode   glm-5.3             41   116K    1.99M        0   43.3K  94.5%   $0.870
 `<config>` 为 `%XDG_CONFIG_HOME% || ~/.config`（可用 `TOKSIGHT_CONFIG_DIR` 覆盖）。
 查不到价格的模型照常计数，成本显示为 `—`，并在 JSON 输出的 `pricing.unpricedModels` 中列出。
 OpenCode 自带的价格（`cost` 字段）会被直接采用。
+Cursor CSV 中的 `Included` 不提供每条记录的美元费用，因此保持未定价；数字费用及 `Free`
+按 CSV 原值使用。Cursor 套餐内用量不会套用公开模型价格。
 
 当 LiteLLM 条目缺少独立的缓存价格时，缓存 token 会按该模型的输入价计费——这是有意选择的
 保守高估（真实缓存读取价通常只有输入价的 10% 左右），保证成本不会被悄悄少算；有完整缓存
@@ -127,6 +130,15 @@ OpenCode 自带的价格（`cost` 字段）会被直接采用。
 并在一个事务中更新数据库。刷新失败时保留旧快照；网页服务器也会发现其他 toksight 进程写入的
 新快照。刷新后报告与打开的单日卡片一同更新，页脚显示数据库上次刷新时间。
 `toksight refresh --offline` 可跳过价格拉取。
+
+要加入 Cursor 历史，在 Cursor 导出 **Usage Events** CSV，打开 `toksight web`，点击顶栏的
+**导入 Cursor CSV**。文件只发送到本机 toksight 服务，用量记录保存在 `usage.sqlite`；
+按时间、模型和 token 数匹配重复事件，费用标记或金额变化不会重复计入 token。导入结果会在刷新后保留，
+也可在 CLI 用 `--client cursor` 查看。
+零 token 的行会跳过。CSV 不包含会话 ID，因此 Cursor 不显示会话数与会话详情；其 `Cache Read`
+列足以按现有口径计算缓存命中率。
+Cursor 导出不含事件 ID：时间、模型及 token 数完全相同的两条真实事件，无法与跨文件重复行严格区分；
+如果 Cursor 后续修订了模型名或 token 数，同一事件仍可能被再次计入。导入提示会显示匹配结果。
 
 仪表盘是一页**按月或按年的 token 用量与成本报告**，采用 Claude 的暖色明暗配色，铺在稀疏的
 点阵背景上（视觉规范见 `design-spec.md`）。顶栏切换**月 / 年**并逐期前后翻看（最早到第一条
@@ -158,7 +170,8 @@ API 可以这样调用：`GET /api/data?period=custom&since=2026-09-01&until=202
 `30d` / `month` / `custom`（须同时给出 `since` 与 `until`）；`since` / `until` 可单独使用；
 预设周期不能与显式日期混用；未知、重复或无效参数返回 HTTP 400。`POST /api/refresh`
 会更新数据库，并返回刷新时间、记录数和采集警告；网页 API 新增的 `snapshot` 字段包含刷新时间和记录数。
-跨来源刷新请求会被拒绝。
+`POST /api/import/cursor` 接受最大 20 MB 的 UTF-8 Cursor 用量 CSV，并返回新增、费用更新、重复及跳过条数。
+跨来源写入请求会被拒绝。
 
 ### 仪表盘构建产物
 
@@ -179,12 +192,14 @@ npm run web:ci && npm run web:build && node bin/toksight.js web
 分母（那是被存储的冷数据，不是被服务的流量）。统计按**每次请求**归因：一个会话中途切换模型，
 会被干净地拆分到分 Agent / 分模型视图里——缓存本来就绑定模型，A 模型的缓存不可能对 B 模型
 命中，因此按请求归属是精确的。ZCode 上报的 `input_tokens` 是含缓存读取的完整提示词，toksight
-会先扣除缓存部分得到新鲜输入，让该公式在各 Agent 间口径一致。
+会先扣除缓存部分得到新鲜输入，让该公式在各 Agent 间口径一致。Cursor CSV 已区分新鲜输入、
+缓存读取和缓存写入。
 
 ## 隐私
 
 toksight 本地优先：CLI 与网页报告只**读取**各 Agent 的会话文件。刷新会写入 toksight 自己的
-SQLite 数据库，不上传数据，也不写回 Agent 文件。唯一的外部网络请求是匿名的 LiteLLM 价格拉取；
+SQLite 数据库，不上传数据，也不写回 Agent 文件。Cursor CSV 导入数据同样存于这个数据库。
+唯一的外部网络请求是匿名的 LiteLLM 价格拉取；
 `--offline` 可以连它也关掉。
 报告图片在浏览器里生成，只保存到你下载的位置。
 
@@ -261,7 +276,7 @@ git push origin main vX.Y.Z   # 推送标签，触发发布工作流
 - [x] 网页仪表盘（`toksight web`，第二阶段）
 - [x] 按月 / 按年报告，卡片可拖动排序并导出图片（`toksight web`）
 - [ ] TUI watch 模式
-- [ ] 更多客户端（Cursor、Windsurf、pi……）
+- [ ] 更多客户端（Windsurf、pi……）
 - [ ] `--export csv`、排行榜式分享
 
 ## 许可

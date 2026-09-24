@@ -4,7 +4,8 @@
 
 `toksight` — a Node.js CLI (zero runtime dependencies, ESM only, Node >= 22.5) that tracks token
 usage, cost, and cache hit rate of AI coding agents by reading the local session files those
-agents already write, plus the `toksight web` local report: one page per calendar month or year
+agents already write or importing Cursor Usage Events CSV through `toksight web`, plus the local
+report: one page per calendar month or year
 with three reorderable cards (heatmap · agents · models), a click-a-day detail card and PNG
 export (there is no TUI).
 Local-first: nothing is written to agent files. Refresh writes toksight's own SQLite database.
@@ -43,7 +44,9 @@ src/collect.js      collectAll — the one pipeline for CLI/--json/web (env/home
                     with web; reportedCosts WeakSet keeps agent-reported cost provenance
                     without adding fields to normalized entries
 src/database.js     project-owned SQLite usage snapshot (transactional refresh, pricing
-                    provenance, preload, cross-process change detection)
+                    provenance, preload, cross-process change detection); durable Cursor
+                    imports survive refresh and are merged into snapshot reads
+src/cursorcsv.js    zero-dependency Cursor Usage Events CSV parser (quotes/BOM/CRLF, row keys)
 src/webservice.js   createWebDataService — GETs filter the committed snapshot; concurrent
                     refreshes share one collection/write promise
 src/webquery.js     query-param validation; intersects startup scope (never widens);
@@ -58,15 +61,16 @@ src/dates.js        the ONLY home for local-time date math (startOfDay/endOfDay/
                     startOfMonth/eachDay/dayKeyToTs/parseDateArg/calendarDaysBetween);
                     invalid calendar dates rejected, never normalized; DST-safe local
                     midnights, never blind `+24h`; do not re-implement day math elsewhere
-src/clients/        one parser per agent; index.js holds clients + clientAliases;
+src/clients/        one parser per agent; Cursor reads web-imported rows from toksight SQLite;
+                    index.js holds clients + clientAliases;
                     sqlite.js centralizes the node:sqlite readOnly open
 src/pricing.js      builtin → LiteLLM (1h disk cache) → user overrides; { exact, suffix }
                     lookup maps (suffix pre-index is O(1))
 src/aggregate.js    grouping/totals (summarize, byModel/Day/Month/Session, cacheHitRate)
 src/webdata.js      pure dashboard aggregations (heatmap, trend, hourly, sessions…); day
  math imported only from src/dates.js
-src/webserver.js    zero-dep node:http — static web/out + GET/HEAD /api/data and
-                    POST /api/refresh (same-origin guarded);
+src/webserver.js    zero-dep node:http — static web/out + GET/HEAD /api/data,
+                    POST /api/refresh and POST /api/import/cursor (same-origin guarded);
  any other /api/* path is a JSON 404. Serving rules → Gotchas
 src/format.js       ANSI tables & number formatting
 src/fsutils.js      walkFiles/walkFilesMany/readJsonl/readJson/pathExists (warning
@@ -94,7 +98,9 @@ Every parser emits records with exactly: `client, sessionId, model, timestamp` (
 `null`), `inputTokens, outputTokens, reasoningTokens, cacheReadTokens, cacheWriteTokens`,
 `costUsd` (see below), `directory, title`. Cost is computed centrally in `src/collect.js`
 (`collectAll` → `computeCost`) — parsers leave `costUsd: null` unless the agent itself reports
-cost (only OpenCode does).
+cost (OpenCode), or Cursor's imported CSV reports a numeric charge / `Free`. Cursor `Included`
+stays null and never receives a public-price estimate. Cursor CSV has no session ID: use null,
+and aggregations omit its session counts/details.
 
 ## Gotchas & rules
 
@@ -141,6 +147,14 @@ cost (only OpenCode does).
   so `--client`/`--since`/`--until` apply like every other slice (pinned by
   `test/payload.test.js`).
 - **Local timezone**: day grouping and `--since`/`--until` use the machine's local time, not UTC.
+- **Cursor imports**: `POST /api/import/cursor` accepts a raw UTF-8 Usage Events CSV, validates
+  its columns, skips zero-usage rows, and stores timestamp + model + four token classes plus
+  occurrence identities in `cursor_imports`. Read paths fold legacy all-column fingerprints by
+  that identity without deleting stored rows. Reimporting overlapping exports or changed costs
+  must not double count; a numeric charge may update a previous `Included` value. The parser maps
+  `Input (w/ Cache Write)` to cache writes, `Input (w/o Cache Write)` to fresh input, and
+  `Cache Read` to cache reads. Refresh preserves imports; CLI collection reads them from the
+  same database. Cross-process snapshot reads include them through SQLite `data_version`.
 - **Cache hit rate** = `cacheRead / (freshInput + cacheRead)`; cache *writes* are excluded (cold
   traffic being stored, not served). Attributed **per request** — each entry carries its own
   model and token split, so a session that switched models splits cleanly across per-agent /
@@ -153,6 +167,7 @@ cost (only OpenCode does).
   without a snapshot scans all agents and creates one. GET requests filter it without rescanning.
   `toksight refresh` and `POST /api/refresh` rescan and transactionally replace the snapshot;
   a failed refresh keeps the old data. SQLite `data_version` detects another process's refresh.
+  Cursor CSV imports update the committed report without rescanning other agents.
   The server binds 127.0.0.1 by default (never 0.0.0.0); static assets under
   `web/out/_next/` are immutable-cached, everything else `no-cache`; path traversal → 403; if
   `web/out/index.html` is missing, `/` serves the built-in setup page instead of failing.
@@ -161,8 +176,8 @@ cost (only OpenCode does).
   trend/heatmap rows capped at the last 366 days (totals/comparison stay complete); without a
   start date comparison uses seven days ending on the selected end date/today, and is
   unavailable if the previous window falls outside startup scope. A loopback-bound server
-  rejects `/api/data` and `/api/refresh` requests whose Host header is not a localhost name
-  (DNS rebinding); refresh also rejects cross-origin browser requests;
+  rejects `/api/data`, `/api/refresh`, and `/api/import/cursor` requests whose Host header is not
+  a localhost name (DNS rebinding); write routes also reject cross-origin browser requests;
   `--host 0.0.0.0` opts out on purpose.
 - **Web report**: the page requests one calendar period at a time
   (`period=custom&since=<first day>&until=<last day>`, local dates) and derives everything from

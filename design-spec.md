@@ -12,7 +12,7 @@
 
 - **产品**：本地优先的 AI coding agent 用量报告。只读取 Agent 文件，刷新时写入本项目的 SQLite
   用量数据库。只统计 token 与成本，不展示或修改任何
-  agent 配置。数据不出机器。
+  agent 配置。Cursor 用量 CSV 可经网页导入 toksight 自己的 SQLite；数据不出机器。
 - **气质**：像 Claude 的界面一样安静、温暖、留白充足——暖白/暖灰底、衬线标题、柔和圆角与
   轻阴影、单一橙色强调。数据清楚，装饰克制。
 - **硬约束**：浅色 + 深色两套（可跟随系统）；中英可切；根 CLI 零运行时依赖（网页依赖只在
@@ -49,7 +49,8 @@
 
 1. **点阵底**：`body` 背景 `radial-gradient` 圆点，间距 28px，只落在网格交点上。
 2. **顶栏**（粘性，≤760px 取消粘性）：左品牌（3×3 热力小方格 + 衬线 `toksight`）；右依次为
-   月/年分段、‹ 周期 ›、配色分段（浅/深/系统图标）、中/EN 分段、刷新图标按钮、橙色“导出图片”。
+   月/年分段、‹ 周期 ›、配色分段（浅/深/系统图标）、中/EN 分段、Cursor CSV 导入按钮、
+   刷新图标按钮、橙色“导出图片”。
 3. **报告列** `.report`（最大宽 1000px 居中，是导出图片的截取范围）：
    - **页首**：橙色小标题 → 衬线大标题（“2026 年 9 月” / “2026 年”）→ 日期范围 · 统计至 ·
      agent 数 · 模型数 → 4 格 KPI 条（Tokens、参考费用、缓存命中率、请求），格间 1px 细线。
@@ -96,6 +97,8 @@
   卡片。选中环在导出时去掉（导出期间 `.report` 带 `.is-exporting`）。
 - **导出图片**：`modern-screenshot` 把 `.report` 渲染为 PNG（至少 2 倍像素），克隆时去掉所有
   `.no-export` 元素（分段控件、拖动手柄），把点阵画到图片底上。文件名 `toksight-<YYYY-MM|YYYY>.png`。
+- **Cursor CSV 导入**：顶栏选择本地 Usage Events CSV，导入成功后报告跳转到该文件最后一条记录
+  所在的月或年；重复行去重，零 token 行跳过。导入提示在报告外，不进入导出图。
 - **偏好**（均存 `localStorage`，读取时校验）：`toksight-locale`、`toksight-theme`
   （light/dark/system）、`toksight-period-mode`、`toksight-card-order`、`toksight-card-metrics`、
   `toksight-day-metric`（详情卡片指标）。选中的日期不持久化。

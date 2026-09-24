@@ -10,7 +10,9 @@ HTTP 服务器（`src/webserver.js`）托管，数据来自同源的 `/api/data`
 ## 使用
 
 安装包用户直接运行 `toksight web`，无需构建或安装 Next。
-从源码预览发布版页面时，在仓库根目录运行（Node >=20.9，建议 22 或 24）：
+在顶栏点击“导入 Cursor CSV”，选择 Cursor 导出的 Usage Events 文件，即可把历史用量加入报告。
+导入通过本机 API 写入 toksight 自己的 SQLite；重复导入会去重，普通刷新不会清除导入数据。
+从源码预览发布版页面时，在仓库根目录运行（Node >=22.5）：
 
 ```bash
 npm run web:ci      # 按 lockfile 安装构建依赖，首次需要网络
@@ -47,7 +49,8 @@ npm run web:dev:ui
 ## 交付验证
 
 在仓库根目录运行 `npm run check:package`：自动安装锁定依赖、构建并打包，再离线安装到临时
-目录，使用临时 Agent 数据启动包内 CLI，验证页面、静态资源与数据 API（含按月查询与 `scopeRange`）。检查完成后
+目录，使用临时 Agent 数据启动包内 CLI，验证页面、静态资源与数据 API（含按月查询、`scopeRange`
+和 Cursor CSV 导入）。检查完成后
 清理临时安装。PR、main 分支与 Release 工作流会在 Ubuntu/Windows 上执行这个检查。
 
 ## 结构
@@ -55,7 +58,7 @@ npm run web:dev:ui
 - `app/layout.js` — 字体（Geist Sans/Mono、自托管 Source Serif 4）与首帧前写入 `data-theme` 的内联脚本
 - `app/page.js` — 报告页：顶栏 → `.report`（页首 KPI、三张卡片、页脚）；`.report` 就是导出图片的范围
 - `app/globals.css` — 明暗两套 CSS 变量、点阵背景与全部组件样式
-- `components/Toolbar.jsx` — 月/年、周期翻页、配色、语言、刷新、导出
+- `components/Toolbar.jsx` — 月/年、周期翻页、配色、语言、Cursor CSV 导入、刷新、导出
 - `components/SortableCards.jsx` — 手柄拖动排序（Pointer Events、边缘自动滚动、FLIP 归位、↑/↓ 键）
 - `components/HeatmapCard.jsx` / `AgentsCard.jsx` / `ModelsCard.jsx` — 三个章节；`Card`、`RankList`、`Segmented`、`Tooltip`、`BrandMark` 为共享件
 - `lib/period.js` — 本地日期的月/年边界、翻页与周一开头的日历周
