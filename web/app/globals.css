@@ -841,6 +841,30 @@ button.mcell:focus-visible {
   font-weight: 400;
 }
 
+.rank-list:has(> .agent-block) {
+  gap: 0;
+}
+
+.agent-block {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+.agent-block + .agent-block {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+
+.model-list {
+  gap: 13px;
+  margin: 0;
+  padding: 1px 0 1px 16px;
+  border-left: 1px solid var(--border);
+}
+
 .part-0 { background: var(--c-input); }
 .part-1 { background: var(--c-cache-read); }
 .part-2 { background: var(--c-cache-write); }
@@ -1287,6 +1311,14 @@ button.mcell:focus-visible {
 
 .day-panel .rank-list {
   gap: 14px;
+}
+
+.day-panel .rank-list:has(> .agent-block) {
+  gap: 0;
+}
+
+.day-panel .model-list {
+  gap: 12px;
 }
 
 .day-panel .rank-name {

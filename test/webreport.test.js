@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {
   calendarWeeks, currentPeriod, dayKey, dayNav, eachDayKey, periodBounds, periodKey, periodNav, shiftDay, shiftPeriod, weekdayIndex, withMode,
 } from '../web/lib/period.js';
-import { agentRows, dailyMap, heatLevel, heatSummary, hourlyBars, modelRows, sessionName, sessionRows } from '../web/lib/report.js';
+import { agentRows, dailyMap, heatLevel, heatSummary, hourlyBars, modelRows, modelsByAgent, sessionName, sessionRows } from '../web/lib/report.js';
 import { fmtClock, fmtClockRange, fmtCostShort, fmtTokens } from '../web/lib/format.js';
 
 const usage = (over = {}) => {
@@ -107,6 +107,37 @@ test('model rows keep agents separate, fold the tail and keep shares whole', () 
   assert.deepEqual(sameModel.map((row) => [row.client, row.model, row.costUsd]), [
     ['claude', 'm-a', 1], ['opencode', 'm-a', 1],
   ]);
+});
+
+test('model costs group under each agent and keep period-wide shares', () => {
+  const models = [
+    { client: 'claude', model: 'opus', ...usage({ costUsd: 6, inputTokens: 100 }) },
+    { client: 'claude', model: 'sonnet', ...usage({ costUsd: 3, inputTokens: 500 }) },
+    { client: 'codex', model: 'gpt', ...usage({ costUsd: 1, inputTokens: 1000 }) },
+    { client: 'codex', model: 'opus', ...usage({ costUsd: 0, inputTokens: 50 }) },
+  ];
+  const grouped = modelsByAgent(models, 'cost');
+  assert.deepEqual(grouped.get('claude').rows.map((row) => row.model), ['opus', 'sonnet']);
+  assert.equal(grouped.get('claude').rows[0].share, 0.6);
+  assert.deepEqual(grouped.get('codex').rows.map((row) => row.model), ['gpt', 'opus']);
+  assert.notEqual(grouped.get('claude').rows[0].id, grouped.get('codex').rows[1].id);
+  const shares = [...grouped.values()].flatMap((group) => group.rows).reduce((sum, row) => sum + row.share, 0);
+  assert.ok(Math.abs(shares - 1) < 1e-9);
+
+  const many = [
+    { client: 'claude', model: 'big', ...usage({ costUsd: 20 }) },
+    ...Array.from({ length: 8 }, (_, i) => ({ client: 'claude', model: `m-${i}`, ...usage({ costUsd: 1, outputTokens: 100 - i }) })),
+    { client: 'codex', model: 'gpt', ...usage({ costUsd: 4 }) },
+  ];
+  const folded = modelsByAgent(many, 'cost', 8);
+  assert.equal(folded.get('claude').rows.length, 7);
+  assert.equal(folded.get('claude').rows[0].model, 'big');
+  assert.equal(folded.get('claude').others.count, 2);
+  assert.equal(folded.get('claude').others.value, 2);
+  assert.equal(folded.get('codex').others, null);
+  const foldedShares = [...folded.values()].flatMap((group) => [...group.rows, group.others].filter(Boolean))
+    .reduce((sum, row) => sum + row.share, 0);
+  assert.ok(Math.abs(foldedShares - 1) < 1e-9);
 });
 
 test('day stepping crosses month, year and leap-day boundaries in local time', () => {

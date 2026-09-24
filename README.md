@@ -185,21 +185,20 @@ toolbar picks **Month / Year** and steps through periods (back to your first rec
 into the future), switches light / dark / system theme and 中文 / EN, and refreshes. Three small
 cards beside the report import Cursor CSV, export an image, and update prices; on narrow screens
 they sit above the report. The report starts with the period's tokens, reference cost, cache hit
-rate and requests, followed by three chapter cards:
+rate and requests, followed by two chapter cards:
 
 1. **Activity heatmap** — a calendar (month) or 53-week grid (year) of daily tokens or cost
    (toggle on the card), plus active days, average per active day, peak day, longest streak and
    per-day tooltips.
-2. **By agent** — each agent's share of the period's tokens or cost. In token mode the bar splits
-   into input / cache read / cache write / output; cost, cache hit rate, requests and sessions
-   sit underneath.
-3. **By model** — one row per agent and normalized model name, with that agent's cost shown by
-   default (tokens remain selectable).
-   Cursor effort suffixes such as `opus5.5-high` disappear from the label; past eight rows, the
-   tail folds into one "N other model uses" row so the card keeps a fixed height.
+2. **Agents & models** — each agent's share of the period's tokens or cost. In token mode the bar
+   splits into input / cache read / cache write / output; cost, cache hit rate, requests and
+   sessions sit underneath. That agent's models are listed under the row, always ranked by cost
+   (rank, monospace name, share of the period's cost, and published per-token rates when every
+   underlying ID agrees). Cursor effort suffixes such as `opus5.5-high` disappear from the label.
+   Past eight models for one agent, the tail folds into one "N other model uses" row.
 
 Click any day on the heatmap to open the **day card** beside the report: that day's tokens, cost,
-cache hit rate and requests, a 24-hour breakdown, the same agent and model rankings, and its
+cache hit rate and requests, a 24-hour breakdown, the same model costs nested under each agent, and its
 sessions (title, time span, active time, directory, models). On wide screens the report column
 glides aside and the card unfolds from its edge, the pair staying centred; on narrow ones it floats
 over the page. Step days with ‹ ›, close with × / Esc or by clicking the day again. The card is
@@ -207,7 +206,7 @@ never part of the exported image.
 
 Drag a card by its handle (or focus the handle and press ↑ / ↓) to reorder the chapters. The
 order, period mode, card metrics, theme and language are remembered in `localStorage`.
-**Export image** saves the KPI summary, the three cards in their current order and the footer as one
+**Export image** saves the KPI summary, both cards in their current order and the footer as one
 PNG (`toksight-2026-09.png` / `toksight-2026.png`) with the controls stripped — ready to share.
 Reference cost is an estimate from public prices, not a subscription bill; unpriced models are
 listed in the footer.

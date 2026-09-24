@@ -1,7 +1,7 @@
 'use client';
 
 // toksight report: a centred column on a dot grid — KPIs, three reorderable
-// chapter cards (heatmap · agents · models) and a footer.
+// chapter cards (heatmap · agents, with each agent's model costs nested) and a footer.
 // Everything inside `.report` is what "Export image" captures. Clicking a
 // heatmap day opens the day card beside the column (the pair re-centres on
 // wide screens; it floats over the page on narrow ones); the card never
@@ -14,7 +14,6 @@ import ReportActions from '@/components/ReportActions';
 import SortableCards from '@/components/SortableCards';
 import HeatmapCard from '@/components/HeatmapCard';
 import AgentsCard from '@/components/AgentsCard';
-import ModelsCard from '@/components/ModelsCard';
 import DayPanel from '@/components/DayPanel';
 import BrandMark from '@/components/BrandMark';
 import Toasts, { useToasts } from '@/components/Toasts';
@@ -52,7 +51,7 @@ function Skeleton() {
   return (
     <div className="report" aria-busy="true">
       <div className="skel skel-kpis" />
-      {[320, 260, 300].map((h) => (
+      {[320, 420].map((h) => (
         <div key={h} className="skel skel-card" style={{ height: h }} />
       ))}
     </div>
@@ -65,7 +64,7 @@ export default function Page() {
   const [period, setPeriod] = useState(null);
   const [today, setToday] = useState(null);
   const [order, setOrder] = useState(prefs.CARD_IDS);
-  const [metrics, setMetrics] = useState(() => Object.fromEntries(prefs.CARD_IDS.map((id) => [id, id === 'models' ? 'cost' : 'tokens'])));
+  const [metrics, setMetrics] = useState(() => Object.fromEntries(prefs.CARD_IDS.map((id) => [id, 'tokens'])));
   const [exporting, setExporting] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [priceUpdating, setPriceUpdating] = useState(false);
@@ -291,8 +290,7 @@ export default function Page() {
           {(id, { handleProps }) => {
             const shared = { ...cardProps, handleProps, metric: metrics[id], onMetric: onMetric(id) };
             if (id === 'heatmap') return <HeatmapCard {...shared} today={today} selected={selectedDay} onSelect={onSelectDay} />;
-            if (id === 'agents') return <AgentsCard {...shared} />;
-            return <ModelsCard {...shared} />;
+            return <AgentsCard {...shared} />;
           }}
         </SortableCards>
 

@@ -1,7 +1,7 @@
 'use client';
 
 // Day card: a non-modal card beside the report column that shows one local
-// day in detail (KPIs, hours, agents, models, sessions) while the report
+// day in detail (KPIs, hours, agents with model costs, sessions) while the report
 // stays usable. `.day-dock` is the flex slot that opens up next to the
 // column; the card inside sticks to the viewport. It stays mounted while
 // closed so it can animate out with the last day on screen; `inert` takes
@@ -12,8 +12,9 @@ import { ChevronLeft, ChevronRight, RefreshCw, TriangleAlert, X } from 'lucide-r
 import Segmented from '@/components/Segmented';
 import Tooltip from '@/components/Tooltip';
 import { coded } from '@/components/Coded';
-import { PartsLegend, RankRow, ShareBar, costText } from '@/components/RankList';
-import { agentRows, hourlyBars, modelRows, sessionRows } from '@/lib/report';
+import { PartsLegend, ShareBar, costText } from '@/components/RankList';
+import AgentModelList from '@/components/AgentModelList';
+import { hourlyBars, sessionRows } from '@/lib/report';
 import { fmtClockRange, fmtCost, fmtInt, fmtMetric, fmtPct, fmtTokens } from '@/lib/format';
 import { dayLabel, durationLabel, periodLabel, weekdayLabel } from '@/lib/i18n';
 
@@ -151,8 +152,6 @@ function SessionRow({ row, metric, agentLabel, locale, tx }) {
 function DayBody({ data, day, metric, locale, tx, agentLabel }) {
   const totals = data.totals ?? {};
   const hours = useMemo(() => hourlyBars(data.hourly, metric), [data.hourly, metric]);
-  const agents = useMemo(() => agentRows(data.clients, metric), [data.clients, metric]);
-  const models = useMemo(() => modelRows(data.models, metric), [data.models, metric]);
   const sessions = useMemo(() => sessionRows(data.topSessions, totals, metric, SESSION_LIMIT), [data.topSessions, totals, metric]);
 
   if (!totals.requests) return <p className="panel-empty">{tx('dayEmpty')}</p>;
@@ -170,31 +169,8 @@ function DayBody({ data, day, metric, locale, tx, agentLabel }) {
         <HourlyChart bars={hours.bars} peak={hours.peak} metric={metric} label={tx('hourlyAria', { day: dayLabel(locale, day, true) })} tx={tx} />
         {metric === 'tokens' ? <PartsLegend tx={tx} /> : null}
       </Section>
-      <Section title={tx('cardAgents')} note={tx(metric === 'cost' ? 'subRankCost' : 'subRankTokens', { period: dayLabel(locale, day) })}>
-        <ol className="rank-list">
-          {agents.map((row) => (
-            <RankRow key={row.id} name={agentLabel(row.id)} row={row} metric={metric} tx={tx} />
-          ))}
-        </ol>
-      </Section>
-      <Section title={tx('cardModels')} note={tx(metric === 'cost' ? 'subRankCost' : 'subRankTokens', { period: dayLabel(locale, day) })}>
-        <ol className="rank-list">
-          {models.rows.map((row, i) => (
-            <RankRow
-              key={row.id}
-              rank={i + 1}
-              name={row.model}
-              mono
-              lead={tx('rowAgent', { agent: agentLabel(row.client) })}
-              row={row}
-              metric={metric}
-              tx={tx}
-            />
-          ))}
-          {models.others ? (
-            <RankRow rank="…" name={tx('others', { n: models.others.count })} row={models.others} metric={metric} tx={tx} muted />
-          ) : null}
-        </ol>
+      <Section title={tx('cardAgents')} note={tx(metric === 'cost' ? 'subRankCost' : 'subAgentsTokens', { period: dayLabel(locale, day) })}>
+        <AgentModelList clients={data.clients} models={data.models} metric={metric} agentLabel={agentLabel} tx={tx} pricing={data.pricing} />
       </Section>
       {sessions.length ? (
         <Section title={tx('secSessions')} note={sessionNote}>
@@ -212,7 +188,7 @@ function DayBody({ data, day, metric, locale, tx, agentLabel }) {
 function PanelSkeleton() {
   return (
     <div className="panel-skel" aria-busy="true">
-      {[168, 150, 180, 220].map((h) => (
+      {[168, 150, 280].map((h) => (
         <div key={h} className="skel" style={{ height: h }} />
       ))}
     </div>

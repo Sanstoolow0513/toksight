@@ -20,7 +20,7 @@ export function ShareBar({ share, parts, metric }) {
   );
 }
 
-export function RankRow({ rank, name, mono = false, lead, extra, row, metric, tx, muted = false }) {
+export function RankRow({ rank, name, mono = false, lead, extra, row, metric, tx, muted = false, as: Tag = 'li' }) {
   const meta = [
     lead,
     extra,
@@ -32,7 +32,7 @@ export function RankRow({ rank, name, mono = false, lead, extra, row, metric, tx
   const value = metric === 'cost' && row.pricing === 'none' ? '—' : fmtMetric(row.value, metric);
   const cls = ['rank-row', rank != null && 'has-rank', muted && 'is-muted'].filter(Boolean).join(' ');
   return (
-    <li className={cls}>
+    <Tag className={cls}>
       <div className="rank-line">
         {rank != null ? <span className="rank-no">{rank}</span> : null}
         <span className={mono ? 'rank-name is-mono' : 'rank-name'} title={name}>
@@ -43,7 +43,7 @@ export function RankRow({ rank, name, mono = false, lead, extra, row, metric, tx
       </div>
       <ShareBar share={row.share} parts={row.parts} metric={metric} />
       <div className="rank-meta">{meta.join(' · ')}</div>
-    </li>
+    </Tag>
   );
 }
 

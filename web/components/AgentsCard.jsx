@@ -1,17 +1,16 @@
-import { useMemo } from 'react';
+import { PartsLegend } from '@/components/RankList';
 import Card from '@/components/Card';
 import Segmented from '@/components/Segmented';
-import { PartsLegend, RankRow } from '@/components/RankList';
-import { agentRows } from '@/lib/report';
+import AgentModelList from '@/components/AgentModelList';
 import { periodLabel } from '@/lib/i18n';
 
 export default function AgentsCard({ data, period, metric, onMetric, agentLabel, locale, tx, handleProps }) {
-  const rows = useMemo(() => agentRows(data.clients, metric), [data.clients, metric]);
+  const hasRows = Object.keys(data.clients ?? {}).length > 0;
   return (
     <Card
       handleProps={handleProps}
       title={tx('cardAgents')}
-      subtitle={tx(metric === 'cost' ? 'subRankCost' : 'subRankTokens', { period: periodLabel(locale, period) })}
+      subtitle={tx(metric === 'cost' ? 'subRankCost' : 'subAgentsTokens', { period: periodLabel(locale, period) })}
       actions={
         <Segmented
           compact
@@ -22,13 +21,9 @@ export default function AgentsCard({ data, period, metric, onMetric, agentLabel,
         />
       }
     >
-      {rows.length ? (
+      {hasRows ? (
         <>
-          <ol className="rank-list">
-            {rows.map((row) => (
-              <RankRow key={row.id} name={agentLabel(row.id)} row={row} metric={metric} tx={tx} />
-            ))}
-          </ol>
+          <AgentModelList clients={data.clients} models={data.models} metric={metric} agentLabel={agentLabel} tx={tx} pricing={data.pricing} />
           {metric === 'tokens' ? <PartsLegend tx={tx} /> : null}
         </>
       ) : (

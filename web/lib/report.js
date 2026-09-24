@@ -86,17 +86,37 @@ function sumInto(target, row) {
   return target;
 }
 
-// The payload groups each agent's spelling variants under one display model.
-// Keep agents separate so every row attributes its usage and cost to one agent.
-// Beyond `limit` rows the tail folds into one "others" row.
-export function modelRows(models = [], metric = 'tokens', limit = 8) {
-  const ranked = rank(models.map((row) => ({ ...row, id: JSON.stringify([row.client, row.model]) })), metric);
+function foldRanked(ranked, metric, limit) {
   if (ranked.length <= limit) return { rows: ranked, others: null, count: ranked.length };
   const tail = ranked.slice(limit - 1);
   const others = rank([tail.reduce((acc, row) => sumInto(acc, row), { id: '__others__' })], metric)[0];
   others.share = tail.reduce((sum, row) => sum + row.share, 0);
   others.count = tail.length;
   return { rows: ranked.slice(0, limit - 1), others, count: ranked.length };
+}
+
+function rankedModels(models, metric) {
+  return rank(models.map((row) => ({ ...row, id: JSON.stringify([row.client, row.model]) })), metric);
+}
+
+// The payload groups each agent's spelling variants under one display model.
+// Keep agents separate so every row attributes its usage and cost to one agent.
+// Beyond `limit` rows the tail folds into one "others" row.
+export function modelRows(models = [], metric = 'tokens', limit = 8) {
+  return foldRanked(rankedModels(models, metric), metric, limit);
+}
+
+// Same rows as `modelRows`, split under each agent. Shares stay against every
+// model in the period, so a nested bar is comparable with its agent. Past
+// `limit` models the tail folds inside that agent.
+export function modelsByAgent(models = [], metric = 'cost', limit = 8) {
+  const grouped = new Map();
+  for (const row of rankedModels(models, metric)) {
+    const list = grouped.get(row.client);
+    if (list) list.push(row);
+    else grouped.set(row.client, [row]);
+  }
+  return new Map([...grouped].map(([client, rows]) => [client, foldRanked(rows, metric, limit)]));
 }
 
 // The payload's `hourly` rows use short token keys (input/cacheRead/…/tokens).
