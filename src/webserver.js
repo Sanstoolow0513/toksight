@@ -1,7 +1,8 @@
 // Minimal zero-dependency HTTP server for `toksight web`.
 // Serves the prebuilt static dashboard and a SQLite-backed JSON API. GETs
-// read a committed snapshot; POST /api/refresh collects and writes, while
-// POST /api/import/cursor imports a local Cursor usage CSV.
+// read a committed snapshot; POST /api/refresh collects and writes,
+// POST /api/prices/update checks public rates, and POST /api/import/cursor
+// imports a local Cursor usage CSV.
 
 import http from 'node:http';
 import { isIP } from 'node:net';
@@ -237,7 +238,7 @@ export function createWebServer({
     // 127.0.0.1 is still remoteAddress-loopback, but its Host header is not.
     const localHostHeader = isLocalHostHeader(req.headers.host);
 
-    if (pathname === '/api/data' || pathname === '/api/refresh' || pathname === '/api/import/cursor') {
+    if (pathname === '/api/data' || pathname === '/api/refresh' || pathname === '/api/prices/update' || pathname === '/api/import/cursor') {
       // Loopback-bound servers (the default) reject foreign Host headers;
       // a user who deliberately binds --host 0.0.0.0 exposes the dashboard
       // to the LAN on purpose, so the Host check would only break that.
@@ -246,8 +247,9 @@ export function createWebServer({
         return;
       }
       const refresh = pathname === '/api/refresh';
+      const priceUpdate = pathname === '/api/prices/update';
       const importing = pathname === '/api/import/cursor';
-      const writing = refresh || importing;
+      const writing = refresh || priceUpdate || importing;
       const allowed = writing ? req.method === 'POST' : req.method === 'GET' || req.method === 'HEAD';
       if (!allowed) {
         sendJson(res, 405, { error: 'method not allowed', code: 'METHOD_NOT_ALLOWED' }, req.method, { allow: writing ? 'POST' : 'GET, HEAD' });
@@ -258,11 +260,12 @@ export function createWebServer({
         return;
       }
       try {
-        if ((refresh && !getData.refresh) || (importing && !getData.importCursor)) {
+        if ((refresh && !getData.refresh) || (priceUpdate && !getData.updatePrices) || (importing && !getData.importCursor)) {
           sendJson(res, 501, { error: 'operation is not configured', code: 'NOT_IMPLEMENTED' }, req.method);
           return;
         }
-        const payload = refresh ? await getData.refresh() : importing ? await getData.importCursor(await readCsvBody(req)) : await getData(url.searchParams);
+        const payload = refresh ? await getData.refresh() : priceUpdate ? await getData.updatePrices()
+          : importing ? await getData.importCursor(await readCsvBody(req)) : await getData(url.searchParams);
         sendJson(res, 200, payload, req.method);
       } catch (err) {
         const status = err?.status === 400 || err?.status === 413 ? err.status : 500;

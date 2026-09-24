@@ -59,9 +59,15 @@ test('SQLite snapshot survives reopen, retains cost provenance, and notices exte
   assert.equal(writer.importCursor(imports, '2026-09-08T14:00:00.000Z').imported, 1);
   assert.equal(reader.read().entries.length, 2);
   assert.equal(reader.read().refreshedAt, '2026-09-08T14:00:00.000Z');
+  writer.updateCursorPricing({
+    state: 'fresh',
+    priceFor: () => ({ input: 1e-6, cacheRead: 0.1e-6, cacheWrite: 1e-6, output: 2e-6, source: 'cursor' }),
+  });
+  assert.ok(Math.abs(reader.read().entries[1].costUsd - 17e-6) < 1e-12);
   assert.equal(writer.importCursor(imports).duplicates, 1);
   writer.replace(collected([entry('after-import', 3)]), '2026-09-08T15:00:00.000Z');
   assert.deepEqual(reader.read().entries.map((e) => e.model), ['after-import', 'cursor-test']);
+  assert.ok(Math.abs(reader.read().entries[1].costUsd - 17e-6) < 1e-12);
 });
 
 test('failed SQLite replacement rolls back rows and metadata', () => {
@@ -100,4 +106,31 @@ test('legacy all-column Cursor keys are reconciled on read without changing stor
   assert.equal(corrected.updated, 1);
   assert.equal(db.read().entries.length, 1);
   assert.equal(db.read().entries[0].costUsd, 0.5);
+});
+
+test('legacy Cursor imports gain an Included marker and can use official rates after migration', async (t) => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'toksight-cursor-migration-'));
+  const file = path.join(dir, 'usage.sqlite');
+  const csv = 'Date,Cloud Agent ID,Automation ID,Kind,Model,Max Mode,Input (w/ Cache Write),Input (w/o Cache Write),Cache Read,Output Tokens,Total Tokens,Cost\n' +
+    '2026-08-31T12:00:00Z,,,Included,gpt-5,No,0,10,30,2,42,Included\n';
+  const record = parseCursorCsv(csv).records[0];
+  const old = new DatabaseSync(file);
+  try {
+    old.exec('CREATE TABLE cursor_imports (fingerprint TEXT PRIMARY KEY, data_json TEXT NOT NULL, reported_cost INTEGER NOT NULL CHECK (reported_cost IN (0, 1)))');
+    old.prepare('INSERT INTO cursor_imports (fingerprint, data_json, reported_cost) VALUES (?, ?, 0)')
+      .run(record.key, JSON.stringify(record.entry));
+  } finally { old.close(); }
+  const db = createUsageDatabase({ file });
+  t.after(async () => { db.close(); await rm(dir, { recursive: true, force: true }); });
+  db.replace({
+    entries: [record.entry], warnings: [], reportedCosts: new WeakSet(),
+    pricing: {
+      sources: { cursor: 'fresh' }, configDir: dir,
+      priceFor: (_model, client) => client === 'cursor' ? {
+        input: 1e-6, output: 2e-6, cacheRead: 0.1e-6, cacheWrite: 1e-6, source: 'cursor',
+      } : null,
+    },
+  });
+  assert.ok(Math.abs(db.read().entries[0].costUsd - 17e-6) < 1e-12);
+  assert.equal(buildCostCoverage(db.read().entries, db.read()).sources.cursor.requests, 1);
 });

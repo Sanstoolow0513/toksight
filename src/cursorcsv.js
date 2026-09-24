@@ -1,6 +1,6 @@
 // Cursor's Settings > Usage export is a per-event CSV, not a session log.
 // Keep the original token classes and reported charges; "Included" has no
-// per-event USD amount and must stay unpriced.
+// per-event USD amount; the report may add a separate public-rate estimate.
 
 import { createHash } from 'node:crypto';
 
@@ -106,7 +106,7 @@ export function selectCursorImports(rows, warnings = []) {
     const variant = colon >= 0 ? row.fingerprint.slice(0, colon) : row.fingerprint;
     let variantRows = group.get(variant);
     if (!variantRows) { variantRows = new Map(); group.set(variant, variantRows); }
-    variantRows.set(occurrence, { ...row, entry });
+    variantRows.set(occurrence, { ...row, included: row.included == null ? 1 : row.included, entry });
   }
   const selected = [];
   for (const [identity, variants] of groups) {
@@ -119,7 +119,8 @@ export function selectCursorImports(rows, warnings = []) {
       for (const variantRows of variants.values()) {
         const candidate = variantRows.get(occurrence);
         if (candidate && (!best || candidate.reported_cost > best.reported_cost ||
-          (candidate.reported_cost === best.reported_cost && candidate.rowid > best.rowid))) best = candidate;
+          (candidate.reported_cost === best.reported_cost && candidate.included > best.included) ||
+          (candidate.reported_cost === best.reported_cost && candidate.included === best.included && candidate.rowid > best.rowid))) best = candidate;
       }
       if (best) selected.push({ ...best, key: `v2:${identity}:${occurrence}` });
     }
@@ -157,7 +158,9 @@ export function parseCursorCsv(input) {
       continue;
     }
     if (totalTokens === 0) { zeroUsage++; continue; }
-    const costUsd = cost(get('Cost'));
+    const costValue = get('Cost');
+    const costUsd = cost(costValue);
+    const included = /^included$/i.test(costValue);
     if (costUsd === undefined && warnings.length < 10) warnings.push(`row ${i + 2}: unrecognized Cost value, kept as unpriced`);
     const entry = {
         client: 'cursor', sessionId: null, model, timestamp,
@@ -167,7 +170,7 @@ export function parseCursorCsv(input) {
     const identity = cursorIdentity(entry);
     const occurrence = occurrences.get(identity) ?? 0;
     occurrences.set(identity, occurrence + 1);
-    records.push({ key: `v2:${identity}:${occurrence}`, entry });
+    records.push({ key: `v2:${identity}:${occurrence}`, entry, included });
   }
   if (!records.length && skipped) throw badCsv('no valid usage rows');
   return { records, skipped, zeroUsage, warnings, rows: rows.length };

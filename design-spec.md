@@ -50,7 +50,7 @@
 1. **点阵底**：`body` 背景 `radial-gradient` 圆点，间距 28px，只落在网格交点上。
 2. **顶栏**（粘性，≤760px 取消粘性）：左品牌（3×3 热力小方格 + 衬线 `toksight`）；右依次为
    月/年分段、‹ 周期 ›、配色分段（浅/深/系统图标）、中/EN 分段、Cursor CSV 导入按钮、
-   刷新图标按钮、橙色“导出图片”。
+   刷新图标按钮、“更新单价”按钮、橙色“导出图片”。
 3. **报告列** `.report`（最大宽 1000px 居中，是导出图片的截取范围）：
    - **页首**：橙色小标题 → 衬线大标题（“2026 年 9 月” / “2026 年”）→ 日期范围 · 统计至 ·
      agent 数 · 模型数 → 4 格 KPI 条（Tokens、参考费用、缓存命中率、请求），格间 1px 细线。
@@ -99,6 +99,8 @@
   `.no-export` 元素（分段控件、拖动手柄），把点阵画到图片底上。文件名 `toksight-<YYYY-MM|YYYY>.png`。
 - **Cursor CSV 导入**：顶栏选择本地 Usage Events CSV，导入成功后报告跳转到该文件最后一条记录
   所在的月或年；重复行去重，零 token 行跳过。导入提示在报告外，不进入导出图。
+- **更新单价**：顶栏按钮强制检查 LiteLLM 和 Cursor 两个公开来源；更新后重载当前报告与单日卡片，
+  页脚显示各来源上次成功拉取时间。模型行只归属一个 Agent 时显示该来源的四类 token 单价。
 - **偏好**（均存 `localStorage`，读取时校验）：`toksight-locale`、`toksight-theme`
   （light/dark/system）、`toksight-period-mode`、`toksight-card-order`、`toksight-card-metrics`、
   `toksight-day-metric`（详情卡片指标）。选中的日期不持久化。

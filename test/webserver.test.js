@@ -115,6 +115,21 @@ test('POST /api/refresh calls the refresh service and rejects cross-origin reque
   });
 });
 
+test('POST /api/prices/update is same-origin and invokes only price refresh', async () => {
+  let updates = 0;
+  const getData = async () => payload;
+  getData.updatePrices = async () => ({ updated: true, count: ++updates });
+  await withServer({ getData }, async (url) => {
+    const good = await fetch(`${url}/api/prices/update`, { method: 'POST' });
+    assert.deepEqual(await good.json(), { updated: true, count: 1 });
+    const get = await fetch(`${url}/api/prices/update`);
+    assert.equal(get.status, 405);
+    const foreign = await fetch(`${url}/api/prices/update`, { method: 'POST', headers: { Origin: 'https://evil.example' } });
+    assert.equal(foreign.status, 403);
+    assert.equal(updates, 1);
+  });
+});
+
 test('POST /api/import/cursor accepts local CSV and rejects foreign origins and Hosts', async () => {
   let imports = 0;
   const getData = async () => payload;

@@ -7,14 +7,15 @@ import os from 'node:os';
 
 import { clients } from './clients/index.js';
 import { computeCost, getPricing } from './pricing.js';
+import { createCursorPriceLookup, cursorPriceRecords, CURSOR_PRICING_URL, getCursorPricing } from './cursorpricing.js';
 
 // Collects every client, applies filters, prices the result. `env`/`home` are
 // threaded through to the parsers and pricing config so tests can point the
 // whole pipeline at fixtures. Entries are never mutated here: pricing produces
 // copies, so the per-client entry lists stay exactly what the parsers emitted.
 export async function collectAll(opts, { env = process.env, home = os.homedir() } = {}) {
-  const pricing = await getPricing({ offline: opts.offline, env, home });
-  const warnings = [...pricing.warnings];
+  const basePricing = await getPricing({ offline: opts.offline, env, home });
+  const warnings = [...basePricing.warnings];
 
   const ids = Object.keys(clients);
   // Roots are resolved with the same injected env/home the collectors see,
@@ -28,12 +29,18 @@ export async function collectAll(opts, { env = process.env, home = os.homedir() 
 
   const perClient = [];
   const all = [];
+  const includedCursorCosts = new WeakSet();
   ids.forEach((id, i) => {
     const r = results[i];
     let entries = [];
     if (r.status === 'fulfilled') {
       entries = r.value.entries;
       warnings.push(...r.value.warnings);
+      if (id === 'cursor') {
+        for (const entry of entries) {
+          if (r.value.includedCosts?.has(entry)) includedCursorCosts.add(entry);
+        }
+      }
     } else {
       const reason = r.reason instanceof Error ? r.reason.message : String(r.reason);
       warnings.push(`${id}: collection failed (${reason})`);
@@ -46,13 +53,38 @@ export async function collectAll(opts, { env = process.env, home = os.homedir() 
 
   const filteredResult = filterEntries(all, opts);
   warnings.push(...filteredResult.warnings);
+  let cursorPriceFor = () => null;
+  let cursorState = 'skipped (no Included usage)';
+  let cursorRecords = [];
+  let cursorSourceDetails = null;
+  if (filteredResult.entries.some((e) => e.client === 'cursor' && e.costUsd == null && includedCursorCosts.has(e))) {
+    try {
+      const cursorPricing = await getCursorPricing({ offline: opts.offline, env, home });
+      cursorPriceFor = createCursorPriceLookup(cursorPricing.models);
+      cursorRecords = cursorPriceRecords(cursorPricing.models);
+      cursorSourceDetails = { fetchedAt: cursorPricing.fetchedAt, url: cursorPricing.source, state: cursorPricing.state };
+      cursorState = cursorPricing.state;
+      warnings.push(...cursorPricing.warnings);
+    } catch (err) {
+      cursorState = 'unavailable';
+      cursorSourceDetails = { fetchedAt: null, url: CURSOR_PRICING_URL, state: 'unavailable' };
+      warnings.push(`Cursor pricing unavailable; Included usage may remain unpriced (${err.message})`);
+    }
+  }
+  const pricing = {
+    ...basePricing,
+    priceFor: (model, client) => client === 'cursor' ? cursorPriceFor(model) : basePricing.priceFor(model),
+    records: [...basePricing.records, ...cursorRecords],
+    sourceDetails: { ...basePricing.sourceDetails, ...(cursorSourceDetails ? { cursor: cursorSourceDetails } : {}) },
+    sources: { ...basePricing.sources, cursor: cursorState },
+  };
   const reportedCosts = new WeakSet();
   const entries = filteredResult.entries.map((e) => {
     if (e.costUsd != null) reportedCosts.add(e);
-    // Cursor's CSV records subscription labels rather than a public-model
-    // bill. Its numeric Cost values are reported charges; Included stays
-    // unknown even when a similarly named model exists in a price table.
-    const costUsd = computeCost(e, e.client === 'cursor' ? null : pricing.priceFor(e.model));
+    // A CSV charge wins. An Included row uses Cursor's current public rate as
+    // a reference estimate and retains its non-reported provenance.
+    const price = e.client === 'cursor' && !includedCursorCosts.has(e) ? null : pricing.priceFor(e.model, e.client);
+    const costUsd = computeCost(e, price);
     return costUsd === e.costUsd ? e : { ...e, costUsd };
   });
 

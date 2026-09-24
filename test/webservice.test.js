@@ -12,6 +12,7 @@ import { calendarDaysBetween, parseDateArg } from '../src/dates.js';
 import { localDate } from '../src/aggregate.js';
 import { createWebServer } from '../src/webserver.js';
 import { createUsageDatabase } from '../src/database.js';
+import { parseCursorCsv } from '../src/cursorcsv.js';
 
 const base = parseArgs(['--offline']);
 const now = () => new Date(2026, 8, 8, 12).getTime();
@@ -77,6 +78,99 @@ test('Cursor CSV import is idempotent, filterable and survives refresh in the sa
     assert.equal((await get()).totals.requests, 4);
     await get.refresh();
     assert.equal((await get()).totals.requests, 4);
+  } finally { get.close(); }
+});
+
+test('Cursor official prices estimate Included rows immediately after import and survive refresh', async () => {
+  const csv = await (await import('node:fs/promises')).readFile(new URL('./fixtures/cursor/usage.csv', import.meta.url), 'utf8');
+  const get = createWebDataService(base, {
+    now, database: memoryDatabase(), collect: async () => raw([entry()]),
+    cursorPricing: async () => ({ state: 'refreshed', warnings: [], models: [
+      { name: 'cursor-test-model', provider: 'Cursor', pool: 'cursor', input: 2, cacheWrite: null, cacheRead: 0.2, output: 4 },
+    ] }),
+  });
+  try {
+    const imported = await get.importCursor(csv);
+    assert.equal(imported.imported, 2);
+    const report = await get(query('client=cursor'));
+    const estimate = (5 * 2 + 10 * 2 + 30 * 0.2 + 4 * 4) / 1e6;
+    assert.ok(Math.abs(report.totals.costUsd - (estimate + 0.25)) < 1e-12);
+    assert.equal(report.costCoverage.sources.cursor.requests, 1);
+    assert.equal(report.costCoverage.sources.reported.requests, 1);
+    assert.equal(report.pricing.sources.cursor, 'refreshed');
+    await get.refresh();
+    const afterRefresh = await get(query('client=cursor'));
+    assert.ok(Math.abs(afterRefresh.totals.costUsd - (estimate + 0.25)) < 1e-12);
+    assert.equal(afterRefresh.costCoverage.sources.cursor.requests, 1);
+    assert.equal(afterRefresh.pricing.sources.cursor, 'refreshed');
+  } finally { get.close(); }
+});
+
+test('existing Cursor imports gain official estimates on web startup without scanning agents', async () => {
+  const csv = await (await import('node:fs/promises')).readFile(new URL('./fixtures/cursor/usage.csv', import.meta.url), 'utf8');
+  const database = memoryDatabase();
+  database.replace(raw([entry()]));
+  database.importCursor(parseCursorCsv(csv).records);
+  let scans = 0;
+  const get = createWebDataService(base, {
+    now, database, collect: async () => { scans++; return raw([]); },
+    cursorPricing: async () => ({ state: 'fresh', warnings: [], models: [
+      { name: 'cursor-test-model', provider: 'Cursor', pool: 'cursor', input: 2, cacheWrite: null, cacheRead: 0.2, output: 4 },
+    ] }),
+  });
+  try {
+    await get.initialize();
+    const report = await get(query('client=cursor'));
+    assert.equal(scans, 0);
+    assert.equal(report.costCoverage.sources.cursor.requests, 1);
+    assert.equal(report.pricing.sources.cursor, 'fresh');
+  } finally { get.close(); }
+});
+
+test('both price sources update at most weekly automatically, and manual update bypasses the interval', async () => {
+  let time = Date.parse('2026-09-24T12:00:00Z');
+  let genericCalls = 0, cursorCalls = 0, failCursor = false;
+  const database = memoryDatabase();
+  const get = createWebDataService(parseArgs([]), {
+    now: () => time, database, collect: async () => raw([]),
+    genericPricing: async () => {
+      genericCalls++;
+      return { records: [{ scope: 'default', source: 'litellm', modelId: 'test', name: 'test',
+        input: 1e-6, cacheRead: 1e-6, cacheWrite: 1e-6, output: 1e-6 }],
+      sourceDetails: { litellm: { fetchedAt: new Date(time).toISOString(), state: 'refreshed', url: 'https://example.test/litellm' } },
+      warnings: [] };
+    },
+    cursorPricing: async () => {
+      cursorCalls++;
+      if (failCursor) throw new Error('offline upstream');
+      return { models: [{ name: 'Grok 4.6', provider: 'Cursor', pool: 'cursor',
+        input: 2, cacheRead: 0.5, cacheWrite: null, output: 6 }],
+      fetchedAt: new Date(time).toISOString(), state: 'refreshed', source: 'https://example.test/cursor', warnings: [] };
+    },
+  });
+  try {
+    await get.initialize();
+    assert.equal(genericCalls, 1); assert.equal(cursorCalls, 1);
+    time += 6 * 24 * 60 * 60 * 1000;
+    await get();
+    assert.equal(genericCalls, 1); assert.equal(cursorCalls, 1);
+    time += 2 * 24 * 60 * 60 * 1000;
+    await get();
+    assert.equal(genericCalls, 2); assert.equal(cursorCalls, 2);
+    await get.updatePrices();
+    assert.equal(genericCalls, 3); assert.equal(cursorCalls, 3);
+    failCursor = true;
+    const failed = await get.updatePrices();
+    assert.match(failed.warnings[0], /Cursor pricing unavailable/);
+    assert.equal(database.read().pricing.priceFor('cursor-grok-4.6-high', 'cursor').input, 2e-6);
+    assert.equal(database.read().pricing.updates.cursor.state, 'unavailable');
+  } finally { get.close(); }
+});
+
+test('offline web sessions reject a manual network price update', async () => {
+  const get = service([]);
+  try {
+    await assert.rejects(get.updatePrices(), (err) => err.status === 400 && err.code === 'PRICE_OFFLINE');
   } finally { get.close(); }
 });
 

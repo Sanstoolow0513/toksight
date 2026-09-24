@@ -72,6 +72,9 @@ export default function Page() {
   const [exportError, setExportError] = useState(null);
   const [refreshError, setRefreshError] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [priceUpdating, setPriceUpdating] = useState(false);
+  const [priceError, setPriceError] = useState(null);
+  const [priceResult, setPriceResult] = useState(null);
   const [importing, setImporting] = useState(false);
   const [importError, setImportError] = useState(null);
   const [importResult, setImportResult] = useState(null);
@@ -148,6 +151,22 @@ export default function Page() {
       setRefreshError(String(err?.message || err));
     } finally {
       setRefreshing(false);
+    }
+  };
+  const onUpdatePrices = async () => {
+    setPriceUpdating(true);
+    setPriceError(null);
+    setPriceResult(null);
+    try {
+      const res = await fetch('/api/prices/update', { method: 'POST', cache: 'no-store' });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error || `HTTP ${res.status}`);
+      setPriceResult(body);
+      setRefreshRevision((n) => n + 1);
+    } catch (err) {
+      setPriceError(String(err?.message || err));
+    } finally {
+      setPriceUpdating(false);
     }
   };
   const onImportCursor = async (file) => {
@@ -228,6 +247,7 @@ export default function Page() {
     const totals = data.totals ?? {};
     const { since, until } = periodBounds(shown);
     const unpriced = data.pricing?.unpricedModels ?? [];
+    const cursorUnpriced = (data.clients?.cursor?.pricedRequests ?? 0) < (data.clients?.cursor?.requests ?? 0);
     const modelCount = new Set((data.models ?? []).map((m) => m.model)).size;
     const heroSub = [
       tx('heroRange', { since: dayLabel(locale, since, true), until: dayLabel(locale, until) }),
@@ -277,8 +297,11 @@ export default function Page() {
             toksight v{data.version}
           </span>
           <span>{tx('footRefreshed', { time: fmtDateTime(data.snapshot?.refreshedAt ?? data.generatedAt) })}</span>
+          {data.pricing?.updates?.litellm?.fetchedAt ? <span>{tx('footPriceUpdated', { source: 'LiteLLM', time: fmtDateTime(data.pricing.updates.litellm.fetchedAt) })}</span> : null}
+          {data.pricing?.updates?.cursor?.fetchedAt ? <span>{tx('footPriceUpdated', { source: 'Cursor', time: fmtDateTime(data.pricing.updates.cursor.fetchedAt) })}</span> : null}
           {data.timezone ? <span>{tx('footTimezone', { tz: data.timezone })}</span> : null}
-          <span>{tx(data.clients?.cursor ? 'footEstimateCursor' : 'footEstimate')}</span>
+          <span>{tx(data.costCoverage?.sources?.cursor?.requests ? 'footEstimateCursor' : cursorUnpriced ? 'footEstimateCursorUnpriced' : 'footEstimate')}</span>
+          {data.costCoverage?.sources?.cursor?.requests ? <a href="https://cursor.com/docs/models-and-pricing" target="_blank" rel="noreferrer">{tx('footCursorSource')}</a> : null}
           <span>{tx('footLocal')}</span>
           {unpriced.length ? <span className="foot-unpriced">{tx('footUnpriced', { models: unpriced.join(', ') })}</span> : null}
         </footer>
@@ -289,6 +312,7 @@ export default function Page() {
   const notices = [
     data && report.error ? tx('errorBody', { error: report.error }) : null,
     refreshError ? tx('refreshFailed', { error: refreshError }) : null,
+    priceError ? tx('priceUpdateFailed', { error: priceError }) : null,
     importError ? tx('importFailed', { error: importError }) : null,
     exportError ? tx('exportFailed', { error: exportError }) : null,
   ].filter(Boolean);
@@ -305,8 +329,10 @@ export default function Page() {
         theme={theme}
         onTheme={onTheme}
         onLocale={onLocale}
-        loading={report.loading || refreshing || importing}
+        loading={report.loading || refreshing || priceUpdating || importing}
         onRefresh={onRefresh}
+        priceUpdating={priceUpdating}
+        onUpdatePrices={onUpdatePrices}
         importing={importing}
         onImportCursor={onImportCursor}
         exporting={exporting}
@@ -315,6 +341,14 @@ export default function Page() {
       />
       <div className="workspace">
         <main className="main">
+          {priceResult ? (
+            <div className={priceResult.warnings?.length ? 'notice is-warn' : 'notice is-success'}>
+              <CircleCheck size={15} strokeWidth={2} aria-hidden="true" />
+              <span>{tx(priceResult.warnings?.length ? 'priceUpdateWarnings' : 'priceUpdateSuccess',
+                { count: priceResult.warnings?.length ?? 0 })}</span>
+              {priceResult.warnings?.length ? <ul>{priceResult.warnings.map((warning, i) => <li key={i}>{warning}</li>)}</ul> : null}
+            </div>
+          ) : null}
           {importResult ? (
             <div className="notice is-success" role="status">
               <CircleCheck size={15} strokeWidth={2} aria-hidden="true" />

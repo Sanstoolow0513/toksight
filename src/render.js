@@ -179,10 +179,18 @@ export function renderCommand(ctx, fmt) {
       console.log('');
       console.log(fmt.bold('Pricing'));
       console.log(`  litellm: ${pricing.sources.litellm}`);
+      console.log(`  cursor official: ${pricing.sources.cursor}`);
       console.log(`  user overrides: ${pricing.sources.user ? 'loaded' : 'none'}`);
       console.log(`  builtin: always available (${fmt.dim('best-effort estimates')})`);
       break;
     }
+  }
+
+  if (opts.command !== 'env' && entries.some((entry) => entry.client === 'cursor' &&
+      entry.costUsd != null && !ctx.reportedCosts?.has(entry) &&
+      pricing.priceFor(entry.model, 'cursor')?.source === 'cursor')) {
+    console.log('');
+    console.log(fmt.dim('Cursor Included: reference cost from published model rates, not a billed charge.'));
   }
 
   if (warnings.length) {

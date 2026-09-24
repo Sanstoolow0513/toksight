@@ -6,9 +6,30 @@
 import { createRequire } from 'node:module';
 
 import * as agg from './aggregate.js';
+import { modelIdentity } from './pricecatalog.js';
 
 const require = createRequire(import.meta.url);
 const pkg = require('../package.json');
+
+function modelRateRows(entries, pricing) {
+  const seen = new Set(), rows = [];
+  for (const entry of entries) {
+    const key = `${entry.client}\0${entry.model}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const rate = pricing.priceFor?.(entry.model, entry.client);
+    const validRate = rate && ['input', 'cacheRead', 'cacheWrite', 'output'].every((part) => Number.isFinite(rate[part]));
+    const identity = modelIdentity(entry.model, entry.client);
+    rows.push({
+      client: entry.client, scope: entry.client === 'cursor' ? 'cursor' : 'default',
+      model: entry.model, modelId: rate?.modelId ?? identity.id,
+      effort: identity.effort, source: validRate ? rate.source : null, pool: rate?.pool ?? null,
+      ...(validRate ? { input: rate.input * 1e6, cacheRead: rate.cacheRead * 1e6,
+        cacheWrite: rate.cacheWrite * 1e6, output: rate.output * 1e6 } : {}),
+    });
+  }
+  return rows;
+}
 
 // `ctx` is what collectAll returns plus the parsed opts:
 // { entries, warnings, pricing, perClient, opts }. Note the split: `entries`
@@ -56,6 +77,8 @@ export function buildPayload(ctx) {
       sources: pricing.sources,
       configDir: pricing.configDir,
       unpricedModels: agg.unpricedModels(entries),
+      updates: pricing.updates ?? pricing.sourceDetails ?? {},
+      modelRates: modelRateRows(entries, pricing),
     },
     warnings,
   };

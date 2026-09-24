@@ -1,12 +1,12 @@
 import { useRef } from 'react';
-import { ChevronLeft, ChevronRight, ImageDown, LoaderCircle, Monitor, Moon, RefreshCw, Sun, Upload } from 'lucide-react';
+import { ChevronLeft, ChevronRight, DollarSign, ImageDown, LoaderCircle, Monitor, Moon, RefreshCw, Sun, Upload } from 'lucide-react';
 import BrandMark from '@/components/BrandMark';
 import Segmented from '@/components/Segmented';
 import { periodLabel } from '@/lib/i18n';
 
 const icon = { size: 15, strokeWidth: 2, 'aria-hidden': true };
 
-export default function Toolbar({ locale, tx, period, nav, onMode, onShift, theme, onTheme, onLocale, loading, onRefresh, importing, onImportCursor, exporting, onExport, canExport }) {
+export default function Toolbar({ locale, tx, period, nav, onMode, onShift, theme, onTheme, onLocale, loading, onRefresh, priceUpdating, onUpdatePrices, importing, onImportCursor, exporting, onExport, canExport }) {
   const fileInput = useRef(null);
   return (
     <header className="topbar">
@@ -70,6 +70,10 @@ export default function Toolbar({ locale, tx, period, nav, onMode, onShift, them
             </button>
             <button type="button" className="icon-btn" onClick={onRefresh} disabled={loading} aria-label={tx(loading ? 'refreshing' : 'refresh')} title={tx(loading ? 'refreshing' : 'refresh')}>
               <RefreshCw {...icon} className={loading ? 'spin' : undefined} />
+            </button>
+            <button type="button" className="btn-secondary" onClick={onUpdatePrices} disabled={loading}>
+              {priceUpdating ? <LoaderCircle {...icon} className="spin" /> : <DollarSign {...icon} />}
+              {tx(priceUpdating ? 'updatingPrices' : 'updatePrices')}
             </button>
             <button type="button" className="btn-primary" onClick={onExport} disabled={!canExport || exporting}>
               {exporting ? <LoaderCircle {...icon} className="spin" /> : <ImageDown {...icon} />}

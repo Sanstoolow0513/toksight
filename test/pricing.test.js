@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-import { computeCost, getPricing, normalizeModelName } from '../src/pricing.js';
+import { computeCost, getPricing, normalizeModelName, PRICE_REFRESH_MS } from '../src/pricing.js';
 import * as agg from '../src/aggregate.js';
 
 test('normalizeModelName strips provider prefixes and snapshots', () => {
@@ -17,12 +17,14 @@ test('normalizeModelName strips provider prefixes and snapshots', () => {
 });
 
 test('builtin pricing matches by prefix', async () => {
-  const { priceFor } = await getPricing({ offline: true, env: {} });
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'toksight-builtin-'));
+  const { priceFor } = await getPricing({ offline: true, env: { TOKSIGHT_CONFIG_DIR: dir } });
   const p = priceFor('GLM-5.3');
   assert.equal(p.source, 'builtin');
   assert.equal(p.input, 0.6e-6);
   const sonnet = priceFor('claude-sonnet-4-5');
   assert.equal(sonnet.input, 3e-6);
+  fs.rmSync(dir, { recursive: true, force: true });
 });
 
 test('computeCost sums token classes; source cost wins', () => {
@@ -55,6 +57,24 @@ test('user overrides file wins over builtin (suffix match)', async () => {
   assert.equal(p.source, 'user');
   assert.equal(p.input, 1e-6);
   assert.equal(p.output, 2e-6);
+});
+
+test('LiteLLM price cache lasts a week and a forced update bypasses it', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'toksight-lite-week-'));
+  try {
+    let calls = 0;
+    const fetchImpl = async () => { calls++; return { ok: true, json: async () => ({
+      'unit-test-model': { mode: 'chat', input_cost_per_token: calls / 1e6, output_cost_per_token: 2e-6 },
+    }) }; };
+    const env = { TOKSIGHT_CONFIG_DIR: dir };
+    const first = await getPricing({ env, now: () => 1_000_000, fetchImpl });
+    assert.equal(first.priceFor('unit-test-model').input, 1e-6);
+    await getPricing({ env, now: () => 1_000_000 + PRICE_REFRESH_MS - 1, fetchImpl });
+    assert.equal(calls, 1);
+    const forced = await getPricing({ env, force: true, now: () => 1_000_001, fetchImpl });
+    assert.equal(forced.priceFor('unit-test-model').input, 2e-6);
+    assert.equal(calls, 2);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
 test('aggregate summarize and cache hit rate', () => {

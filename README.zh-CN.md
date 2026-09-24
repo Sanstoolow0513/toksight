@@ -82,7 +82,7 @@ zcode   glm-5.3             41   116K    1.99M        0   43.3K  94.5%   $0.870
 --open           用浏览器打开打印出的地址（仅 web）
 --no-open        不打开浏览器（仅 web；默认）
 --api-only       web：只提供 JSON API，不托管静态页面
---offline        跳过 LiteLLM 价格拉取
+--offline        跳过 LiteLLM 与 Cursor 价格拉取
 --no-color       关闭 ANSI 颜色
 ```
 
@@ -92,11 +92,11 @@ zcode   glm-5.3             41   116K    1.99M        0   43.3K  94.5%   $0.870
 
 ## 定价
 
-成本按每次请求的 token 数计算，三层价格来源（后者覆盖前者）：
+除 Cursor 外，成本按每次请求的 token 数计算，价格来源分三层（后者覆盖前者）：
 
 1. **内置价格表** — 常见模型系列的最佳努力估算（美元 / 百万 token），离线始终可用。
 2. **LiteLLM** — 从社区[模型价格库](https://github.com/BerriAI/litellm/blob/main/model_prices_and_context_window.json)拉取，
-   本地缓存 1 小时（`<config>/toksight/cache/litellm-pricing.json`），数据最新；`--offline` 可跳过。
+   本地缓存 7 天（`<config>/toksight/cache/litellm-pricing.json`）；`--offline` 可读取已有缓存且不发网络请求。
 3. **用户覆盖** — 编辑 `<config>/toksight/pricing.json`（单位：美元 / 百万 token）：
 
    ```json
@@ -110,8 +110,24 @@ zcode   glm-5.3             41   116K    1.99M        0   43.3K  94.5%   $0.870
 `<config>` 为 `%XDG_CONFIG_HOME% || ~/.config`（可用 `TOKSIGHT_CONFIG_DIR` 覆盖）。
 查不到价格的模型照常计数，成本显示为 `—`，并在 JSON 输出的 `pricing.unpricedModels` 中列出。
 OpenCode 自带的价格（`cost` 字段）会被直接采用。
-Cursor CSV 中的 `Included` 不提供每条记录的美元费用，因此保持未定价；数字费用及 `Free`
-按 CSV 原值使用。Cursor 套餐内用量不会套用公开模型价格。
+Cursor CSV 的 `Included` 行会使用 Cursor 官方
+[Models & Pricing](https://cursor.com/docs/models-and-pricing) Markdown 表中的输入、缓存写入、
+缓存读取和输出单价，算出**参考费用**并计入费用总额及排行；它并非 Cursor 账单上的实际扣费。
+CSV 中的数字费用及 `Free` 始终按原值使用。查不到模型单价（如无法确定实际路由模型的 `Auto`）
+仍保持未定价。Cursor 单价在 `<config>/toksight/cache/cursor-pricing.json` 缓存 7 天；
+`--offline` 可使用已有缓存。`pricing.sources.cursor` 标明缓存状态，网页的
+`costCoverage.sources.cursor` 单独列出这部分估算。历史记录按获取到的公开价格折算，
+过往套餐价格、长上下文倍率、地区加价等计费条件可能让参考费用与实际用量价值不同。
+旧版本导入时没有保存 CSV 的 Cost 标签，数据库升级后会将旧记录中的未知费用按 `Included` 处理。
+两个来源的单价都会归一化保存到 toksight 自己的 `usage.sqlite` 的 `model_prices` 表，
+按价格来源、计费范围和模型 ID 分行，单位为美元 / token。`price_updates` 记录各来源上次成功拉取
+及检查时间。Cursor 只使用 Cursor 计费范围内的价格；例如 CSV 中的
+`cursor-grok-4.6-xhigh-fast` 会匹配 `grok-4.6-fast`，`xhigh` 单独记录为 effort；Fast、
+500k 和 Max 等档位保留独立 ID。其他 Agent 依上述通用来源优先级取价。用现在的公开单价
+折算历史记录仍只是参考估算，不是历史账单。模型卡片在模型行仅归属一个 Agent 时显示
+美元 / 百万 token 的单价；JSON 的 `pricing.modelRates` 也列出模型 ID、effort 和单价。
+官网缓存单价标为 `-` 时，对应 token 暂按输入单价折算；
+`costCoverage.cacheFallbackRequests` 会统计受此影响的请求数。
 
 当 LiteLLM 条目缺少独立的缓存价格时，缓存 token 会按该模型的输入价计费——这是有意选择的
 保守高估（真实缓存读取价通常只有输入价的 10% 左右），保证成本不会被悄悄少算；有完整缓存
@@ -130,6 +146,12 @@ Cursor CSV 中的 `Included` 不提供每条记录的美元费用，因此保持
 并在一个事务中更新数据库。刷新失败时保留旧快照；网页服务器也会发现其他 toksight 进程写入的
 新快照。刷新后报告与打开的单日卡片一同更新，页脚显示数据库上次刷新时间。
 `toksight refresh --offline` 可跳过价格拉取。
+
+顶栏的**更新单价**按钮调用 `POST /api/prices/update`，同时检查 LiteLLM 和 Cursor，
+不受 7 天自动更新间隔限制。启动及报表请求只会在某个来源距上次成功拉取至少 7 天时
+自动检查；失败后隔一小时再试。页脚和 `pricing.updates` 显示各来源上次成功更新时间。
+单价更新会重算已有估算，无需重新扫描用量，也不会覆盖 Agent 或 CSV 上报的金额。
+`--offline` 禁止手动联网更新。
 
 要加入 Cursor 历史，在 Cursor 导出 **Usage Events** CSV，打开 `toksight web`，点击顶栏的
 **导入 Cursor CSV**。文件只发送到本机 toksight 服务，用量记录保存在 `usage.sqlite`；
@@ -170,6 +192,7 @@ API 可以这样调用：`GET /api/data?period=custom&since=2026-09-01&until=202
 `30d` / `month` / `custom`（须同时给出 `since` 与 `until`）；`since` / `until` 可单独使用；
 预设周期不能与显式日期混用；未知、重复或无效参数返回 HTTP 400。`POST /api/refresh`
 会更新数据库，并返回刷新时间、记录数和采集警告；网页 API 新增的 `snapshot` 字段包含刷新时间和记录数。
+`POST /api/prices/update` 不扫描用量，只更新两种公开价格来源。
 `POST /api/import/cursor` 接受最大 20 MB 的 UTF-8 Cursor 用量 CSV，并返回新增、费用更新、重复及跳过条数。
 跨来源写入请求会被拒绝。
 
@@ -199,8 +222,8 @@ npm run web:ci && npm run web:build && node bin/toksight.js web
 
 toksight 本地优先：CLI 与网页报告只**读取**各 Agent 的会话文件。刷新会写入 toksight 自己的
 SQLite 数据库，不上传数据，也不写回 Agent 文件。Cursor CSV 导入数据同样存于这个数据库。
-唯一的外部网络请求是匿名的 LiteLLM 价格拉取；
-`--offline` 可以连它也关掉。
+外部请求仅用于拉取 LiteLLM 公开价格和 Cursor 官方 Markdown 价格表；`--offline`
+可关闭两种网络请求。
 报告图片在浏览器里生成，只保存到你下载的位置。
 
 ## JSON 输出

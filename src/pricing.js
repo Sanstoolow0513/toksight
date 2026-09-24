@@ -1,14 +1,15 @@
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { createPriceLookup, modelIdentity, priceRecord } from './pricecatalog.js';
 
 const LITELLM_URL =
   'https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json';
-const CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour, matching tokscale's freshness bar
+export const PRICE_REFRESH_MS = 7 * 24 * 60 * 60 * 1000;
 const FETCH_TIMEOUT_MS = 4000;
 
 // Built-in fallback prices, USD per million tokens (best-effort snapshot).
-// LiteLLM data (fetched with a 1h disk cache) and a user overrides file take
+// LiteLLM data (fetched with a 7-day disk cache) and a user overrides file take
 // precedence, in that order.
 const BUILTIN_RULES = [
   { match: 'claude-opus-4', input: 15, cacheRead: 1.5, cacheWrite: 18.75, output: 75 },
@@ -39,12 +40,7 @@ export function configDir({ env = process.env, home = os.homedir() } = {}) {
 }
 
 export function normalizeModelName(name) {
-  let n = String(name ?? '').toLowerCase().trim();
-  n = n.replace(/^[a-z0-9_-]+:/, ''); // provider prefixes like "builtin:" / "anthropic:"
-  n = n.replace(/:latest$/, '');
-  n = n.replace(/[-_.]?20\d{6,8}$/, ''); // date-suffixed snapshots
-  n = n.replace(/\s+/g, '');
-  return n;
+  return modelIdentity(name).id;
 }
 
 // Built-in prices are authored per MTok; LiteLLM and user overrides are
@@ -59,50 +55,7 @@ const perToken = (pricePerMTok) => ({
   cacheWriteFallback: Boolean(pricePerMTok.cacheWriteFallback),
 });
 
-function builtinMap() {
-  const rules = [...BUILTIN_RULES].sort((a, b) => b.match.length - a.match.length);
-  return (model) => {
-    const n = normalizeModelName(model);
-    if (!n) return null;
-    const rule = rules.find((r) => n.startsWith(r.match));
-    if (!rule) return null;
-    return perToken({ ...rule, source: 'builtin' });
-  };
-}
-
-function buildExactMap(entries) {
-  const exact = new Map();
-  for (const [key, price] of entries) {
-    const normalized = normalizeModelName(key);
-    if (!normalized) continue;
-    const existing = exact.get(normalized);
-    if (!existing || key.length > (existing.keyLength ?? 0)) {
-      exact.set(normalized, { ...price, keyLength: key.length });
-    }
-  }
-  // Suffix index: bare model name -> price for provider-prefixed keys
-  // (e.g. "zhipuai/glm-5.3" is also reachable as "glm-5.3"). Prebuilt so a
-  // miss on the exact map is one O(1) lookup instead of a scan over the
-  // whole LiteLLM table (thousands of entries) per unpriced model.
-  const suffix = new Map();
-  for (const [normalized, price] of exact) {
-    const slash = normalized.lastIndexOf('/');
-    if (slash === -1) continue;
-    const base = normalized.slice(slash + 1);
-    if (!base) continue;
-    const existing = suffix.get(base);
-    if (!existing || (price.keyLength ?? 0) > (existing.keyLength ?? 0)) {
-      suffix.set(base, price);
-    }
-  }
-  return { exact, suffix };
-}
-
-function lookupExact(map, model) {
-  if (!map) return null;
-  const n = normalizeModelName(model);
-  return map.exact.get(n) ?? map.suffix.get(n) ?? null;
-}
+const recordsFromEntries = (entries) => entries.map(([name, price]) => priceRecord({ name, ...price })).filter(Boolean);
 
 export function computeCost(entry, price) {
   if (entry.costUsd != null) return entry.costUsd;
@@ -137,32 +90,39 @@ async function loadUserPricing(dir) {
         cacheWriteFallback: v.cacheWrite == null,
       }),
     ]);
-  return buildExactMap(entries);
+  return { records: recordsFromEntries(entries) };
 }
 
-async function loadLitellmPricing(cacheFile) {
+async function loadLitellmPricing(cacheFile, { offline = false, force = false, now = Date.now, fetchImpl = fetch } = {}) {
   let cached = null;
   try {
     cached = JSON.parse(await fs.readFile(cacheFile, 'utf8'));
+    if (!Number.isFinite(cached?.fetchedAt) || !cached?.data || typeof cached.data !== 'object' || Array.isArray(cached.data)) cached = null;
   } catch {
     cached = null;
   }
 
-  const fresh = cached && Date.now() - cached.fetchedAt < CACHE_TTL_MS;
-  if (!fresh) {
+  const time = now();
+  const fresh = cached && time >= cached.fetchedAt && time - cached.fetchedAt < PRICE_REFRESH_MS;
+  if (!offline && (force || !fresh)) {
     try {
-      const res = await fetch(LITELLM_URL, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
+      const res = await fetchImpl(LITELLM_URL, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
-      cached = { fetchedAt: Date.now(), data };
+      if (!data || typeof data !== 'object' || Array.isArray(data)) throw new Error('invalid LiteLLM price map');
+      cached = { fetchedAt: time, data };
       await fs.mkdir(path.dirname(cacheFile), { recursive: true });
       await fs.writeFile(cacheFile, JSON.stringify(cached)).catch(() => {});
     } catch (err) {
-      if (cached) return { map: buildLitellmMap(cached.data), state: 'stale' };
-      return { map: null, state: `unavailable (${err.message})` };
+      if (cached) return { map: buildLitellmMap(cached.data), state: 'stale', fetchedAt: cached.fetchedAt, warning: err.message };
+      return { map: null, state: `unavailable (${err.message})`, fetchedAt: null, warning: err.message };
     }
   }
-  return { map: buildLitellmMap(cached.data), state: fresh ? 'fresh' : 'refreshed' };
+  const state = offline ? (cached ? (fresh ? 'fresh' : 'stale (offline)') : 'skipped (offline)')
+    : fresh && !force ? 'fresh' : 'refreshed';
+  return { map: cached ? buildLitellmMap(cached.data) : null,
+    state,
+    fetchedAt: cached?.fetchedAt ?? null };
 }
 
 function buildLitellmMap(data) {
@@ -187,45 +147,35 @@ function buildLitellmMap(data) {
         cacheRead: v.cache_read_input_token_cost ?? v.input_cost_per_token,
         cacheWrite: v.cache_creation_input_token_cost ?? v.input_cost_per_token,
         source: 'litellm',
+        provider: v.litellm_provider ?? null,
         cacheReadFallback: v.cache_read_input_token_cost == null,
         cacheWriteFallback: v.cache_creation_input_token_cost == null,
       },
     ]);
   }
-  return buildExactMap(entries);
+  return { records: recordsFromEntries(entries) };
 }
 
-export async function getPricing({ offline = false, env, home } = {}) {
+export async function getPricing({ offline = false, force = false, env, home, now = Date.now, fetchImpl = fetch } = {}) {
   const dir = configDir({ env, home });
   const warnings = [];
 
   const userMap = await loadUserPricing(dir);
-
-  let litellmMap = null;
-  let litellmState = 'skipped (offline)';
-  if (!offline) {
-    const { map, state } = await loadLitellmPricing(path.join(dir, 'cache', 'litellm-pricing.json'));
-    litellmMap = map;
-    litellmState = state;
-    if (typeof state === 'string' && state.startsWith('unavailable')) {
-      warnings.push(`LiteLLM pricing unavailable, using built-in estimates: ${state}`);
-    }
-  }
-
-  const builtin = builtinMap();
-
-  function priceFor(model) {
-    const userHit = lookupExact(userMap, model);
-    if (userHit) return userHit;
-    const litellmHit = lookupExact(litellmMap, model);
-    if (litellmHit) return litellmHit;
-    return builtin(model);
-  }
+  const lite = await loadLitellmPricing(path.join(dir, 'cache', 'litellm-pricing.json'), { offline, force, now, fetchImpl });
+  if (lite.warning) warnings.push(`LiteLLM pricing unavailable, using cached/built-in estimates: ${lite.warning}`);
+  const records = [
+    ...BUILTIN_RULES.map((rule) => priceRecord({ name: rule.match, ...perToken({ ...rule, source: 'builtin' }) })),
+    ...(lite.map?.records ?? []),
+    ...(userMap?.records ?? []),
+  ].filter(Boolean);
+  const lookup = createPriceLookup(records);
 
   return {
-    priceFor,
+    priceFor: (model, client) => lookup(model, client),
+    records,
     warnings,
-    sources: { user: Boolean(userMap), litellm: litellmState, builtin: true },
+    sources: { user: Boolean(userMap), litellm: lite.state, builtin: true },
+    sourceDetails: { litellm: { fetchedAt: lite.fetchedAt == null ? null : new Date(lite.fetchedAt).toISOString(), url: LITELLM_URL, state: lite.state } },
     configDir: dir,
   };
 }

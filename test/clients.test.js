@@ -18,7 +18,7 @@ import { parseArgs } from '../src/args.js';
 
 const fixtures = path.join(path.dirname(fileURLToPath(import.meta.url)), 'fixtures');
 
-test('Cursor client reads imported SQLite rows for CLI reports without estimating Included costs', async () => {
+test('Cursor client reads imported SQLite rows; offline without a price cache leaves Included unpriced', async () => {
   const tmp = await mkdtemp(path.join(os.tmpdir(), 'toksight-cursor-'));
   const env = { TOKSIGHT_CONFIG_DIR: tmp };
   const db = createUsageDatabase({ env, home: tmp });

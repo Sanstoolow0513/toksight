@@ -84,7 +84,7 @@ zcode   glm-5.3             41   116K    1.99M        0   43.3K  94.5%   $0.870
 --open           open the printed URL in a browser (web only)
 --no-open        leave the browser closed (web only; default)
 --api-only       web: serve only the JSON API, no static dashboard
---offline        skip the LiteLLM pricing fetch
+--offline        skip LiteLLM and Cursor pricing fetches
 --no-color       disable ANSI colors
 ```
 
@@ -94,14 +94,15 @@ Day grouping and date filters use your **local** timezone.
 
 ## Pricing
 
-Costs are computed per request from token counts, with three layers (later wins):
+For agents other than Cursor, costs are computed per request from token counts with three
+layers (later wins):
 
 1. **Built-in table** — best-effort USD-per-MTok estimates for common model families,
    always available offline.
 2. **LiteLLM** — fetched from the community
    [model prices](https://github.com/BerriAI/litellm/blob/main/model_prices_and_context_window.json)
-   list with a 1-hour disk cache at `<config>/toksight/cache/litellm-pricing.json`. This is the
-   freshest source; skip it with `--offline`.
+   list with a 7-day disk cache at `<config>/toksight/cache/litellm-pricing.json`. `--offline`
+   uses an existing cache without a network request.
 3. **User overrides** — edit `<config>/toksight/pricing.json` (per-MTok USD):
 
    ```json
@@ -115,8 +116,28 @@ Costs are computed per request from token counts, with three layers (later wins)
 `<config>` is `%XDG_CONFIG_HOME% || ~/.config` (override with `TOKSIGHT_CONFIG_DIR`).
 Models without a price are still counted; their cost shows as `—` and they are listed under
 `pricing.unpricedModels` in JSON output. OpenCode costs reported by OpenCode itself are used as-is.
-Cursor CSV `Included` costs have no per-event USD amount and stay unpriced; numeric CSV costs and
-`Free` are used as reported. Public model prices are never applied to Cursor subscription usage.
+For Cursor CSV `Included` rows, toksight fetches the official
+[Models & Pricing](https://cursor.com/docs/models-and-pricing) Markdown table and estimates a
+**reference cost** from that model's input, cache-write, cache-read and output rates. These
+estimates appear in cost totals and rankings but are not charges on your Cursor bill. Numeric CSV
+costs and `Free` remain authoritative. Unknown models (including `Auto` without a routed model)
+stay unpriced. Cursor rates are cached for 7 days at `<config>/toksight/cache/cursor-pricing.json`;
+`--offline` uses a cached copy, if available. `pricing.sources.cursor` reports the cache state,
+and dashboard `costCoverage.sources.cursor` separates these estimates from reported charges.
+The cached published rate is applied to historical rows; past plan rates, long-context multipliers,
+regional uplift and other billing terms can make the reference estimate differ from actual usage value.
+Older imports did not save the CSV Cost label, so their unknown costs are treated as `Included`
+when the database is upgraded.
+Both sources are normalized into `model_prices` in toksight's own `usage.sqlite`: one row per
+source, billing scope and model ID, with USD-per-token rates. `price_updates` records each source's
+last successful fetch and check. Cursor's billing scope uses only Cursor rates. CSV IDs such as
+`cursor-grok-4.6-xhigh-fast` resolve to `grok-4.6-fast`, with `xhigh` retained as an effort level;
+Fast, 500k and Max variants keep distinct IDs. Other agents use the generic source priority
+above. A published price applied to older usage is a current-rate reference estimate, not a
+historical bill. The model card shows the matched rates per million tokens when one agent owns
+that model row; the JSON `pricing.modelRates` array includes model IDs, effort and rates.
+When Cursor lists `-` for a cache rate, those tokens use the listed input rate as a fallback;
+`costCoverage.cacheFallbackRequests` counts affected requests.
 
 When a LiteLLM entry has no separate cache prices, cached tokens are billed at that model's input
 price — a deliberately conservative overestimate (real cache reads are usually ~10% of the input
@@ -136,7 +157,14 @@ Click the toolbar's refresh button, call `POST /api/refresh`, or run `toksight r
 all agents and update the database in one transaction. A failed refresh keeps the previous
 snapshot. The web server notices a refresh made by another toksight process. Refreshing also
 updates the displayed report and open day card; the footer shows when the database was last
-refreshed. `toksight refresh --offline` skips the pricing fetch.
+refreshed. `toksight refresh --offline` skips pricing fetches.
+
+The **Update prices** button calls `POST /api/prices/update` to check LiteLLM and Cursor together,
+even within the 7-day interval. Startup and report requests check automatically only when a
+source is at least 7 days old; failed checks are retried after an hour. Last successful source
+fetch times appear in the report footer and `pricing.updates`. Price updates revalue existing
+estimates without rescanning usage or replacing reported charges. `--offline` disables the
+manual network update.
 
 To add Cursor history, export **Usage Events** as CSV in Cursor, open `toksight web`, and choose
 **Import Cursor CSV** in the toolbar. The file is sent only to the local toksight server and its
@@ -188,7 +216,8 @@ report requests; the day panel asks for a single day the same way) or `?client=c
 used alone; presets cannot combine with explicit dates. Unknown, duplicate or invalid parameters
 return HTTP 400. `POST /api/refresh` updates the database and returns its refresh time and entry
 count and collection warnings. The web API's additive `snapshot` field exposes the refresh time
-and count. `POST /api/import/cursor` accepts a UTF-8 Cursor usage CSV (up to 20 MB) and returns
+and count. `POST /api/prices/update` refreshes both public price sources without rescanning
+usage. `POST /api/import/cursor` accepts a UTF-8 Cursor usage CSV (up to 20 MB) and returns
 imported, updated-charge, duplicate and skipped row counts. Cross-origin write requests are rejected.
 
 ### Dashboard bundle
@@ -219,8 +248,9 @@ separates fresh input, cache reads and cache writes.
 
 toksight is local-first: the CLI and web report only **read** your agents' session files. Refresh
 writes toksight's own SQLite database under its config directory; nothing is uploaded or written
-back to agent files. Cursor CSV imports are stored in that database. The single external network call
-is the anonymous LiteLLM pricing fetch; run `--offline` to disable even that. Report images are
+back to agent files. Cursor CSV imports are stored in that database. The only external requests
+fetch public LiteLLM prices and Cursor's official Markdown price table. Run `--offline` to
+disable both network requests. Report images are
 rendered in your browser and saved only where you download them.
 
 ## JSON output

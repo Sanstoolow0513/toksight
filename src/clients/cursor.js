@@ -25,9 +25,12 @@ export async function collect({ env, home, roots } = {}) {
   let db;
   try {
     db = await openSqliteReadOnly(file);
-    const rows = db.prepare('SELECT rowid, fingerprint, data_json, reported_cost FROM cursor_imports ORDER BY rowid').all();
-    const entries = selectCursorImports(rows, warnings).map((row) => row.entry);
-    return { entries, warnings };
+    const hasIncluded = db.prepare('PRAGMA table_info(cursor_imports)').all().some((column) => column.name === 'included');
+    const rows = db.prepare(`SELECT rowid, fingerprint, data_json, reported_cost, ${hasIncluded ? 'included' : '1 AS included'} FROM cursor_imports ORDER BY rowid`).all();
+    const selected = selectCursorImports(rows, warnings);
+    const entries = selected.map((row) => row.entry);
+    const includedCosts = new WeakSet(selected.filter((row) => row.included).map((row) => row.entry));
+    return { entries, warnings, includedCosts };
   } catch (err) {
     if (!/no such table: cursor_imports/.test(String(err?.message))) warnings.push(`cursor: database unreadable (${err?.message || err})`);
     return { entries: [], warnings };

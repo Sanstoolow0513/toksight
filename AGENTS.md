@@ -9,7 +9,8 @@ report: one page per calendar month or year
 with three reorderable cards (heatmap · agents · models), a click-a-day detail card and PNG
 export (there is no TUI).
 Local-first: nothing is written to agent files. Refresh writes toksight's own SQLite database.
-The sole external network call is the LiteLLM pricing fetch (skippable with `--offline`).
+External calls fetch LiteLLM prices and Cursor's official Markdown price table for the shared
+price catalog; `--offline` skips both network requests.
 
 ## Commands
 
@@ -47,13 +48,17 @@ src/database.js     project-owned SQLite usage snapshot (transactional refresh, 
                     provenance, preload, cross-process change detection); durable Cursor
                     imports survive refresh and are merged into snapshot reads
 src/cursorcsv.js    zero-dependency Cursor Usage Events CSV parser (quotes/BOM/CRLF, row keys)
+src/cursorpricing.js Cursor official Markdown price table (7-day cache, model ID lookup);
+                    `Included` reference estimates use these rates, not LiteLLM prices
+src/pricecatalog.js shared model IDs, billing scopes and USD-per-token lookup for every source;
+                    Cursor effort is separated from priced variants such as Fast and 500k
 src/webservice.js   createWebDataService — GETs filter the committed snapshot; concurrent
                     refreshes share one collection/write promise
 src/webquery.js     query-param validation; intersects startup scope (never widens);
                     invalid/duplicate params → HTTP 400
 src/comparison.js   adjacent equal-calendar-day comparison, contributions, coverage,
                     explicit no-baseline/incomplete states
-src/costcoverage.js cost-source counts/amounts (reported/user/LiteLLM/builtin), unpriced,
+src/costcoverage.js cost-source counts/amounts (reported/Cursor/user/LiteLLM/builtin), unpriced,
                     used cache-fallback counts; one price snapshot for both periods
 src/render.js       all text rendering + renderJson + warnings + empty-state page
 src/payload.js      buildPayload — the --json contract (see Gotchas)
@@ -64,13 +69,14 @@ src/dates.js        the ONLY home for local-time date math (startOfDay/endOfDay/
 src/clients/        one parser per agent; Cursor reads web-imported rows from toksight SQLite;
                     index.js holds clients + clientAliases;
                     sqlite.js centralizes the node:sqlite readOnly open
-src/pricing.js      builtin → LiteLLM (1h disk cache) → user overrides; { exact, suffix }
-                    lookup maps (suffix pre-index is O(1))
+src/pricing.js      builtin → LiteLLM (7-day disk cache) → user overrides; all feed the
+                    shared model price catalog in toksight SQLite
 src/aggregate.js    grouping/totals (summarize, byModel/Day/Month/Session, cacheHitRate)
 src/webdata.js      pure dashboard aggregations (heatmap, trend, hourly, sessions…); day
  math imported only from src/dates.js
 src/webserver.js    zero-dep node:http — static web/out + GET/HEAD /api/data,
-                    POST /api/refresh and POST /api/import/cursor (same-origin guarded);
+                    POST /api/refresh, POST /api/prices/update and POST /api/import/cursor
+                    (same-origin guarded);
  any other /api/* path is a JSON 404. Serving rules → Gotchas
 src/format.js       ANSI tables & number formatting
 src/fsutils.js      walkFiles/walkFilesMany/readJsonl/readJson/pathExists (warning
@@ -99,8 +105,10 @@ Every parser emits records with exactly: `client, sessionId, model, timestamp` (
 `costUsd` (see below), `directory, title`. Cost is computed centrally in `src/collect.js`
 (`collectAll` → `computeCost`) — parsers leave `costUsd: null` unless the agent itself reports
 cost (OpenCode), or Cursor's imported CSV reports a numeric charge / `Free`. Cursor `Included`
-stays null and never receives a public-price estimate. Cursor CSV has no session ID: use null,
-and aggregations omit its session counts/details.
+is stored as null but report reads estimate its reference cost from Cursor's published
+model rates; numeric CSV charges always win. The estimate is not a billed amount and
+`costCoverage.sources.cursor` tracks it. Cursor CSV has no session ID: use null, and aggregations
+omit its session counts/details.
 
 ## Gotchas & rules
 
@@ -134,7 +142,7 @@ and aggregations omit its session counts/details.
   `OPENCODE_PATH`, `KIMI_CODE_HOME`). `collectAll(opts, { env, home })` threads the injection
   through the whole pipeline (pricing config included), pinned by `test/cli.test.js`.
 - **`--json` output is a user-facing contract**: shape is `totals, cacheHitRate, clients, models,
-  daily, monthly, sessions, pricing (incl. unpricedModels), warnings` — don't break it
+  daily, monthly, sessions, pricing (incl. unpricedModels, modelRates, updates), warnings` — don't break it
   (`buildPayload` in `src/payload.js`). `toksight refresh --json` returns database status instead.
   `GET /api/data` reuses the report payload and layers the
   `src/webdata.js` extras additively (heatmap, trend, trendByAgent, hourly, today, last7Days,
@@ -155,6 +163,12 @@ and aggregations omit its session counts/details.
   `Input (w/ Cache Write)` to cache writes, `Input (w/o Cache Write)` to fresh input, and
   `Cache Read` to cache reads. Refresh preserves imports; CLI collection reads them from the
   same database. Cross-process snapshot reads include them through SQLite `data_version`.
+  Official model rates are cached for 7 days. Web startup and report reads check both public
+  price sources when due; the manual price button forces both through `POST /api/prices/update`.
+  Normalized USD-per-token rates live in `model_prices`, fetch state in `price_updates`, and
+  reports price entries through the shared scoped model-ID resolver without rescanning agents.
+  Keep reported charges distinct from official-rate estimates; `Auto` with no routed model stays
+  unpriced. Historical rows use cached published rates, so these are reference values.
 - **Cache hit rate** = `cacheRead / (freshInput + cacheRead)`; cache *writes* are excluded (cold
   traffic being stored, not served). Attributed **per request** — each entry carries its own
   model and token split, so a session that switched models splits cleanly across per-agent /
@@ -176,7 +190,7 @@ and aggregations omit its session counts/details.
   trend/heatmap rows capped at the last 366 days (totals/comparison stay complete); without a
   start date comparison uses seven days ending on the selected end date/today, and is
   unavailable if the previous window falls outside startup scope. A loopback-bound server
-  rejects `/api/data`, `/api/refresh`, and `/api/import/cursor` requests whose Host header is not
+  rejects `/api/data`, `/api/refresh`, `/api/prices/update`, and `/api/import/cursor` requests whose Host header is not
   a localhost name (DNS rebinding); write routes also reject cross-origin browser requests;
   `--host 0.0.0.0` opts out on purpose.
 - **Web report**: the page requests one calendar period at a time

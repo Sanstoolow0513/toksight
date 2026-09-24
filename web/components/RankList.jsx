@@ -20,9 +20,10 @@ export function ShareBar({ share, parts, metric }) {
   );
 }
 
-export function RankRow({ rank, name, mono = false, lead, row, metric, tx, muted = false }) {
+export function RankRow({ rank, name, mono = false, lead, extra, row, metric, tx, muted = false }) {
   const meta = [
     lead,
+    extra,
     metric === 'cost' ? `${fmtTokens(row.totalTokens)} tokens` : costText(row, tx),
     row.cacheHitRate != null ? tx('rowCache', { pct: fmtPct(row.cacheHitRate) }) : null,
     tx('rowRequests', { n: fmtInt(row.requests) }),

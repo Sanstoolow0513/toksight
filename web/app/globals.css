@@ -867,6 +867,11 @@ button.mcell:focus-visible {
   font-size: 12px;
 }
 
+.report-foot a {
+  color: inherit;
+  text-underline-offset: 2px;
+}
+
 .foot-brand {
   display: inline-flex;
   align-items: center;
