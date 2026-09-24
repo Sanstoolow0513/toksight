@@ -500,17 +500,7 @@ code {
 }
 
 .card-heading {
-  display: flex;
-  align-items: baseline;
-  gap: 14px;
   min-width: 0;
-}
-
-.card-no {
-  font-family: var(--serif);
-  font-size: 16px;
-  color: var(--accent);
-  font-variant-numeric: lining-nums tabular-nums;
 }
 
 .card-title {

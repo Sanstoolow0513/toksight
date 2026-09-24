@@ -6,7 +6,7 @@ import { modelRows } from '@/lib/report';
 import { periodLabel } from '@/lib/i18n';
 import { fmtCost } from '@/lib/format';
 
-export default function ModelsCard({ data, period, metric, onMetric, agentLabel, locale, tx, index, handleProps }) {
+export default function ModelsCard({ data, period, metric, onMetric, agentLabel, locale, tx, handleProps }) {
   const { rows, others } = useMemo(() => modelRows(data.models, metric), [data.models, metric]);
   const rates = useMemo(() => new Map((data.pricing?.modelRates ?? []).map((rate) => [`${rate.client}\0${rate.model}`, rate])), [data.pricing]);
   const commonRate = (row) => {
@@ -18,7 +18,6 @@ export default function ModelsCard({ data, period, metric, onMetric, agentLabel,
   };
   return (
     <Card
-      index={index}
       handleProps={handleProps}
       title={tx('cardModels')}
       subtitle={tx(metric === 'cost' ? 'subRankCost' : 'subRankTokens', { period: periodLabel(locale, period) })}

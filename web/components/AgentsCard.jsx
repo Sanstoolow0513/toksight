@@ -5,11 +5,10 @@ import { PartsLegend, RankRow } from '@/components/RankList';
 import { agentRows } from '@/lib/report';
 import { periodLabel } from '@/lib/i18n';
 
-export default function AgentsCard({ data, period, metric, onMetric, agentLabel, locale, tx, index, handleProps }) {
+export default function AgentsCard({ data, period, metric, onMetric, agentLabel, locale, tx, handleProps }) {
   const rows = useMemo(() => agentRows(data.clients, metric), [data.clients, metric]);
   return (
     <Card
-      index={index}
       handleProps={handleProps}
       title={tx('cardAgents')}
       subtitle={tx(metric === 'cost' ? 'subRankCost' : 'subRankTokens', { period: periodLabel(locale, period) })}

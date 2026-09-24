@@ -126,7 +126,7 @@ function DayTip({ date, row, today, locale, tx }) {
   );
 }
 
-export default function HeatmapCard({ data, period, today, selected, onSelect, metric, onMetric, locale, tx, index, handleProps }) {
+export default function HeatmapCard({ data, period, today, selected, onSelect, metric, onMetric, locale, tx, handleProps }) {
   const [tip, setTip] = useState(null);
   const { since, until } = periodBounds(period);
   const days = useMemo(() => dailyMap(data.daily), [data.daily]);
@@ -146,7 +146,6 @@ export default function HeatmapCard({ data, period, today, selected, onSelect, m
 
   return (
     <Card
-      index={index}
       handleProps={handleProps}
       title={tx('cardHeat')}
       subtitle={tx(metric === 'cost' ? 'subHeatCost' : 'subHeatTokens', { period: label })}

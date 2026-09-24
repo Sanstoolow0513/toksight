@@ -1,17 +1,12 @@
 import { GripVertical } from 'lucide-react';
 
-// Chapter card: the number follows the card's current position, so a
-// reordered (or exported) report still reads 01 → 02 → 03.
-export default function Card({ index, title, subtitle, actions, handleProps, children }) {
+export default function Card({ title, subtitle, actions, handleProps, children }) {
   return (
     <section className="card">
       <header className="card-head">
         <div className="card-heading">
-          <span className="card-no">{String(index + 1).padStart(2, '0')}</span>
-          <div>
-            <h2 className="card-title">{title}</h2>
-            <p className="card-sub">{subtitle}</p>
-          </div>
+          <h2 className="card-title">{title}</h2>
+          <p className="card-sub">{subtitle}</p>
         </div>
         <div className="card-actions no-export">
           {actions}

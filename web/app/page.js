@@ -288,8 +288,8 @@ export default function Page() {
         </section>
 
         <SortableCards order={order} onReorder={onReorder} handleLabel={tx('dragHandle')}>
-          {(id, { index, handleProps }) => {
-            const shared = { ...cardProps, index, handleProps, metric: metrics[id], onMetric: onMetric(id) };
+          {(id, { handleProps }) => {
+            const shared = { ...cardProps, handleProps, metric: metrics[id], onMetric: onMetric(id) };
             if (id === 'heatmap') return <HeatmapCard {...shared} today={today} selected={selectedDay} onSelect={onSelectDay} />;
             if (id === 'agents') return <AgentsCard {...shared} />;
             return <ModelsCard {...shared} />;
