@@ -66,7 +66,7 @@ export const writeOrder = (v) => write(KEYS.order, JSON.stringify(v));
 
 export function readMetrics() {
   const v = readJson(KEYS.metrics) ?? {};
-  return Object.fromEntries(CARD_IDS.map((id) => [id, METRICS.includes(v[id]) ? v[id] : 'tokens']));
+  return Object.fromEntries(CARD_IDS.map((id) => [id, METRICS.includes(v[id]) ? v[id] : id === 'models' ? 'cost' : 'tokens']));
 }
 export const writeMetrics = (v) => write(KEYS.metrics, JSON.stringify(v));
 

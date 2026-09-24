@@ -1,25 +1,27 @@
 'use client';
 
-// toksight report: a centred column on a dot grid — hero (period + KPIs),
-// three reorderable chapter cards (heatmap · agents · models) and a footer.
+// toksight report: a centred column on a dot grid — KPIs, three reorderable
+// chapter cards (heatmap · agents · models) and a footer.
 // Everything inside `.report` is what "Export image" captures. Clicking a
 // heatmap day opens the day card beside the column (the pair re-centres on
 // wide screens; it floats over the page on narrow ones); the card never
 // enters the exported image.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { CircleCheck, Inbox, RefreshCw, TriangleAlert } from 'lucide-react';
+import { Inbox, RefreshCw, TriangleAlert } from 'lucide-react';
 import Toolbar from '@/components/Toolbar';
+import ReportActions from '@/components/ReportActions';
 import SortableCards from '@/components/SortableCards';
 import HeatmapCard from '@/components/HeatmapCard';
 import AgentsCard from '@/components/AgentsCard';
 import ModelsCard from '@/components/ModelsCard';
 import DayPanel from '@/components/DayPanel';
 import BrandMark from '@/components/BrandMark';
+import Toasts, { useToasts } from '@/components/Toasts';
 import { useDayReport, useReport } from '@/lib/useReport';
-import { currentPeriod, dayKey, dayNav, periodBounds, periodKey, periodNav, shiftDay, shiftPeriod, withMode } from '@/lib/period';
+import { currentPeriod, dayKey, dayNav, periodKey, periodNav, shiftDay, shiftPeriod, withMode } from '@/lib/period';
 import { fmtCost, fmtDateTime, fmtInt, fmtPct, fmtTokens } from '@/lib/format';
-import { DEFAULT_LOCALE, dayLabel, periodLabel, t } from '@/lib/i18n';
+import { DEFAULT_LOCALE, periodLabel, t } from '@/lib/i18n';
 import { exportReportImage } from '@/lib/exportImage';
 import * as prefs from '@/lib/prefs';
 import { coded } from '@/components/Coded';
@@ -49,11 +51,7 @@ function StateCard({ icon, title, children }) {
 function Skeleton() {
   return (
     <div className="report" aria-busy="true">
-      <div className="hero">
-        <div className="skel" style={{ width: 180, height: 14 }} />
-        <div className="skel" style={{ width: 280, height: 44, marginTop: 14 }} />
-        <div className="skel skel-kpis" />
-      </div>
+      <div className="skel skel-kpis" />
       {[320, 260, 300].map((h) => (
         <div key={h} className="skel skel-card" style={{ height: h }} />
       ))}
@@ -67,25 +65,36 @@ export default function Page() {
   const [period, setPeriod] = useState(null);
   const [today, setToday] = useState(null);
   const [order, setOrder] = useState(prefs.CARD_IDS);
-  const [metrics, setMetrics] = useState(() => Object.fromEntries(prefs.CARD_IDS.map((id) => [id, 'tokens'])));
+  const [metrics, setMetrics] = useState(() => Object.fromEntries(prefs.CARD_IDS.map((id) => [id, id === 'models' ? 'cost' : 'tokens'])));
   const [exporting, setExporting] = useState(false);
-  const [exportError, setExportError] = useState(null);
-  const [refreshError, setRefreshError] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
   const [priceUpdating, setPriceUpdating] = useState(false);
-  const [priceError, setPriceError] = useState(null);
-  const [priceResult, setPriceResult] = useState(null);
   const [importing, setImporting] = useState(false);
-  const [importError, setImportError] = useState(null);
-  const [importResult, setImportResult] = useState(null);
   const [refreshRevision, setRefreshRevision] = useState(0);
   const [selectedDay, setSelectedDay] = useState(null);
   const [dayMetric, setDayMetric] = useState('tokens');
   const reportRef = useRef(null);
+  const toasts = useToasts();
+  const { push: pushToast } = toasts;
   const report = useReport(period, refreshRevision);
   const dayReport = useDayReport(selectedDay, refreshRevision);
   const { data } = report;
   const shown = report.period;
+
+  // With a report on screen a failed reload keeps it and only raises a toast;
+  // collection warnings pop up again only when their content changes.
+  const staleError = data ? report.error : null;
+  useEffect(() => {
+    if (staleError) pushToast({ key: 'report-error', tone: 'error', message: ['errorBody', { error: staleError }] });
+  }, [staleError, pushToast]);
+  const warningText = data?.warnings?.length ? data.warnings.join('\n') : '';
+  const lastWarningText = useRef('');
+  useEffect(() => {
+    if (!warningText || warningText === lastWarningText.current) return;
+    lastWarningText.current = warningText;
+    const items = warningText.split('\n');
+    pushToast({ key: 'warnings', tone: 'warn', message: ['warnings', { n: items.length }], details: { items } });
+  }, [warningText, pushToast]);
 
   useEffect(() => {
     const now = new Date();
@@ -140,7 +149,6 @@ export default function Page() {
   };
   const onRefresh = async () => {
     setRefreshing(true);
-    setRefreshError(null);
     try {
       const res = await fetch('/api/refresh', { method: 'POST', cache: 'no-store' });
       const body = await res.json().catch(() => ({}));
@@ -148,31 +156,30 @@ export default function Page() {
       setToday(dayKey(new Date()));
       setRefreshRevision((n) => n + 1);
     } catch (err) {
-      setRefreshError(String(err?.message || err));
+      pushToast({ key: 'refresh', tone: 'error', message: ['refreshFailed', { error: String(err?.message || err) }] });
     } finally {
       setRefreshing(false);
     }
   };
   const onUpdatePrices = async () => {
     setPriceUpdating(true);
-    setPriceError(null);
-    setPriceResult(null);
     try {
       const res = await fetch('/api/prices/update', { method: 'POST', cache: 'no-store' });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body.error || `HTTP ${res.status}`);
-      setPriceResult(body);
+      const warnings = body.warnings ?? [];
+      pushToast(warnings.length
+        ? { key: 'prices', tone: 'warn', message: ['priceUpdateWarnings', { count: warnings.length }], details: { items: warnings } }
+        : { key: 'prices', tone: 'success', message: ['priceUpdateSuccess'] });
       setRefreshRevision((n) => n + 1);
     } catch (err) {
-      setPriceError(String(err?.message || err));
+      pushToast({ key: 'prices', tone: 'error', message: ['priceUpdateFailed', { error: String(err?.message || err) }] });
     } finally {
       setPriceUpdating(false);
     }
   };
   const onImportCursor = async (file) => {
     setImporting(true);
-    setImportError(null);
-    setImportResult(null);
     try {
       const res = await fetch('/api/import/cursor', {
         method: 'POST', headers: { 'content-type': 'text/csv; charset=utf-8' },
@@ -180,13 +187,22 @@ export default function Page() {
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body.error || `HTTP ${res.status}`);
-      setImportResult(body);
+      const warnings = body.warnings ?? [];
+      pushToast({
+        key: 'import',
+        tone: warnings.length ? 'warn' : 'success',
+        message: ['importSuccess', {
+          imported: fmtInt(body.imported), updated: fmtInt(body.updated),
+          duplicates: fmtInt(body.duplicates), skipped: fmtInt(body.skipped + body.zeroUsage),
+        }],
+        details: { summary: ['importWarnings', { n: warnings.length }], items: warnings },
+      });
       if (body.latestAt != null) {
         setPeriod((p) => currentPeriod(p?.mode ?? 'month', new Date(Math.min(body.latestAt, Date.now()))));
       }
       setRefreshRevision((n) => n + 1);
     } catch (err) {
-      setImportError(String(err?.message || err));
+      pushToast({ key: 'import', tone: 'error', message: ['importFailed', { error: String(err?.message || err) }] });
     } finally {
       setImporting(false);
     }
@@ -211,11 +227,10 @@ export default function Page() {
     });
   const onExport = async () => {
     setExporting(true);
-    setExportError(null);
     try {
       await exportReportImage(reportRef.current, `toksight-${periodKey(shown)}.png`);
     } catch (err) {
-      setExportError(String(err?.message || err));
+      pushToast({ key: 'export', tone: 'error', message: ['exportFailed', { error: String(err?.message || err) }] });
     } finally {
       setExporting(false);
     }
@@ -245,24 +260,14 @@ export default function Page() {
     );
   } else {
     const totals = data.totals ?? {};
-    const { since, until } = periodBounds(shown);
     const unpriced = data.pricing?.unpricedModels ?? [];
     const cursorUnpriced = (data.clients?.cursor?.pricedRequests ?? 0) < (data.clients?.cursor?.requests ?? 0);
-    const modelCount = new Set((data.models ?? []).map((m) => m.model)).size;
-    const heroSub = [
-      tx('heroRange', { since: dayLabel(locale, since, true), until: dayLabel(locale, until) }),
-      since <= today && today <= until ? tx('heroAsOf', { date: dayLabel(locale, today) }) : null,
-      tx('heroAgents', { n: Object.keys(data.clients ?? {}).length }),
-      tx('heroModels', { n: modelCount }),
-    ].filter(Boolean);
     const cardProps = { data, period: shown, locale, tx, agentLabel };
 
     content = (
       <div ref={reportRef} className={report.loading ? 'report is-loading' : 'report'}>
         <section className="hero">
-          <p className="eyebrow">{tx('eyebrow')}</p>
-          <h1 className="hero-title">{periodLabel(locale, shown)}</h1>
-          <p className="hero-sub">{heroSub.join(' · ')}</p>
+          <h1 className="visually-hidden">{tx('eyebrow')} · {periodLabel(locale, shown)}</h1>
           <dl className="kpis">
             <Kpi
               label={tx('kpiTokens')}
@@ -309,16 +314,8 @@ export default function Page() {
     );
   }
 
-  const notices = [
-    data && report.error ? tx('errorBody', { error: report.error }) : null,
-    refreshError ? tx('refreshFailed', { error: refreshError }) : null,
-    priceError ? tx('priceUpdateFailed', { error: priceError }) : null,
-    importError ? tx('importFailed', { error: importError }) : null,
-    exportError ? tx('exportFailed', { error: exportError }) : null,
-  ].filter(Boolean);
-
   return (
-    <div className={selectedDay ? 'page has-panel' : 'page'}>
+    <div className="page">
       <Toolbar
         locale={locale}
         tx={tx}
@@ -331,55 +328,20 @@ export default function Page() {
         onLocale={onLocale}
         loading={report.loading || refreshing || priceUpdating || importing}
         onRefresh={onRefresh}
-        priceUpdating={priceUpdating}
-        onUpdatePrices={onUpdatePrices}
-        importing={importing}
-        onImportCursor={onImportCursor}
-        exporting={exporting}
-        onExport={onExport}
-        canExport={hasData && !report.loading}
       />
-      <div className="workspace">
+      <div className={selectedDay ? 'workspace has-panel' : 'workspace'}>
         <main className="main">
-          {priceResult ? (
-            <div className={priceResult.warnings?.length ? 'notice is-warn' : 'notice is-success'}>
-              <CircleCheck size={15} strokeWidth={2} aria-hidden="true" />
-              <span>{tx(priceResult.warnings?.length ? 'priceUpdateWarnings' : 'priceUpdateSuccess',
-                { count: priceResult.warnings?.length ?? 0 })}</span>
-              {priceResult.warnings?.length ? <ul>{priceResult.warnings.map((warning, i) => <li key={i}>{warning}</li>)}</ul> : null}
-            </div>
-          ) : null}
-          {importResult ? (
-            <div className="notice is-success" role="status">
-              <CircleCheck size={15} strokeWidth={2} aria-hidden="true" />
-              <span>{tx('importSuccess', { imported: fmtInt(importResult.imported), updated: fmtInt(importResult.updated), duplicates: fmtInt(importResult.duplicates), skipped: fmtInt(importResult.skipped + importResult.zeroUsage) })}</span>
-            </div>
-          ) : null}
-          {importResult?.warnings?.length ? (
-            <details className="notice is-warn">
-              <summary><TriangleAlert size={15} strokeWidth={2} aria-hidden="true" />{tx('importWarnings', { n: importResult.warnings.length })}</summary>
-              <ul>{importResult.warnings.map((warning, i) => <li key={i}>{warning}</li>)}</ul>
-            </details>
-          ) : null}
-          {notices.map((text) => (
-            <div key={text} className="notice is-error" role="alert">
-              <TriangleAlert size={15} strokeWidth={2} aria-hidden="true" />
-              <span>{coded(text)}</span>
-            </div>
-          ))}
-          {data?.warnings?.length ? (
-            <details className="notice is-warn">
-              <summary>
-                <TriangleAlert size={15} strokeWidth={2} aria-hidden="true" />
-                {tx('warnings', { n: data.warnings.length })}
-              </summary>
-              <ul>
-                {data.warnings.map((w, i) => (
-                  <li key={i}>{w}</li>
-                ))}
-              </ul>
-            </details>
-          ) : null}
+          <ReportActions
+            tx={tx}
+            loading={report.loading || refreshing || priceUpdating || importing}
+            priceUpdating={priceUpdating}
+            onUpdatePrices={onUpdatePrices}
+            importing={importing}
+            onImportCursor={onImportCursor}
+            exporting={exporting}
+            onExport={onExport}
+            canExport={hasData && !report.loading}
+          />
           {content}
         </main>
         <DayPanel
@@ -397,6 +359,7 @@ export default function Page() {
           agentLabel={agentLabel}
         />
       </div>
+      <Toasts toasts={toasts.toasts} onDismiss={toasts.dismiss} tx={tx} />
     </div>
   );
 }

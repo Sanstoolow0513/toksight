@@ -6,7 +6,7 @@
 import { createRequire } from 'node:module';
 
 import * as agg from './aggregate.js';
-import { modelIdentity } from './pricecatalog.js';
+import { modelIdentity, reportModelName } from './pricecatalog.js';
 
 const require = createRequire(import.meta.url);
 const pkg = require('../package.json');
@@ -22,7 +22,8 @@ function modelRateRows(entries, pricing) {
     const identity = modelIdentity(entry.model, entry.client);
     rows.push({
       client: entry.client, scope: entry.client === 'cursor' ? 'cursor' : 'default',
-      model: entry.model, modelId: rate?.modelId ?? identity.id,
+      model: entry.model, displayModel: reportModelName(entry.model, entry.client, rate),
+      modelId: rate?.modelId ?? identity.id,
       effort: identity.effort, source: validRate ? rate.source : null, pool: rate?.pool ?? null,
       ...(validRate ? { input: rate.input * 1e6, cacheRead: rate.cacheRead * 1e6,
         cacheWrite: rate.cacheWrite * 1e6, output: rate.output * 1e6 } : {}),
@@ -52,9 +53,10 @@ export function buildPayload(ctx) {
     clients: Object.fromEntries(
       agg.byClient(entries).map((r) => [r.client, { ...r.totals, cacheHitRate: agg.cacheHitRate(r.totals) }]),
     ),
-    models: agg.byModel(entries).map((r) => ({
+    models: agg.byModel(entries, pricing.priceFor).map((r) => ({
       client: r.client,
       model: r.model,
+      modelIds: r.modelIds,
       ...r.totals,
       cacheHitRate: agg.cacheHitRate(r.totals),
       firstAt: r.firstAt,
@@ -62,7 +64,7 @@ export function buildPayload(ctx) {
     })),
     daily: agg.byDay(entries).map((r) => ({ date: r.key, ...r.totals, cacheHitRate: agg.cacheHitRate(r.totals) })),
     monthly: agg.byMonth(entries).map((r) => ({ month: r.key, ...r.totals, cacheHitRate: agg.cacheHitRate(r.totals) })),
-    sessions: agg.bySession(entries).slice(0, opts.top).map((r) => ({
+    sessions: agg.bySession(entries, pricing.priceFor).slice(0, opts.top).map((r) => ({
       client: r.client,
       sessionId: r.sessionId,
       directory: r.directory,
@@ -76,7 +78,7 @@ export function buildPayload(ctx) {
     pricing: {
       sources: pricing.sources,
       configDir: pricing.configDir,
-      unpricedModels: agg.unpricedModels(entries),
+      unpricedModels: agg.unpricedModels(entries, pricing.priceFor),
       updates: pricing.updates ?? pricing.sourceDetails ?? {},
       modelRates: modelRateRows(entries, pricing),
     },

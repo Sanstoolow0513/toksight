@@ -86,24 +86,14 @@ function sumInto(target, row) {
   return target;
 }
 
-// The payload groups models per (agent, model); the report merges one model
-// used through several agents. Beyond `limit` rows the tail folds into one
-// "others" row so the card keeps a fixed height.
+// The payload groups each agent's spelling variants under one display model.
+// Keep agents separate so every row attributes its usage and cost to one agent.
+// Beyond `limit` rows the tail folds into one "others" row.
 export function modelRows(models = [], metric = 'tokens', limit = 8) {
-  const byName = new Map();
-  for (const row of models) {
-    let merged = byName.get(row.model);
-    if (!merged) {
-      merged = { id: row.model, model: row.model, clients: [] };
-      byName.set(row.model, merged);
-    }
-    sumInto(merged, row);
-    if (!merged.clients.includes(row.client)) merged.clients.push(row.client);
-  }
-  const ranked = rank([...byName.values()], metric);
+  const ranked = rank(models.map((row) => ({ ...row, id: JSON.stringify([row.client, row.model]) })), metric);
   if (ranked.length <= limit) return { rows: ranked, others: null, count: ranked.length };
   const tail = ranked.slice(limit - 1);
-  const others = rank([tail.reduce((acc, row) => sumInto(acc, row), { id: '__others__', clients: [] })], metric)[0];
+  const others = rank([tail.reduce((acc, row) => sumInto(acc, row), { id: '__others__' })], metric)[0];
   others.share = tail.reduce((sum, row) => sum + row.share, 0);
   others.count = tail.length;
   return { rows: ranked.slice(0, limit - 1), others, count: ranked.length };

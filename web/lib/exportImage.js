@@ -1,6 +1,6 @@
 'use client';
 
-// Renders the report column (hero + cards in their current order + footer)
+// Renders the report column (KPIs + cards in their current order + footer)
 // to a PNG. Controls marked `.no-export` are dropped from the clone; the dot
 // grid is painted onto the clone's root because the page background lives on
 // <body>, outside the captured node. The clone copies computed styles, so

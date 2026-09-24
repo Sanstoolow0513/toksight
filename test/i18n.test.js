@@ -7,7 +7,7 @@ test('i18n returns Chinese by default and interpolates', () => {
   assert.equal(t('zh-CN', 'refresh'), '刷新数据库');
   assert.equal(t('en', 'refresh'), 'Refresh database');
   assert.equal(t('zh-CN', 'statStreakValue', { n: 12 }), '12 天');
-  assert.equal(t('en', 'others', { n: 3 }), '3 other models');
+  assert.equal(t('en', 'others', { n: 3 }), '3 other model uses');
   assert.equal(t('en', 'heroAgents', { n: 1 }), '1 agent');
   assert.equal(t('en', 'rowRequests', { n: '1' }), '1 request');
   assert.equal(t('en', 'rowRequests', { n: '1,001' }), '1,001 requests');

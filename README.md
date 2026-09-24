@@ -65,9 +65,9 @@ Top models (up to 20)
 Client  Model              Req  Input  Cache R  Cache W  Output    Hit     Cost
 ──────  ─────────────────  ───  ─────  ───────  ───────  ──────  ─────  ───────
 kimi    kimi-code/k3       422   986K   29.01M        0    293K  96.7%    $4.51
-codex   gpt-5.6-sol         62   183K    1.79M        0   25.7K  90.8%    $1.96
-zcode   glm-5.3-flash      487  2.51M   28.45M        0    442K  91.9%    $1.45
-zcode   glm-5.3             41   116K    1.99M        0   43.3K  94.5%   $0.870
+codex   GPT-5.6 Sol         62   183K    1.79M        0   25.7K  90.8%    $1.96
+zcode   GLM-5.3 Flash      487  2.51M   28.45M        0    442K  91.9%    $1.45
+zcode   GLM-5.3             41   116K    1.99M        0   43.3K  94.5%   $0.870
 ```
 
 ### Options
@@ -132,10 +132,12 @@ Both sources are normalized into `model_prices` in toksight's own `usage.sqlite`
 source, billing scope and model ID, with USD-per-token rates. `price_updates` records each source's
 last successful fetch and check. Cursor's billing scope uses only Cursor rates. CSV IDs such as
 `cursor-grok-4.6-xhigh-fast` resolve to `grok-4.6-fast`, with `xhigh` retained as an effort level;
-Fast, 500k and Max variants keep distinct IDs. Other agents use the generic source priority
+`opus5.5-high` resolves to the official Claude Opus 5.5 rate. Fast, 500k and Max variants keep
+distinct IDs. Other agents use the generic source priority
 above. A published price applied to older usage is a current-rate reference estimate, not a
-historical bill. The model card shows the matched rates per million tokens when one agent owns
-that model row; the JSON `pricing.modelRates` array includes model IDs, effort and rates.
+historical bill. Requests are priced using their original model ID, then grouped for display by
+agent and normalized model name. The model card shows a per-million-token rate when every ID in
+that row has the same rate; JSON `pricing.modelRates` retains raw IDs, effort and rates.
 When Cursor lists `-` for a cache rate, those tokens use the listed input rate as a fallback;
 `costCoverage.cacheFallbackRequests` counts affected requests.
 
@@ -159,7 +161,7 @@ snapshot. The web server notices a refresh made by another toksight process. Ref
 updates the displayed report and open day card; the footer shows when the database was last
 refreshed. `toksight refresh --offline` skips pricing fetches.
 
-The **Update prices** button calls `POST /api/prices/update` to check LiteLLM and Cursor together,
+The **Update prices** card beside the report calls `POST /api/prices/update` to check LiteLLM and Cursor together,
 even within the 7-day interval. Startup and report requests check automatically only when a
 source is at least 7 days old; failed checks are retried after an hour. Last successful source
 fetch times appear in the report footer and `pricing.updates`. Price updates revalue existing
@@ -167,7 +169,7 @@ estimates without rescanning usage or replacing reported charges. `--offline` di
 manual network update.
 
 To add Cursor history, export **Usage Events** as CSV in Cursor, open `toksight web`, and choose
-**Import Cursor CSV** in the toolbar. The file is sent only to the local toksight server and its
+**Import Cursor CSV** beside the report. The file is sent only to the local toksight server and its
 usage rows are saved in `usage.sqlite`; repeat or overlapping exports are matched by timestamp,
 model and token counts, so changes to billing labels or charges do not add tokens twice. Imports
 remain available after refresh and in CLI reports (`--client cursor`). Rows with zero tokens are
@@ -180,9 +182,10 @@ a model name or token counts, that event may be counted again. The import report
 The dashboard is a one-page **token usage & cost report** for a calendar month or a whole year,
 in Claude's warm light/dark palette on a sparse dot grid (visual spec: `design-spec.md`). The
 toolbar picks **Month / Year** and steps through periods (back to your first recorded day, never
-into the future), switches light / dark / system theme and 中文 / EN, refreshes, and exports the
-report as an image. Under a header with the period's tokens, reference cost, cache hit rate and
-requests come three chapter cards:
+into the future), switches light / dark / system theme and 中文 / EN, and refreshes. Three small
+cards beside the report import Cursor CSV, export an image, and update prices; on narrow screens
+they sit above the report. The report starts with the period's tokens, reference cost, cache hit
+rate and requests, followed by three chapter cards:
 
 1. **Activity heatmap** — a calendar (month) or 53-week grid (year) of daily tokens or cost
    (toggle on the card), plus active days, average per active day, peak day, longest streak and
@@ -190,8 +193,10 @@ requests come three chapter cards:
 2. **By agent** — each agent's share of the period's tokens or cost. In token mode the bar splits
    into input / cache read / cache write / output; cost, cache hit rate, requests and sessions
    sit underneath.
-3. **By model** — models merged across agents and ranked the same way; past eight models, the
-   tail folds into one "N other models" row so the card keeps a fixed height.
+3. **By model** — one row per agent and normalized model name, with that agent's cost shown by
+   default (tokens remain selectable).
+   Cursor effort suffixes such as `opus5.5-high` disappear from the label; past eight rows, the
+   tail folds into one "N other model uses" row so the card keeps a fixed height.
 
 Click any day on the heatmap to open the **day card** beside the report: that day's tokens, cost,
 cache hit rate and requests, a 24-hour breakdown, the same agent and model rankings, and its
@@ -202,7 +207,7 @@ never part of the exported image.
 
 Drag a card by its handle (or focus the handle and press ↑ / ↓) to reorder the chapters. The
 order, period mode, card metrics, theme and language are remembered in `localStorage`.
-**Export image** saves the header, the three cards in their current order and the footer as one
+**Export image** saves the KPI summary, the three cards in their current order and the footer as one
 PNG (`toksight-2026-09.png` / `toksight-2026.png`) with the controls stripped — ready to share.
 Reference cost is an estimate from public prices, not a subscription bill; unpriced models are
 listed in the footer.
@@ -259,6 +264,8 @@ Report commands accept `--json` (e.g. `toksight daily --json`). Shape: `totals`,
 `clients`, `models`, `daily`, `monthly`, `sessions`, `pricing` (incl. `unpricedModels`), `warnings`.
 Each `clients` entry is that agent's totals plus its own `cacheHitRate`; the map is built from the
 filtered entries, so `--client` / `--since` / `--until` apply to it like every other slice.
+Each `models` row is grouped by agent and display name, with `modelIds` listing the original IDs;
+`pricing.modelRates` keeps per-ID pricing details. Display grouping never changes request costs.
 `toksight refresh --json` instead returns the database path, refresh time, entry count and warnings.
 
 `warnings` surfaces collection problems (a directory that cannot be read, a SQLite database that

@@ -13,6 +13,7 @@ import { buildPayload } from './payload.js';
 
 const require = createRequire(import.meta.url);
 const pkg = require('../package.json');
+const costText = (totals, fmt) => totals.pricedRequests > 0 ? fmt.cost(totals.costUsd) : '—';
 
 function rangeLabel(opts, fmt) {
   if (opts.since == null && opts.until == null) return 'all time';
@@ -31,7 +32,7 @@ export function totalsSection(entries, opts, fmt) {
   const hit = agg.cacheHitRate(t);
   const lines = [];
   lines.push(
-    `${fmt.bold('Tokens')} ${fmt.cyan(fmt.int(t.totalTokens))}  ${fmt.bold('Cost')} ${fmt.cyan(fmt.cost(t.costUsd))}  ${fmt.dim(`${t.requests} requests · ${t.sessions} sessions`)}`,
+    `${fmt.bold('Tokens')} ${fmt.cyan(fmt.int(t.totalTokens))}  ${fmt.bold('Cost')} ${fmt.cyan(costText(t, fmt))}  ${fmt.dim(`${t.requests} requests · ${t.sessions} sessions`)}`,
   );
   lines.push(
     `${fmt.dim('input')} ${fmt.tokens(t.inputTokens)} ${fmt.dim('· cache read')} ${fmt.tokens(t.cacheReadTokens)} ${fmt.dim('(' + fmt.pct(hit) + ' hit · write')} ${fmt.tokens(t.cacheWriteTokens)}${fmt.dim(') · output')} ${fmt.tokens(t.outputTokens)}`,
@@ -40,8 +41,8 @@ export function totalsSection(entries, opts, fmt) {
   return lines;
 }
 
-export function pricingModelsTable(entries, opts, fmt) {
-  const rows = agg.byModel(entries).slice(0, opts.top);
+export function pricingModelsTable(entries, opts, fmt, pricing = null) {
+  const rows = agg.byModel(entries, pricing?.priceFor).slice(0, opts.top);
   return renderTable({
     columns: [
       { header: 'Client', value: (r) => r.client },
@@ -52,7 +53,7 @@ export function pricingModelsTable(entries, opts, fmt) {
       { header: 'Cache W', align: 'right', value: (r) => fmt.tokens(r.totals.cacheWriteTokens) },
       { header: 'Output', align: 'right', value: (r) => fmt.tokens(r.totals.outputTokens) },
       { header: 'Hit', align: 'right', value: (r) => fmt.pct(agg.cacheHitRate(r.totals)) },
-      { header: 'Cost', align: 'right', value: (r) => fmt.cost(r.totals.costUsd) },
+      { header: 'Cost', align: 'right', value: (r) => costText(r.totals, fmt) },
     ],
     rows,
   });
@@ -69,7 +70,7 @@ export function clientsTable(entries, fmt) {
       { header: 'Sessions', align: 'right', value: (r) => fmt.int(r.totals.sessions) },
       { header: 'Tokens', align: 'right', value: (r) => fmt.tokens(r.totals.totalTokens) },
       { header: 'Hit', align: 'right', value: (r) => fmt.pct(agg.cacheHitRate(r.totals)) },
-      { header: 'Cost', align: 'right', value: (r) => fmt.cost(r.totals.costUsd) },
+      { header: 'Cost', align: 'right', value: (r) => costText(r.totals, fmt) },
     ],
     rows,
   });
@@ -86,7 +87,7 @@ export function dailyTable(entries, opts, fmt) {
       { header: 'Cache W', align: 'right', value: (r) => fmt.tokens(r.totals.cacheWriteTokens) },
       { header: 'Output', align: 'right', value: (r) => fmt.tokens(r.totals.outputTokens) },
       { header: 'Hit', align: 'right', value: (r) => fmt.pct(agg.cacheHitRate(r.totals)) },
-      { header: 'Cost', align: 'right', value: (r) => fmt.cost(r.totals.costUsd) },
+      { header: 'Cost', align: 'right', value: (r) => costText(r.totals, fmt) },
     ],
     rows,
   });
@@ -100,7 +101,7 @@ export function monthlyTable(entries, opts, fmt) {
       { header: 'Req', align: 'right', value: (r) => fmt.int(r.totals.requests) },
       { header: 'Tokens', align: 'right', value: (r) => fmt.tokens(r.totals.totalTokens) },
       { header: 'Hit', align: 'right', value: (r) => fmt.pct(agg.cacheHitRate(r.totals)) },
-      { header: 'Cost', align: 'right', value: (r) => fmt.cost(r.totals.costUsd) },
+      { header: 'Cost', align: 'right', value: (r) => costText(r.totals, fmt) },
     ],
     rows,
   });
@@ -115,7 +116,7 @@ export function sessionsTable(entries, opts, fmt) {
       { header: 'Models', value: (r) => r.models.join(',').slice(0, 28) },
       { header: 'Req', align: 'right', value: (r) => fmt.int(r.totals.requests) },
       { header: 'Tokens', align: 'right', value: (r) => fmt.tokens(r.totals.totalTokens) },
-      { header: 'Cost', align: 'right', value: (r) => fmt.cost(r.totals.costUsd) },
+      { header: 'Cost', align: 'right', value: (r) => costText(r.totals, fmt) },
       { header: 'Last active', value: (r) => fmt.datetime(r.lastAt) },
       { header: 'Directory', value: (r) => (r.directory ? String(r.directory).slice(-40) : '—') },
     ],
@@ -150,7 +151,7 @@ export function renderCommand(ctx, fmt) {
       section('By client', clientsTable(entries, fmt));
       console.log('');
       console.log(fmt.bold(`Top models (up to ${opts.top})`));
-      console.log(fmt.dim(pricingModelsTable(entries, opts, fmt)));
+      console.log(fmt.dim(pricingModelsTable(entries, opts, fmt, pricing)));
       break;
     case 'daily':
       section('Daily usage', dailyTable(entries, opts, fmt));
@@ -159,7 +160,7 @@ export function renderCommand(ctx, fmt) {
       section('Monthly usage', monthlyTable(entries, opts, fmt));
       break;
     case 'models':
-      section('By model', pricingModelsTable(entries, opts, fmt));
+      section('By model', pricingModelsTable(entries, opts, fmt, pricing));
       break;
     case 'sessions':
       section(`Top sessions (up to ${opts.top})`, sessionsTable(entries, opts, fmt));

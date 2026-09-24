@@ -86,23 +86,27 @@ test('agent rows rank by the chosen metric with shares and token-class parts', (
   assert.deepEqual(agentRows(clients, 'cost').map((r) => r.id), ['codex', 'claude']);
 });
 
-test('model rows merge agents, fold the tail into one row and keep shares whole', () => {
+test('model rows keep agents separate, fold the tail and keep shares whole', () => {
   const models = [
     { client: 'claude', model: 'm-a', ...usage({ inputTokens: 1000 }) },
     { client: 'opencode', model: 'm-a', ...usage({ pricedRequests: 0 }) },
     ...Array.from({ length: 9 }, (_, i) => ({ client: 'codex', model: `m-${i}`, ...usage({ outputTokens: 100 - i }) })),
   ];
   const { rows, others, count } = modelRows(models, 'tokens', 8);
-  assert.equal(count, 10);
+  assert.equal(count, 11);
   assert.equal(rows.length, 7);
   assert.equal(rows[0].model, 'm-a');
-  assert.deepEqual(rows[0].clients, ['claude', 'opencode']);
-  assert.equal(rows[0].requests, 2);
-  assert.equal(rows[0].pricing, 'partial');
-  assert.equal(others.count, 3);
+  assert.equal(rows[0].client, 'claude');
+  assert.equal(rows[0].requests, 1);
+  assert.equal(rows[0].pricing, 'full');
+  assert.equal(others.count, 4);
   const shares = rows.reduce((sum, r) => sum + r.share, others.share);
   assert.ok(Math.abs(shares - 1) < 1e-9);
   assert.equal(modelRows(models.slice(0, 3), 'tokens', 8).others, null);
+  const sameModel = modelRows(models.slice(0, 2), 'cost').rows;
+  assert.deepEqual(sameModel.map((row) => [row.client, row.model, row.costUsd]), [
+    ['claude', 'm-a', 1], ['opencode', 'm-a', 1],
+  ]);
 });
 
 test('day stepping crosses month, year and leap-day boundaries in local time', () => {

@@ -1,3 +1,5 @@
+import { reportModelName } from './pricecatalog.js';
+
 export function summarize(entries) {
   const t = {
     requests: entries.length,
@@ -85,13 +87,20 @@ export function localMonth(ts) {
   return localDate(ts).slice(0, 7);
 }
 
-export function byModel(entries) {
+export function byModel(entries, priceFor = null) {
+  const names = new Map();
+  const displayName = (entry) => {
+    const key = `${entry.client}\0${entry.model}`;
+    if (!names.has(key)) names.set(key, reportModelName(entry.model, entry.client, priceFor?.(entry.model, entry.client)));
+    return names.get(key);
+  };
   const rows = group(
     entries,
-    (e) => `${e.client}/${e.model}`,
+    (e) => JSON.stringify([e.client, displayName(e)]),
     (g) => ({
       client: g[0].client,
-      model: g[0].model,
+      model: displayName(g[0]),
+      modelIds: [...new Set(g.map((e) => e.model))],
     }),
   );
   return rows.sort((a, b) => (b.totals.costUsd - a.totals.costUsd) || (b.totals.totalTokens - a.totals.totalTokens));
@@ -124,7 +133,7 @@ export function byMonth(entries) {
   return rows.sort((a, b) => (a.key === 'unknown' ? 1 : b.key === 'unknown' ? -1 : a.key.localeCompare(b.key)));
 }
 
-export function bySession(entries) {
+export function bySession(entries, priceFor = null) {
   const rows = group(
     entries.filter((e) => e.sessionId != null),
     (e) => `${e.client}/${e.sessionId}`,
@@ -133,16 +142,16 @@ export function bySession(entries) {
       sessionId: g[0].sessionId,
       directory: g.find((e) => e.directory)?.directory ?? null,
       title: g.find((e) => e.title)?.title ?? null,
-      models: [...new Set(g.map((e) => e.model))],
+      models: [...new Set(g.map((e) => reportModelName(e.model, e.client, priceFor?.(e.model, e.client))))],
     }),
   );
   return rows.sort((a, b) => (b.totals.costUsd - a.totals.costUsd) || (b.lastAt ?? 0) - (a.lastAt ?? 0));
 }
 
-export function unpricedModels(entries) {
+export function unpricedModels(entries, priceFor = null) {
   const set = new Set();
   for (const e of entries) {
-    if (e.costUsd == null) set.add(e.model);
+    if (e.costUsd == null) set.add(reportModelName(e.model, e.client, priceFor?.(e.model, e.client)));
   }
   return [...set].sort();
 }

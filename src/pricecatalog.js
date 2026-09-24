@@ -12,6 +12,15 @@ export function modelIdentity(name, client = null) {
     id = id.replace(/\bfast mode\b/g, 'fast');
     id = id.replace(/(\d)[.-](\d)/g, '$1.$2');
     const rawParts = id.replace(/[^a-z0-9.]+/g, '-').replace(/^-|-$/g, '').split('-').filter(Boolean);
+    // Usage Events also exports Claude shorthand such as "opus5.5-high".
+    // Expand it before rate lookup so it matches the official "Claude Opus 5.5"
+    // row. The original CSV model remains untouched for import deduplication.
+    const shorthand = rawParts[0] === 'claude' ? 1 : 0;
+    const compact = /^(opus|sonnet|haiku|fable)(\d+(?:\.\d+)*)$/.exec(rawParts[shorthand] ?? '');
+    if (compact) rawParts.splice(shorthand, 1, compact[1], compact[2]);
+    if (shorthand === 0 && /^(opus|sonnet|haiku|fable)$/.test(rawParts[0] ?? '') && /^\d+(?:\.\d+)*$/.test(rawParts[1] ?? '')) {
+      rawParts.unshift('claude');
+    }
     // Cursor's Claude CSV appends "thinking" as an execution mode; the
     // published table lists one token rate for the underlying Claude model.
     const parts = rawParts[0] === 'claude' ? rawParts.filter((part) => part !== 'thinking') : rawParts;
@@ -25,6 +34,30 @@ export function modelIdentity(name, client = null) {
   id = id.replace(/^[a-z0-9_-]+:/, '').replace(/:latest$/, '')
     .replace(/[-_.]?20\d{6,8}$/, '').replace(/\s+/g, '');
   return { id, effort: null };
+}
+
+// Report names describe the underlying model, while modelIdentity above
+// remains the exact billing key. Cursor effort/thinking are execution modes;
+// Fast and 500k are priced variants and stay visible as separate names.
+export function reportModelName(name, client = null, rate = null) {
+  const raw = String(name ?? '').trim();
+  const source = client === 'cursor' ? raw : modelIdentity(raw).id;
+  const id = modelIdentity(source, 'cursor').id;
+  const claude = /^claude:(\d+(?:\.\d+)*)-(opus|sonnet|haiku|fable)$/.exec(id);
+  if (claude) return `Claude ${claude[2][0].toUpperCase()}${claude[2].slice(1)} ${claude[1]}`;
+  const family = /^(gpt|grok|gemini|composer|glm)-(\d+(?:\.\d+)*)(?:-(.+))?$/.exec(id);
+  if (family) {
+    const brand = { gpt: 'GPT', grok: 'Grok', gemini: 'Gemini', composer: 'Composer', glm: 'GLM' }[family[1]];
+    const variants = family[3]?.split('-') ?? [];
+    const fast = variants.at(-1) === 'fast';
+    if (fast) variants.pop();
+    const tail = variants.map((part) => part === '500k' ? part : `${part[0].toUpperCase()}${part.slice(1)}`).join(' ');
+    const separator = family[1] === 'gpt' || family[1] === 'glm' ? '-' : ' ';
+    return `${brand}${separator}${family[2]}${tail ? ` ${tail}` : ''}${fast ? ' (Fast)' : ''}`;
+  }
+  if (rate?.scope === 'cursor' && rate.name) return rate.name;
+  if (client === 'cursor') return id === 'auto' ? 'Auto' : id || raw;
+  return raw;
 }
 
 export function priceRecord({ scope = 'default', source, name, provider = null, pool = null, input, output,

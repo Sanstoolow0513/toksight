@@ -4,12 +4,13 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 
-import { createCursorPriceLookup, getCursorPricing, parseCursorPricingMarkdown } from '../src/cursorpricing.js';
+import { createCursorPriceLookup, cursorPriceRecords, getCursorPricing, parseCursorPricingMarkdown } from '../src/cursorpricing.js';
 import { createUsageDatabase } from '../src/database.js';
 import { parseCursorCsv } from '../src/cursorcsv.js';
 import { collectAll } from '../src/collect.js';
 import { parseArgs } from '../src/args.js';
 import { buildCostCoverage } from '../src/costcoverage.js';
+import { buildPayload } from '../src/payload.js';
 import { PRICE_REFRESH_MS } from '../src/pricing.js';
 
 const markdown = `# Models & Pricing
@@ -109,4 +110,34 @@ test('Cursor Included uses official rates in CLI and SQLite while CSV charges re
   assert.equal(db.importCursor(parseCursorCsv(corrected).records).updated, 1);
   assert.equal(db.read().entries[0].costUsd, 0.75);
   assert.equal(buildCostCoverage(db.read().entries, db.read()).sources.reported.requests, 2);
+});
+
+test('Cursor Claude shorthand prices Included events and reports one model row per agent', async () => {
+  const opusMarkdown = markdown.replace('| Claude 4.5 Sonnet |',
+    '| Claude Opus 5.5 | Anthropic | $4 | $5 | $0.2 | $20 | - |\n| Claude 4.5 Sonnet |');
+  const models = parseCursorPricingMarkdown(opusMarkdown);
+  const priceFor = createCursorPriceLookup(models);
+  const db = createUsageDatabase({ file: ':memory:' });
+  try {
+    db.replace({ entries: [], warnings: [], reportedCosts: new WeakSet(), pricing: {
+      priceFor, records: cursorPriceRecords(models), sources: { cursor: 'fresh' }, configDir: '/fixture',
+    } });
+    const source = (await readFile(new URL('./fixtures/cursor/usage.csv', import.meta.url), 'utf8'))
+      .replaceAll('cursor-test-model', 'opus5.5-high');
+    const paid = source.split('\n')[1].replace('12:19:00.334Z', '12:23:00.334Z')
+      .replace('opus5.5-high', 'opus5.5-medium').replace('"49","Included"', '"49","$0.75"');
+    db.importCursor(parseCursorCsv(`${source.trimEnd()}\n${paid}\n`).records);
+    const snapshot = db.read();
+    const included = snapshot.entries.find((entry) => entry.model === 'opus5.5-high');
+    assert.ok(Math.abs(included.costUsd - (5 * 5 + 10 * 4 + 30 * 0.2 + 4 * 20) / 1e6) < 1e-12);
+    assert.equal(snapshot.entries.find((entry) => entry.model === 'opus5.5-medium').costUsd, 0.75);
+    const payload = buildPayload({ ...snapshot, opts: { since: null, until: null, clients: null, top: 20 } });
+    const opus = payload.models.find((row) => row.model === 'Claude Opus 5.5');
+    assert.equal(opus.client, 'cursor');
+    assert.equal(opus.requests, 2);
+    assert.ok(Math.abs(opus.costUsd - (included.costUsd + 0.75)) < 1e-12);
+    assert.deepEqual(opus.modelIds, ['opus5.5-high', 'opus5.5-medium']);
+    assert.equal(buildCostCoverage(snapshot.entries, snapshot).sources.cursor.requests, 1);
+    assert.equal(buildCostCoverage(snapshot.entries, snapshot).sources.reported.requests, 2);
+  } finally { db.close(); }
 });

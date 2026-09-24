@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { createPriceLookup, modelIdentity, priceRecord } from '../src/pricecatalog.js';
+import { createPriceLookup, modelIdentity, priceRecord, reportModelName } from '../src/pricecatalog.js';
 import { createUsageDatabase } from '../src/database.js';
 import { buildCostCoverage } from '../src/costcoverage.js';
 
@@ -14,17 +14,26 @@ test('one model identity keeps Cursor effort separate from priced variants and i
   assert.deepEqual(modelIdentity('cursor-grok-4.6-xhigh-fast', 'cursor'), { id: 'grok-4.6-fast', effort: 'xhigh' });
   assert.deepEqual(modelIdentity('cursor-grok-4.6-high', 'cursor'), { id: 'grok-4.6', effort: 'high' });
   assert.deepEqual(modelIdentity('claude-4.6-opus-high-thinking', 'cursor'), { id: 'claude:4.6-opus', effort: 'high' });
+  assert.deepEqual(modelIdentity('opus5.5-high', 'cursor'), { id: 'claude:5.5-opus', effort: 'high' });
+  assert.deepEqual(modelIdentity('claude-opus5.5-medium-thinking', 'cursor'), { id: 'claude:5.5-opus', effort: 'medium' });
   assert.deepEqual(modelIdentity('cursor-grok-4.7-500k-fast', 'cursor'), { id: 'grok-4.7-500k-fast', effort: null });
   const lookup = createPriceLookup([
     rate('Grok 4.6', 2), rate('Grok 4.6 (Fast)', 4),
+    rate('Claude Opus 5.5', 4),
     rate('grok-4.6', 9, 'default', 'litellm'),
   ]);
   assert.equal(lookup('cursor-grok-4.6-xhigh-fast', 'cursor').input, 4e-6);
   assert.equal(lookup('cursor-grok-4.6-high', 'cursor').input, 2e-6);
+  assert.equal(lookup('opus5.5-high', 'cursor').input, 4e-6);
   assert.equal(lookup('grok-4.6', 'claude').input, 9e-6);
   assert.equal(lookup('auto', 'cursor'), null);
   assert.equal(lookup('cursor-grok-4.6-max', 'cursor'), null);
   assert.equal(lookup('composer-2-fast', 'cursor'), null);
+  assert.equal(reportModelName('opus5.5-high', 'cursor'), 'Claude Opus 5.5');
+  assert.equal(reportModelName('claude-opus-5-5', 'claude'), 'Claude Opus 5.5');
+  assert.equal(reportModelName('anthropic/claude-opus-5-5-20260801', 'claude'), 'Claude Opus 5.5');
+  assert.equal(reportModelName('gpt-5.6-sol', 'codex'), 'GPT-5.6 Sol');
+  assert.equal(reportModelName('cursor-grok-4.7-500k-fast', 'cursor'), 'Grok 4.7 500k (Fast)');
 });
 
 test('price catalog updates reprice estimates without changing reported charges or usage rows', () => {

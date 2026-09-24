@@ -49,6 +49,7 @@ export function buildComparison(entries, opts, base, context, now = Date.now()) 
       cacheHitRate: a.cacheHitRate == null || b.cacheHitRate == null ? null : a.cacheHitRate - b.cacheHitRate },
     costChangePercent: b.totals.costUsd > 0 ? costDelta / b.totals.costUsd : null,
     byClient: contributions(current, previous, byClient, (row) => row.client),
-    byModel: contributions(current, previous, byModel, (row) => `${row.client}/${row.model}`),
+    byModel: contributions(current, previous, (values) => byModel(values, context.pricing?.priceFor),
+      (row) => JSON.stringify([row.client, row.model])),
   };
 }

@@ -33,7 +33,7 @@
   --danger: #b53a2e;
   --danger-soft: #fbedea;
   --danger-border: rgba(181, 58, 46, 0.25);
-  --warn-soft: #fbf3e4;
+  --warn: #b07a1c;
   --warn-border: rgba(196, 140, 40, 0.3);
   --shadow: 0 1px 2px rgba(20, 20, 19, 0.04), 0 6px 20px rgba(20, 20, 19, 0.05);
   --shadow-lift: 0 22px 60px rgba(20, 20, 19, 0.18), 0 4px 12px rgba(20, 20, 19, 0.08);
@@ -76,7 +76,7 @@
   --danger: #f08a7e;
   --danger-soft: rgba(240, 138, 126, 0.1);
   --danger-border: rgba(240, 138, 126, 0.3);
-  --warn-soft: rgba(230, 180, 90, 0.08);
+  --warn: #e6b45a;
   --warn-border: rgba(230, 180, 90, 0.28);
   --shadow: 0 1px 2px rgba(0, 0, 0, 0.25), 0 8px 24px rgba(0, 0, 0, 0.18);
   --shadow-lift: 0 24px 60px rgba(0, 0, 0, 0.45), 0 4px 14px rgba(0, 0, 0, 0.3);
@@ -274,7 +274,6 @@ code {
   cursor: default;
 }
 
-.btn-primary,
 .btn-secondary {
   display: inline-flex;
   align-items: center;
@@ -286,21 +285,6 @@ code {
   font-weight: 500;
   cursor: pointer;
   transition: background-color 0.15s, opacity 0.15s;
-}
-
-.btn-primary {
-  border: 0;
-  background: var(--btn);
-  color: var(--btn-text);
-}
-
-.btn-primary:hover:not(:disabled) {
-  background: var(--btn-hover);
-}
-
-.btn-primary:disabled {
-  opacity: 0.5;
-  cursor: default;
 }
 
 .btn-secondary {
@@ -341,9 +325,66 @@ code {
 }
 
 .main {
+  position: relative;
   flex: 0 1 1000px;
   min-width: 0;
   padding: 4px 20px 72px;
+}
+
+.report-actions {
+  position: absolute;
+  top: 20px;
+  right: calc(100% - 32px);
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 160px;
+}
+
+.report-action {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  min-height: 52px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  color: var(--text-2);
+  font-size: 12.5px;
+  font-weight: 500;
+  line-height: 1.25;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 0.15s, color 0.15s, opacity 0.15s;
+}
+
+.report-action svg {
+  flex-shrink: 0;
+}
+
+.report-action:hover:not(:disabled) {
+  background: var(--surface-2);
+  color: var(--text);
+}
+
+.report-action.is-primary {
+  border-color: transparent;
+  background: var(--btn);
+  color: var(--btn-text);
+}
+
+.report-action.is-primary:hover:not(:disabled) {
+  background: var(--btn-hover);
+  color: var(--btn-text);
+}
+
+.report-action:disabled {
+  opacity: 0.5;
+  cursor: default;
 }
 
 .report {
@@ -360,7 +401,7 @@ code {
 }
 
 .hero {
-  padding: 20px 4px 4px;
+  padding: 0;
 }
 
 .eyebrow {
@@ -372,26 +413,10 @@ code {
   text-transform: uppercase;
 }
 
-.hero-title {
-  margin: 10px 0 8px;
-  font-family: var(--serif);
-  font-size: clamp(34px, 5vw, 50px);
-  font-weight: 400;
-  line-height: 1.1;
-  letter-spacing: -0.02em;
-  font-variant-numeric: lining-nums;
-}
-
-.hero-sub {
-  margin: 0;
-  color: var(--text-3);
-  font-size: 14px;
-}
-
 .kpis {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  margin: 24px 0 0;
+  margin: 0;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 18px;
@@ -924,7 +949,6 @@ button.mcell:focus-visible {
   display: flex;
   align-items: flex-start;
   gap: 10px;
-  margin: 12px 24px 0;
   padding: 10px 14px;
   border: 1px solid;
   border-radius: 12px;
@@ -942,37 +966,117 @@ button.mcell:focus-visible {
   color: var(--danger);
 }
 
-.notice.is-success {
-  background: var(--accent-soft);
-  border-color: var(--border-strong);
-  color: var(--text-2);
-}
-
-.notice.is-warn {
-  display: block;
-  background: var(--warn-soft);
-  border-color: var(--warn-border);
-  color: var(--text-2);
-}
-
-.notice summary {
+/* Toasts sit above the day card (z 30) and below tooltips (z 50). The
+   stack itself ignores the pointer so it never blocks the report. */
+.toasts {
+  position: fixed;
+  bottom: 20px;
+  left: 50%;
+  z-index: 40;
   display: flex;
+  flex-direction: column;
   align-items: center;
   gap: 8px;
+  width: min(460px, calc(100vw - 24px));
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+.toast {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  width: 100%;
+  padding: 11px 10px 11px 14px;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: 14px;
+  box-shadow: var(--shadow-lift);
+  color: var(--text-2);
+  font-size: 13px;
+  pointer-events: auto;
+  animation: toast-in 0.22s var(--dock-ease, ease);
+}
+
+.toast.is-leaving {
+  opacity: 0;
+  transform: translateY(6px);
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.toast > svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.toast.is-success > svg {
+  color: var(--accent-strong);
+}
+
+.toast.is-warn {
+  border-color: var(--warn-border);
+}
+
+.toast.is-warn > svg {
+  color: var(--warn);
+}
+
+.toast.is-error {
+  border-color: var(--danger-border);
+  color: var(--danger);
+}
+
+.toast-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.toast-body p {
+  margin: 0;
+  line-height: 1.55;
+}
+
+.toast summary {
+  margin-top: 4px;
+  color: var(--text-3);
+  font-size: 12.5px;
   cursor: pointer;
-  list-style: none;
 }
 
-.notice summary::-webkit-details-marker {
-  display: none;
-}
-
-.notice ul {
-  margin: 8px 0 2px;
-  padding-left: 22px;
+.toast ul {
+  max-height: 180px;
+  margin: 6px 0 0;
+  padding-left: 18px;
+  overflow-y: auto;
+  color: var(--text-2);
   font-family: var(--mono);
   font-size: 12px;
   word-break: break-all;
+}
+
+.toast-close {
+  display: inline-grid;
+  flex-shrink: 0;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-3);
+  cursor: pointer;
+}
+
+.toast-close:hover {
+  background: var(--surface-2);
+  color: var(--text);
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
 }
 
 .state-card {
@@ -1022,7 +1126,6 @@ button.mcell:focus-visible {
 
 .skel-kpis {
   height: 98px;
-  margin-top: 24px;
   border-radius: 18px;
 }
 
@@ -1313,16 +1416,9 @@ button.mcell:focus-visible {
    pair re-centres, so the column glides left while the card unfolds from
    its edge. The dock's -20px margin tucks the card into the column's side
    padding: 24px to the report cards, 44px to the pair's right edge
-   (mirroring the column's left inset). The top bar widens with the pair. */
+   (mirroring the column's left inset). The top bar keeps its width so
+   opening the card never reflows it. */
 @media (min-width: 1180px) {
-  .topbar-inner {
-    transition: max-width var(--dock-time) var(--dock-ease);
-  }
-
-  .page.has-panel .topbar-inner {
-    max-width: calc(1024px + var(--panel-w));
-  }
-
   .day-dock {
     flex: 0 0 0px;
     min-width: 0;
@@ -1353,6 +1449,32 @@ button.mcell:focus-visible {
 
 /* ---------- responsive ---------- */
 
+@media (max-width: 1739px) {
+  .workspace.has-panel .report-actions {
+    position: static;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    width: auto;
+    margin: 16px 24px 8px;
+  }
+}
+
+@media (min-width: 1180px) and (max-width: 1739px) {
+  .workspace.has-panel {
+    --dock-top: 154px;
+  }
+}
+
+@media (max-width: 1279px) {
+  .report-actions {
+    position: static;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    width: auto;
+    margin: 16px 24px 8px;
+  }
+}
+
 @media (max-width: 760px) {
   .topbar {
     position: static;
@@ -1360,6 +1482,11 @@ button.mcell:focus-visible {
 
   .main {
     padding: 0 12px 56px;
+  }
+
+  .report-actions,
+  .workspace.has-panel .report-actions {
+    margin: 12px 4px 8px;
   }
 
   .kpi:nth-child(3) {
@@ -1372,10 +1499,6 @@ button.mcell:focus-visible {
 
   .report {
     padding: 12px 4px 28px;
-  }
-
-  .notice {
-    margin: 10px 4px 0;
   }
 
   .kpis,
@@ -1413,6 +1536,16 @@ button.mcell:focus-visible {
 }
 
 @media (max-width: 560px) {
+  .report-action {
+    flex-direction: column;
+    justify-content: center;
+    gap: 5px;
+    min-height: 68px;
+    padding: 7px 4px;
+    font-size: 11.5px;
+    text-align: center;
+  }
+
   .mcell-val {
     display: none;
   }

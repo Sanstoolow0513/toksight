@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { sessionsTable } from '../src/render.js';
+import { pricingModelsTable, sessionsTable } from '../src/render.js';
 import { createFormatter } from '../src/format.js';
 
 const fmt = createFormatter({ color: false });
@@ -37,4 +37,13 @@ test('sessions table renders the last-active datetime for timestamped sessions',
   const table = sessionsTable([entry()], { top: 20 }, fmt);
   assert.match(table, /2026-08-10 12:00/);
   assert.doesNotMatch(table, /unknown/);
+});
+
+test('model table distinguishes unpriced usage from a reported free request', () => {
+  const table = pricingModelsTable([
+    entry({ model: 'unknown-model', costUsd: null }),
+    entry({ model: 'free-model', costUsd: 0 }),
+  ], { top: 20 }, fmt);
+  assert.match(table, /unknown-model\s+1\s+10\s+0\s+0\s+5\s+0\.0%\s+—/);
+  assert.match(table, /free-model\s+1\s+10\s+0\s+0\s+5\s+0\.0%\s+\$0\.0000/);
 });

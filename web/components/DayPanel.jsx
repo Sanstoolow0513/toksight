@@ -185,7 +185,7 @@ function DayBody({ data, day, metric, locale, tx, agentLabel }) {
               rank={i + 1}
               name={row.model}
               mono
-              lead={tx('rowAgents', { agents: row.clients.map(agentLabel).join(', ') })}
+              lead={tx('rowAgent', { agent: agentLabel(row.client) })}
               row={row}
               metric={metric}
               tx={tx}

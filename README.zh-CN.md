@@ -63,9 +63,9 @@ Top models (up to 20)
 Client  Model              Req  Input  Cache R  Cache W  Output    Hit     Cost
 ──────  ─────────────────  ───  ─────  ───────  ───────  ──────  ─────  ───────
 kimi    kimi-code/k3       422   986K   29.01M        0    293K  96.7%    $4.51
-codex   gpt-5.6-sol         62   183K    1.79M        0   25.7K  90.8%    $1.96
-zcode   glm-5.3-flash      487  2.51M   28.45M        0    442K  91.9%    $1.45
-zcode   glm-5.3             41   116K    1.99M        0   43.3K  94.5%   $0.870
+codex   GPT-5.6 Sol         62   183K    1.79M        0   25.7K  90.8%    $1.96
+zcode   GLM-5.3 Flash      487  2.51M   28.45M        0    442K  91.9%    $1.45
+zcode   GLM-5.3             41   116K    1.99M        0   43.3K  94.5%   $0.870
 ```
 
 ### 参数
@@ -122,10 +122,12 @@ CSV 中的数字费用及 `Free` 始终按原值使用。查不到模型单价�
 两个来源的单价都会归一化保存到 toksight 自己的 `usage.sqlite` 的 `model_prices` 表，
 按价格来源、计费范围和模型 ID 分行，单位为美元 / token。`price_updates` 记录各来源上次成功拉取
 及检查时间。Cursor 只使用 Cursor 计费范围内的价格；例如 CSV 中的
-`cursor-grok-4.6-xhigh-fast` 会匹配 `grok-4.6-fast`，`xhigh` 单独记录为 effort；Fast、
-500k 和 Max 等档位保留独立 ID。其他 Agent 依上述通用来源优先级取价。用现在的公开单价
-折算历史记录仍只是参考估算，不是历史账单。模型卡片在模型行仅归属一个 Agent 时显示
-美元 / 百万 token 的单价；JSON 的 `pricing.modelRates` 也列出模型 ID、effort 和单价。
+`cursor-grok-4.6-xhigh-fast` 会匹配 `grok-4.6-fast`，`xhigh` 单独记录为 effort；
+`opus5.5-high` 会匹配 Claude Opus 5.5 官网单价；Fast、500k 和 Max 等档位保留独立 ID。
+其他 Agent 依上述通用来源优先级取价。用现在的公开单价折算历史记录仍只是参考估算，
+不是历史账单。每条请求按原始模型 ID 计价后，才按 Agent 和统一模型名汇总展示。
+同一行的各原始 ID 单价相同时，模型卡片显示美元 / 百万 token 的单价；JSON 的
+`pricing.modelRates` 保留原始 ID、effort 和单价。
 官网缓存单价标为 `-` 时，对应 token 暂按输入单价折算；
 `costCoverage.cacheFallbackRequests` 会统计受此影响的请求数。
 
@@ -147,13 +149,13 @@ CSV 中的数字费用及 `Free` 始终按原值使用。查不到模型单价�
 新快照。刷新后报告与打开的单日卡片一同更新，页脚显示数据库上次刷新时间。
 `toksight refresh --offline` 可跳过价格拉取。
 
-顶栏的**更新单价**按钮调用 `POST /api/prices/update`，同时检查 LiteLLM 和 Cursor，
+报告左侧的**更新单价**卡片调用 `POST /api/prices/update`，同时检查 LiteLLM 和 Cursor，
 不受 7 天自动更新间隔限制。启动及报表请求只会在某个来源距上次成功拉取至少 7 天时
 自动检查；失败后隔一小时再试。页脚和 `pricing.updates` 显示各来源上次成功更新时间。
 单价更新会重算已有估算，无需重新扫描用量，也不会覆盖 Agent 或 CSV 上报的金额。
 `--offline` 禁止手动联网更新。
 
-要加入 Cursor 历史，在 Cursor 导出 **Usage Events** CSV，打开 `toksight web`，点击顶栏的
+要加入 Cursor 历史，在 Cursor 导出 **Usage Events** CSV，打开 `toksight web`，点击报告左侧的
 **导入 Cursor CSV**。文件只发送到本机 toksight 服务，用量记录保存在 `usage.sqlite`；
 按时间、模型和 token 数匹配重复事件，费用标记或金额变化不会重复计入 token。导入结果会在刷新后保留，
 也可在 CLI 用 `--client cursor` 查看。
@@ -164,15 +166,17 @@ Cursor 导出不含事件 ID：时间、模型及 token 数完全相同的两条
 
 仪表盘是一页**按月或按年的 token 用量与成本报告**，采用 Claude 的暖色明暗配色，铺在稀疏的
 点阵背景上（视觉规范见 `design-spec.md`）。顶栏切换**月 / 年**并逐期前后翻看（最早到第一条
-记录所在的周期，不会翻到未来），切换浅色 / 深色 / 跟随系统与 中文 / EN，刷新，以及把报告
-导出为图片。页首展示本期 tokens、参考费用、缓存命中率与请求数，下面是三张章节卡片：
+记录所在的周期，不会翻到未来），切换浅色 / 深色 / 跟随系统与 中文 / EN，并刷新。报告左侧的
+三张小卡片分别用于导入 Cursor CSV、导出图片和更新单价；窄屏时移到报告上方。报告直接从
+本期 tokens、参考费用、缓存命中率与请求数开始，下面是三张章节卡片：
 
 1. **活动热力图** — 月视图是日历、年视图是 53 周网格，每格按 tokens 或费用着色（卡片内
    切换），并给出活跃天数、活跃日均、峰值日、最长连续与单日悬停明细。
 2. **Agent 分布** — 各 Agent 占本期 tokens 或费用的份额；tokens 模式下长条按输入 / 缓存读 /
    缓存写 / 输出分段，下方附费用、缓存命中率、请求与会话数。
-3. **模型分布** — 跨 Agent 合并同名模型，按同样方式排序；超过八个时尾部合并为一行
-   “其他 N 个模型”，卡片高度保持可控。
+3. **模型分布** — 每行对应一个 Agent 和统一模型名，默认显示该 Agent 的费用（也可切换 tokens）；
+   `opus5.5-high` 等 Cursor effort 后缀不再出现在名称中。超过八行时尾部合并为
+   “其他 N 项模型用量”，卡片高度保持可控。
 
 点击热力图上的任意一天，报告旁会展开一张**单日详情卡片**：当天的 tokens、参考费用、缓存命中率与
 请求数，24 小时时段分布，同样的 Agent / 模型排行，以及当天的会话（标题、起止时间、活跃时长、
@@ -180,7 +184,7 @@ Cursor 导出不含事件 ID：时间、模型及 token 数完全相同的两条
 页面上。用 ‹ › 逐日切换，点 ×、按 Esc 或再次点击同一天关闭。详情卡片不会进入导出的图片。
 
 按住卡片右上角的拖动手柄（或聚焦手柄后按 ↑ / ↓）即可调整章节顺序。顺序、周期模式、各卡
-指标、配色与语言都记在 `localStorage` 里。**导出图片**会把页首、按当前顺序排列的三张卡片与
+指标、配色与语言都记在 `localStorage` 里。**导出图片**会把 KPI 概览、按当前顺序排列的三张卡片与
 页脚合成一张 PNG（`toksight-2026-09.png` / `toksight-2026.png`），去掉按钮等控件，方便直接
 分享。参考费用是按公开价格估算的，不等于订阅账单；未定价模型会列在页脚。
 
@@ -232,6 +236,8 @@ SQLite 数据库，不上传数据，也不写回 Agent 文件。Cursor CSV 导�
 `clients`、`models`、`daily`、`monthly`、`sessions`、`pricing`（含 `unpricedModels`）、`warnings`。
 `clients` 的每一项是该 Agent 的 totals 外加它自己的 `cacheHitRate`；该映射由**过滤后**的
 entries 构建，`--client` / `--since` / `--until` 对它与其余切片一样生效。
+`models` 按 Agent 和展示名称分行，`modelIds` 列出原始 ID；`pricing.modelRates` 保留
+每个 ID 的单价细节。名称合并不会改变逐条请求算出的费用。
 `toksight refresh --json` 则返回数据库路径、刷新时间、记录数和采集警告。
 
 `warnings` 会披露采集问题（无法读取的目录、存在但打不开的 SQLite 数据库）和数据口径问题——
