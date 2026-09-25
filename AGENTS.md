@@ -6,7 +6,7 @@
 usage, cost, and cache hit rate of AI coding agents by reading the local session files those
 agents already write or importing Cursor Usage Events CSV through `toksight web`, plus the local
 report: one page per calendar month or year
-with two reorderable cards (heatmap · agent table, each agent row expands to its models; tokens and cost always shown together), a click-a-day detail card and PNG
+with two reorderable cards (heatmap · agent table, each agent row expands to its models; tokens and cost always shown together), a double-click-to-open heatmap sheet with day details and PNG
 export (there is no TUI).
 Local-first: nothing is written to agent files. Refresh writes toksight's own SQLite database.
 External calls fetch LiteLLM prices and Cursor's official Markdown price table for the shared
@@ -83,9 +83,9 @@ src/fsutils.js      walkFiles/walkFilesMany/readJsonl/readJson/pathExists (warni
  semantics: root ENOENT silent, other read failures warn)
 web/                Next.js (App Router, JS, no Tailwind), statically exported to web/out
  and served by the CLI. Single page `/`: toolbar → report (hero + KPIs,
- SortableCards of HeatmapCard/AgentsCard, footer) + DayPanel
- (non-modal card for one heatmap day in a `.day-dock` slot beside the
- column, outside `.report`).
+ SortableCards of HeatmapCard/AgentsCard, footer) + ExpandedHeatmap
+ (the heatmap card opened over the page as a modal sheet: calendar +
+ DayDetail for one day, outside `.report`).
  lib/period.js (local YYYY-MM-DD day/month/year math, Monday-start weeks)
  and lib/report.js (pure aggregations) are node:test-covered; lib/prefs.js owns every
  localStorage key; lib/exportImage.js (modern-screenshot) renders
@@ -199,11 +199,14 @@ omit its session counts/details.
   `models` (grouped by agent and display name). There is no tokens/cost metric toggle; the agent
   table's Tokens/Cost header only picks the sort (`toksight-agent-sort`). The table uses
   `table-layout: fixed` so the export clone lays out like the page. `useReport` aborts/sequence-checks so a stale period never replaces a newer one, and
- keeps the previous payload (tagged with its period) on screen while loading. The day panel
- (`useDayReport`, same loader) requests one day as `since=until=<day>` and reads that payload's
- `totals`/`hourly`/`clients`/`models`/`topSessions`; it never feeds the main report, and the
- selected-day ring is suppressed during export via `.report.is-exporting`. Refresh POSTs the
- database update, then reloads the current report and open day card. Day keys are `YYYY-MM-DD`
+ keeps the previous payload (tagged with its period) on screen while loading. Double-clicking
+ the heatmap card opens `ExpandedHeatmap` (a modal sheet outside `.report`; the report card hides
+ in place so nothing below moves, and the sheet morphs from/to its rect with a cloned snapshot).
+ Its day detail (`useDayReport`, same loader) requests one day as `since=until=<day>` and reads
+ that payload's `totals`/`hourly`/`clients`/`models`/`topSessions`; it never feeds the main
+ report. Stepping a day out of the period moves the report period with it. The selected-day ring
+ is suppressed during export via `.report.is-exporting`. Refresh POSTs the
+ database update, then reloads the current report and the loaded day. Day keys are `YYYY-MM-DD`
  strings built from local `Date` parts — never `toISOString()`. Do not add agent-config write routes.
 - Windows compatibility matters (paths, fixtures use `C:\\...` directories); `pathExists`
   handles `ENOTDIR` for files.

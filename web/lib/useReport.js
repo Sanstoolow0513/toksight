@@ -49,7 +49,7 @@ export function useReport(period, revision = 0) {
   return { ...rest, period: tag };
 }
 
-// One local day for the day panel; `day` null (panel closed) keeps the last day.
+// One local day for the opened heatmap card; `day` null (no day marked) keeps the last day.
 export function useDayReport(day, revision = 0) {
   const { tag, ...rest } = useRange(day, day, day, revision);
   return { ...rest, day: tag };

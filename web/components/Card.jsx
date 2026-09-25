@@ -1,14 +1,15 @@
 import { GripVertical } from 'lucide-react';
 
-export default function Card({ title, subtitle, handleProps, children }) {
+export default function Card({ ref, title, subtitle, handleProps, actions, className, children, ...rest }) {
   return (
-    <section className="card">
+    <section ref={ref} className={className ? `card ${className}` : 'card'} {...rest}>
       <header className="card-head">
         <div className="card-heading">
           <h2 className="card-title">{title}</h2>
           <p className="card-sub">{subtitle}</p>
         </div>
         <div className="card-actions no-export">
+          {actions}
           <button type="button" className="drag-handle" {...handleProps}>
             <GripVertical size={16} strokeWidth={2} aria-hidden="true" />
           </button>

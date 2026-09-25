@@ -1,9 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  calendarWeeks, currentPeriod, dayKey, dayNav, eachDayKey, periodBounds, periodKey, periodNav, shiftDay, shiftPeriod, weekdayIndex, withMode,
+  calendarWeeks, currentPeriod, dayKey, dayNav, eachDayKey, inPeriod, periodBounds, periodKey, periodNav, periodOf, shiftDay, shiftPeriod, weekdayIndex, withMode,
 } from '../web/lib/period.js';
-import { agentRows, costPerMillion, dailyMap, heatLevel, heatSummary, hourlyBars, modelRows, modelsByAgent, sessionName, sessionRows } from '../web/lib/report.js';
+import {
+  agentRows, costPerMillion, dailyMap, heatLevel, heatMax, heatSummary, hourlyBars, modelRows, modelsByAgent, openingDay, sessionName, sessionRows,
+} from '../web/lib/report.js';
 import { fmtClock, fmtClockRange, fmtCostShort, fmtTokens } from '../web/lib/format.js';
 
 const usage = (over = {}) => {
@@ -162,6 +164,31 @@ test('day stepping crosses month, year and leap-day boundaries in local time', (
   assert.deepEqual(dayNav('2026-09-12', { firstDay: '2026-08-29', today: '2026-09-22' }), { canPrev: true, canNext: true });
   assert.deepEqual(dayNav('2026-08-29', { firstDay: '2026-08-29', today: '2026-09-22' }), { canPrev: false, canNext: true });
   assert.deepEqual(dayNav('2026-09-22', { firstDay: null, today: '2026-09-22' }), { canPrev: false, canNext: false });
+  // A day stepped out of the shown period brings its own period along.
+  assert.deepEqual(periodOf('2026-10-01', 'month'), { mode: 'month', year: 2026, month: 10 });
+  assert.deepEqual(periodOf('2025-12-31', 'year'), { mode: 'year', year: 2025, month: 12 });
+  assert.equal(inPeriod('2026-09-30', { mode: 'month', year: 2026, month: 9 }), true);
+  assert.equal(inPeriod('2026-10-01', { mode: 'month', year: 2026, month: 9 }), false);
+  assert.equal(inPeriod('2026-10-01', { mode: 'year', year: 2026, month: 9 }), true);
+});
+
+test('an opened heatmap starts on the marked day, else the latest active day of the period', () => {
+  const days = dailyMap([
+    { date: '2026-09-03', ...usage() },
+    { date: '2026-09-10', ...usage({ outputTokens: 900 }) },
+    { date: '2026-09-11', ...usage({ requests: 0 }) },
+  ]);
+  const sep = { since: '2026-09-01', until: '2026-09-30' };
+  assert.equal(heatMax(days), 1300);
+  assert.equal(openingDay(days, { ...sep, today: '2026-09-24', selected: '2026-09-05' }), '2026-09-05');
+  // A marked day outside the period (or in its future) is ignored.
+  assert.equal(openingDay(days, { ...sep, today: '2026-09-24', selected: '2026-08-31' }), '2026-09-10');
+  assert.equal(openingDay(days, { ...sep, today: '2026-09-08', selected: '2026-09-20' }), '2026-09-03');
+  // Days after today do not count as the latest active one.
+  assert.equal(openingDay(days, { ...sep, today: '2026-09-09', selected: null }), '2026-09-03');
+  assert.equal(openingDay(new Map(), { ...sep, today: '2026-09-24', selected: null }), '2026-09-24');
+  assert.equal(openingDay(new Map(), { since: '2026-08-01', until: '2026-08-31', today: '2026-09-24' }), '2026-08-31');
+  assert.equal(openingDay(days, { since: '2026-10-01', until: '2026-10-31', today: '2026-09-24' }), null);
 });
 
 test('hourly bars span all 24 hours and scale linearly to the busiest hour', () => {

@@ -38,12 +38,17 @@ export function heatLevel(value, max) {
   return Math.min(4, Math.max(1, Math.ceil(Math.sqrt(value / max) * 4)));
 }
 
+export function heatMax(days) {
+  let max = 0;
+  for (const row of days.values()) max = Math.max(max, metricValue(row, 'tokens'));
+  return max;
+}
+
 // Stats over the period's elapsed days (a future day is neither idle nor
 // active). Cells are shaded by tokens; `max` spans the whole period so the
 // color scale stays put. The peak day is the busiest by tokens.
 export function heatSummary(days, { since, until, today }) {
-  let max = 0;
-  for (const row of days.values()) max = Math.max(max, metricValue(row, 'tokens'));
+  const max = heatMax(days);
   const last = until < today ? until : today;
   const elapsed = since <= last ? eachDayKey(since, last) : [];
   let activeDays = 0;
@@ -68,6 +73,20 @@ export function heatSummary(days, { since, until, today }) {
   }
   const average = activeDays ? { tokens: tokens / activeDays, cost: cost / activeDays } : null;
   return { max, activeDays, elapsedDays: elapsed.length, average, peak, longestStreak };
+}
+
+// The day an opened heatmap starts on: the marked day when the period shows
+// it, else the period's latest active day, else its last elapsed day (null
+// for a period that has not started).
+export function openingDay(days, { since, until, today, selected }) {
+  const last = until < today ? until : today;
+  if (last < since) return null;
+  if (selected && selected >= since && selected <= last) return selected;
+  let latest = null;
+  for (const [date, row] of days) {
+    if (row.requests > 0 && date >= since && date <= last && (latest == null || date > latest)) latest = date;
+  }
+  return latest ?? last;
 }
 
 export function tokenParts(row, keys = TOKEN_PARTS, total = row.totalTokens) {

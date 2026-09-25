@@ -26,6 +26,17 @@ export function periodBounds({ mode, year, month }) {
   return { since: `${year}-${pad(month)}-01`, until: `${year}-${pad(month)}-${pad(daysInMonth(year, month))}` };
 }
 
+// The `mode` period containing a local day.
+export function periodOf(key, mode) {
+  const [year, month] = key.split('-').map(Number);
+  return { mode, year, month };
+}
+
+export function inPeriod(key, p) {
+  const { since, until } = periodBounds(p);
+  return key >= since && key <= until;
+}
+
 export function periodKey(p) {
   return p.mode === 'year' ? String(p.year) : `${p.year}-${pad(p.month)}`;
 }

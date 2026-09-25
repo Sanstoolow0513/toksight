@@ -158,7 +158,7 @@ rescanning agents. Data never leaves your machine.
 Click the toolbar's refresh button, call `POST /api/refresh`, or run `toksight refresh` to rescan
 all agents and update the database in one transaction. A failed refresh keeps the previous
 snapshot. The web server notices a refresh made by another toksight process. Refreshing also
-updates the displayed report and open day card; the footer shows when the database was last
+updates the displayed report and the loaded day details; the footer shows when the database was last
 refreshed. `toksight refresh --offline` skips pricing fetches.
 
 The **Update prices** card beside the report calls `POST /api/prices/update` to check LiteLLM and Cursor together,
@@ -200,12 +200,15 @@ two chapter cards. Tokens and cost always appear together; there is no toggle:
    underlying ID agrees. Cursor effort suffixes such as `opus5.5-high` disappear from the label.
    Past eight models for one agent, the tail folds into one "N other model uses" row.
 
-Click any day on the heatmap to open the **day card** beside the report: that day's tokens, cost,
-cache hit rate and requests, a 24-hour breakdown, the same expandable agent table, and its
-sessions (title, tokens and cost, time span, active time, directory, models). On wide screens the report column
-glides aside and the card unfolds from its edge, the pair staying centred; on narrow ones it floats
-over the page. Step days with ‹ ›, close with × / Esc or by clicking the day again. The card is
-never part of the exported image.
+Double-click the heatmap card (or press its ⤢ button) to **open** it over the page: the card grows
+out of its slot under a scrim while the rest of the report stays put. It keeps the calendar, drops
+the period stats and shows the picked day in full — tokens, cost, cache hit rate and requests, a
+24-hour breakdown, the same expandable agent table, and its sessions (title, tokens and cost, time
+span, active time, directory, models). A month sits beside the day, pinned while the details
+scroll; a year runs across the top. Click another day to switch, step with ‹ › or ← →
+(crossing into another month or year moves the report with it), and fold the card back with Esc,
+`-`, the − button or a click on the scrim. A single click on the report card only marks a day;
+Enter on a focused day opens it directly. The opened card is never part of the exported image.
 
 Drag a card by its handle (or focus the handle and press ↑ / ↓) to reorder the chapters. The
 order, period mode, table sort, theme and language are remembered in `localStorage`.
@@ -219,7 +222,7 @@ Startup filters (`--client`, `--since`, `--until`, `--today/--week/--month`) bou
 server can see; the report never widens that scope.
 
 The API accepts e.g. `GET /api/data?period=custom&since=2026-09-01&until=2026-09-30` (what the
-report requests; the day panel asks for a single day the same way) or `?client=claude&period=7d`. `period` is `all` (default) / `today` / `7d` /
+report requests; the opened heatmap card asks for a single day the same way) or `?client=claude&period=7d`. `period` is `all` (default) / `today` / `7d` /
 `30d` / `month` / `custom` (`custom` needs both `since` and `until`); `since`/`until` may also be
 used alone; presets cannot combine with explicit dates. Unknown, duplicate or invalid parameters
 return HTTP 400. `POST /api/refresh` updates the database and returns its refresh time and entry

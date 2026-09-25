@@ -62,7 +62,8 @@ npm run web:dev:ui
 - `components/ReportActions.jsx` — 报告左侧的 CSV 导入、图片导出、单价更新小卡片；窄屏排在报告上方
 - `components/SortableCards.jsx` — 手柄拖动排序（Pointer Events、边缘自动滚动、FLIP 归位、↑/↓ 键）
 - `components/HeatmapCard.jsx` / `AgentsCard.jsx` — 两个章节；Agent 表格可按 Tokens / 费用排序，Agent 行展开出其模型，默认折叠（`AgentTable.jsx`）
-- `components/Kpis.jsx` — 页首与单日卡片共用的四项 KPI；`Marks.jsx` 为 Agent 身份色、构成色条、缓存命中环与金额显示。`Card`、`Segmented`、`Tooltip`、`BrandMark` 为共享件
+- `components/ExpandedHeatmap.jsx` — 双击热力图卡片后覆盖整页的展开卡片（遮罩、容器变形动画、滚动锁定、Esc / `-` 收起）；单日内容在 `DayDetail.jsx`
+- `components/Kpis.jsx` — 页首与单日详情共用的四项 KPI；`Marks.jsx` 为 Agent 身份色、构成色条、缓存命中环与金额显示。`Card`、`Segmented`、`Tooltip`、`BrandMark` 为共享件
 - `lib/period.js` — 本地日期的月/年边界、翻页与周一开头的日历周
 - `lib/report.js` — 纯聚合：热力图统计、Agent 与按 Agent 分组的模型行（tokens 与费用份额、排序）、构成分段、“其他 N 项模型用量”
 - `lib/useReport.js` — 按周期请求 `/api/data`，取消过期请求、加载时保留旧数据

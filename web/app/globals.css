@@ -46,6 +46,7 @@
   --warn-border: rgba(196, 140, 40, 0.3);
   --shadow: 0 1px 2px rgba(20, 20, 19, 0.04), 0 6px 20px rgba(20, 20, 19, 0.05);
   --shadow-lift: 0 22px 60px rgba(20, 20, 19, 0.18), 0 4px 12px rgba(20, 20, 19, 0.08);
+  --scrim: rgba(38, 38, 36, 0.3);
 
   --serif: var(--font-serif), 'Source Serif 4', Georgia, 'Times New Roman', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', serif;
   --sans: var(--font-geist-sans), system-ui, -apple-system, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
@@ -98,6 +99,7 @@
   --warn-border: rgba(230, 180, 90, 0.28);
   --shadow: 0 1px 2px rgba(0, 0, 0, 0.25), 0 8px 24px rgba(0, 0, 0, 0.18);
   --shadow-lift: 0 24px 60px rgba(0, 0, 0, 0.45), 0 4px 14px rgba(0, 0, 0, 0.3);
+  --scrim: rgba(14, 14, 13, 0.55);
 }
 
 *,
@@ -337,15 +339,10 @@ code {
 
 /* ---------- page column ---------- */
 
-.workspace {
-  display: flex;
-  justify-content: center;
-}
-
 .main {
   position: relative;
-  flex: 0 1 1000px;
-  min-width: 0;
+  max-width: 1000px;
+  margin: 0 auto;
   padding: 4px 20px 72px;
 }
 
@@ -594,11 +591,12 @@ code {
 .card-actions {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 2px;
   flex-shrink: 0;
 }
 
-.drag-handle {
+.drag-handle,
+.card-btn {
   display: inline-grid;
   place-items: center;
   width: 30px;
@@ -607,12 +605,17 @@ code {
   border-radius: 8px;
   background: transparent;
   color: var(--text-3);
-  cursor: grab;
-  touch-action: none;
+  cursor: pointer;
   transition: background-color 0.15s, color 0.15s;
 }
 
-.drag-handle:hover {
+.drag-handle {
+  cursor: grab;
+  touch-action: none;
+}
+
+.drag-handle:hover,
+.card-btn:hover {
   background: var(--surface-2);
   color: var(--text);
 }
@@ -679,6 +682,7 @@ code {
   padding: 7px 9px;
   border-radius: 10px;
   color: var(--text-2);
+  transition: box-shadow 0.15s;
 }
 
 .mcell.is-pad {
@@ -719,8 +723,10 @@ button.mcell:focus-visible {
   outline-offset: 2px;
 }
 
-/* Selection is an on-screen state only: export drops it (lib/exportImage.js). */
-.report:not(.is-exporting) .mcell.is-selected {
+/* Selection is an on-screen state only: export drops it (lib/exportImage.js).
+   `.xcard` covers the opened card and the snapshot it morphs from. */
+.report:not(.is-exporting) .mcell.is-selected,
+.xcard .mcell.is-selected {
   box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--text);
 }
 
@@ -804,7 +810,8 @@ button.mcell:focus-visible {
   outline-offset: 0;
 }
 
-.report:not(.is-exporting) .ycell.is-selected {
+.report:not(.is-exporting) .ycell.is-selected,
+.xcard .ycell.is-selected {
   z-index: 1;
   box-shadow: 0 0 0 1.5px var(--surface), 0 0 0 3px var(--text);
 }
@@ -837,8 +844,8 @@ button.mcell:focus-visible {
 
 /* ---------- agent table ---------- */
 
-/* Columns drop by the table's own width (report card, day card, phone):
-   mix → requests → shares and model count → cache hit. Row tooltips keep
+/* Columns drop by the table's own width (report card, opened card, phone):
+   mix → model count → requests → shares → cache hit. Row tooltips keep
    what the narrow table hides. */
 .agent-table-wrap {
   container-type: inline-size;
@@ -1125,9 +1132,15 @@ button.mcell:focus-visible {
   font-family: var(--sans);
 }
 
-@container (max-width: 640px) {
+@container (max-width: 760px) {
   .agent-table .col-mix,
   .agent-table-wrap .legend-part {
+    display: none;
+  }
+}
+
+@container (max-width: 640px) {
+  .agent-table .agent-count {
     display: none;
   }
 }
@@ -1139,8 +1152,7 @@ button.mcell:focus-visible {
 }
 
 @container (max-width: 460px) {
-  .agent-table .cell-share,
-  .agent-table .agent-count {
+  .agent-table .cell-share {
     display: none;
   }
 
@@ -1322,7 +1334,7 @@ button.mcell:focus-visible {
   color: var(--danger);
 }
 
-/* Toasts sit above the day card (z 30) and below tooltips (z 50). The
+/* Toasts sit above the opened card (z 35) and below tooltips (z 50). The
    stack itself ignores the pointer so it never blocks the report. */
 .toasts {
   position: fixed;
@@ -1351,7 +1363,7 @@ button.mcell:focus-visible {
   color: var(--text-2);
   font-size: 13px;
   pointer-events: auto;
-  animation: toast-in 0.22s var(--dock-ease, ease);
+  animation: toast-in 0.22s cubic-bezier(0.22, 0.8, 0.24, 1);
 }
 
 .toast.is-leaving {
@@ -1495,116 +1507,226 @@ button.mcell:focus-visible {
   }
 }
 
-/* ---------- day card ---------- */
+/* ---------- opened heatmap card ---------- */
 
-/* --dock-top lines the card up with the top of `.report`
-   (58px top bar + 4px main + 16px report padding). */
-.page {
-  --panel-w: clamp(360px, 28vw, 420px);
-  --dock-top: 78px;
-  --dock-time: 0.36s;
-  --dock-ease: cubic-bezier(0.22, 0.8, 0.24, 1);
+/* The report card keeps its slot while open, so nothing below it moves. */
+.card.is-sheeted {
+  visibility: hidden;
 }
 
-/* Narrow screens: the card floats over the page, inset from the edges. */
-.day-panel {
+/* Above the top bar (20), below toasts (40) and tooltips (50). */
+.xsheet {
+  --sheet-gap: 24px;
   position: fixed;
-  top: 12px;
-  right: 12px;
-  bottom: 12px;
-  z-index: 30;
-  display: flex;
-  flex-direction: column;
-  width: min(var(--panel-w), calc(100vw - 24px));
+  inset: 0;
+  z-index: 35;
+}
+
+.xsheet-backdrop {
+  position: absolute;
+  inset: 0;
+  background: var(--scrim);
+  -webkit-backdrop-filter: blur(2px);
+  backdrop-filter: blur(2px);
+}
+
+/* The one scroller: the card grows with its content and the whole layer
+   scrolls, so nothing scrolls inside a box. */
+.xsheet-scroll {
+  position: absolute;
+  inset: 0;
+  padding: var(--sheet-gap);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+/* The morph briefly reaches past the card; no scrollbar may flash. */
+.xsheet.is-animating .xsheet-scroll {
   overflow: hidden;
+}
+
+/* 1px padding keeps the content inside the shell's border. */
+.xcard {
+  position: relative;
+  width: min(1360px, 100%);
+  min-height: 100%;
+  margin: 0 auto;
+  padding: 1px;
+}
+
+.xcard:focus {
+  outline: none;
+}
+
+/* Outline, fill and shadow live on their own layer so the morph can resize
+   them without touching the content. */
+.xcard-shell {
+  position: absolute;
+  inset: 0;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-card);
   box-shadow: var(--shadow-lift);
-  opacity: 0;
-  transform: translateX(24px) scale(0.98);
-  transform-origin: right center;
-  visibility: hidden;
-  transition:
-    opacity 0.2s ease,
-    transform var(--dock-time) var(--dock-ease),
-    visibility 0s linear var(--dock-time);
 }
 
-.day-dock.is-open .day-panel {
-  opacity: 1;
-  transform: none;
-  visibility: visible;
-  transition:
-    opacity 0.26s ease 0.06s,
-    transform var(--dock-time) var(--dock-ease);
+.xcard-clip {
+  position: relative;
 }
 
-.day-panel:focus,
-.day-panel:focus-visible {
-  outline: none;
+.xcard-inner {
+  padding: 0 27px 31px;
 }
 
-.panel-head {
-  flex-shrink: 0;
-  padding: 16px 24px 16px;
-  border-bottom: 1px solid var(--border);
+.xcard-ghost {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
 }
 
-.panel-top {
+.xghost {
+  position: absolute;
+  margin: 0;
+  background: none;
+  border-color: transparent;
+  box-shadow: none;
+}
+
+/* Sticky offsets count from inside the scroller's padding; the negative
+   gap pins the header to the viewport's top edge. */
+.xcard-head {
+  position: sticky;
+  top: calc(-1 * var(--sheet-gap));
+  z-index: 2;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin: 0 -27px 4px;
+  padding: 23px 27px 18px;
+  background: var(--surface);
+  border-bottom: 1px solid transparent;
+  border-radius: calc(var(--radius-card) - 1px) calc(var(--radius-card) - 1px) 0 0;
+  transition: border-color 0.2s;
+}
+
+.xcard-head[data-stuck] {
+  border-bottom-color: var(--border);
+}
+
+.xcard-body {
+  display: grid;
+  gap: 28px 32px;
+  align-items: start;
+}
+
+/* Month: the calendar stays in view on the left while the day scrolls.
+   Year: the wide strip sits on top and the day spreads out below it. */
+.xcard.is-month .xcard-body {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+}
+
+.xheat {
+  min-width: 0;
+  transition: opacity 0.2s;
+}
+
+.xheat.is-loading {
+  opacity: 0.55;
+  pointer-events: none;
+}
+
+.xcard.is-month .xheat {
+  position: sticky;
+  top: calc(var(--xhead, 88px) + 16px - var(--sheet-gap));
+}
+
+.xcard.is-month .xday {
+  padding-left: 32px;
+  border-left: 1px solid var(--border);
+}
+
+.xcard.is-year .xday {
+  padding-top: 24px;
+  border-top: 1px solid var(--border);
+}
+
+.xday {
+  min-width: 0;
+}
+
+.xday-head {
+  display: flex;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
+  margin-bottom: 20px;
 }
 
-.panel-actions {
-  display: flex;
-  gap: 6px;
-}
-
-.panel-title {
+.xday-title {
   margin: 6px 0 4px;
   font-family: var(--serif);
-  font-size: 32px;
+  font-size: 30px;
   font-weight: 400;
   line-height: 1.15;
   letter-spacing: -0.01em;
   font-variant-numeric: lining-nums;
 }
 
-.panel-sub {
+.xday-sub {
   margin: 0;
   color: var(--text-3);
   font-size: 13px;
 }
 
-.panel-body {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  padding: 20px 24px 36px;
+.xday-nav {
+  display: flex;
+  flex-shrink: 0;
+  gap: 6px;
 }
 
-.panel-content {
+.xday-content {
   display: flex;
   flex-direction: column;
   gap: 22px;
   transition: opacity 0.2s;
 }
 
-.panel-content.is-loading {
+.xday-content.is-loading {
   opacity: 0.55;
   pointer-events: none;
 }
 
-.panel-section {
+.xday-main,
+.xday-side {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  min-width: 0;
+}
+
+.xcard.is-year .xday-content {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+  gap: 22px 40px;
+  align-items: start;
+}
+
+.xcard.is-year .xday-main:only-child {
+  grid-column: 1 / -1;
+}
+
+.xcard.is-year .xday-side > .day-section:first-child {
+  padding-top: 0;
+  border-top: 0;
+}
+
+.day-section {
   padding-top: 20px;
   border-top: 1px solid var(--border);
 }
 
-.panel-section-head {
+.day-section-head {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
@@ -1612,39 +1734,39 @@ button.mcell:focus-visible {
   margin-bottom: 14px;
 }
 
-.panel-section-head h3 {
+.day-section-head h4 {
   margin: 0;
   font-family: var(--serif);
   font-size: 18px;
   font-weight: 500;
 }
 
-.panel-section-head span {
+.day-section-head span {
   color: var(--text-3);
   font-size: 12px;
   text-align: right;
 }
 
-.day-panel .agent-toggle,
-.day-panel .agent-row .cell-value {
+.xday .agent-toggle,
+.xday .agent-row .cell-value {
   font-size: 14px;
 }
 
-.day-panel .model-name {
+.xday .model-name {
   font-size: 12.5px;
 }
 
-.day-panel .model-row .cell-value {
+.xday .model-row .cell-value {
   font-size: 13px;
 }
 
-.day-panel .parts-legend {
+.xday .parts-legend {
   margin-top: 12px;
   padding-top: 0;
   border-top: 0;
 }
 
-.day-panel .agent-table-wrap .parts-legend {
+.xday .agent-table-wrap .parts-legend {
   padding-top: 12px;
   border-top: 1px solid var(--border);
 }
@@ -1769,75 +1891,54 @@ button.mcell:focus-visible {
   transform: translateX(-100%);
 }
 
-.panel-empty {
+.day-empty {
   margin: 4px 0;
   color: var(--text-3);
 }
 
-.panel-error {
+.day-error {
   margin: 0 0 16px;
 }
 
-.panel-error p {
+.day-error p {
   margin: 0 0 8px;
 }
 
-.panel-skel {
+.day-skel {
   display: flex;
   flex-direction: column;
   gap: 18px;
 }
 
-/* Wide screens: `.day-dock` opens a slot right of the report column and the
-   pair re-centres, so the column glides left while the card unfolds from
-   its edge. The dock's -20px margin tucks the card into the column's side
-   padding: 24px to the report cards, 44px to the pair's right edge
-   (mirroring the column's left inset). The top bar keeps its width so
-   opening the card never reflows it. */
-@media (min-width: 1180px) {
-  .day-dock {
-    flex: 0 0 0px;
-    min-width: 0;
-    overflow-x: clip;
-    transition:
-      flex-basis var(--dock-time) var(--dock-ease),
-      margin-left var(--dock-time) var(--dock-ease);
-  }
-
-  .day-dock.is-open {
-    flex-basis: calc(var(--panel-w) + 44px);
-    margin-left: -20px;
-  }
-
-  .day-panel {
-    position: sticky;
-    top: var(--dock-top);
-    right: auto;
-    bottom: auto;
-    z-index: auto;
-    width: var(--panel-w);
-    height: calc(100vh - var(--dock-top) - 24px);
-    box-shadow: var(--shadow);
-    transform: translateX(-16px);
-    transform-origin: left center;
-  }
-}
-
 /* ---------- responsive ---------- */
 
-@media (max-width: 1739px) {
-  .workspace.has-panel .report-actions {
+/* Too short to keep the month calendar pinned under the header. */
+@media (max-height: 699px) {
+  .xcard.is-month .xheat {
     position: static;
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    width: auto;
-    margin: 16px 24px 8px;
   }
 }
 
-@media (min-width: 1180px) and (max-width: 1739px) {
-  .workspace.has-panel {
-    --dock-top: 154px;
+/* The opened card stacks: calendar on top, the day in one column below. */
+@media (max-width: 1023px) {
+  .xcard.is-month .xcard-body,
+  .xcard.is-year .xday-content {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .xcard.is-month .xheat {
+    position: static;
+  }
+
+  .xcard.is-month .xday {
+    padding: 24px 0 0;
+    border-top: 1px solid var(--border);
+    border-left: 0;
+  }
+
+  .xcard.is-year .xday-side > .day-section:first-child {
+    padding-top: 20px;
+    border-top: 1px solid var(--border);
   }
 }
 
@@ -1860,8 +1961,7 @@ button.mcell:focus-visible {
     padding: 0 12px 56px;
   }
 
-  .report-actions,
-  .workspace.has-panel .report-actions {
+  .report-actions {
     margin: 12px 4px 8px;
   }
 
@@ -1899,19 +1999,21 @@ button.mcell:focus-visible {
     display: none;
   }
 
-  .day-panel {
-    top: 8px;
-    right: 8px;
-    bottom: 8px;
-    width: calc(100vw - 16px);
+  .xsheet {
+    --sheet-gap: 8px;
   }
 
-  .panel-head {
-    padding: 12px 16px 14px;
+  .xcard-inner {
+    padding: 0 17px 23px;
   }
 
-  .panel-body {
-    padding: 16px 16px 28px;
+  .xcard-head {
+    margin: 0 -17px 4px;
+    padding: 17px 17px 14px;
+  }
+
+  .xday-title {
+    font-size: 26px;
   }
 }
 
