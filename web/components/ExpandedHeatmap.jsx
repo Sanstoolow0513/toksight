@@ -13,6 +13,7 @@ import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 're
 import { Minus } from 'lucide-react';
 import { HeatGrid } from '@/components/HeatmapCard';
 import DayDetail from '@/components/DayDetail';
+import Kpis from '@/components/Kpis';
 import { dailyMap } from '@/lib/report';
 import { periodLabel } from '@/lib/i18n';
 
@@ -87,6 +88,9 @@ export default function ExpandedHeatmap({
   latest.current = { onCollapse, onClosed, onStep, dayNav, closing };
   const titleId = useId();
   const days = useMemo(() => dailyMap(data.daily), [data.daily]);
+  // The day's KPIs sit under the calendar; same stale rules as DayDetail.
+  const shownDay = dayReport.data && dayReport.day ? dayReport : null;
+  const dayStale = Boolean(shownDay) && (dayReport.loading || shownDay.day !== day);
   // Read while rendering: once this commits the page behind turns inert and
   // the browser drops focus from the control that opened the sheet.
   const [opener] = useState(() => document.activeElement);
@@ -287,8 +291,15 @@ export default function ExpandedHeatmap({
                 </button>
               </header>
               <div className="xcard-body">
-                <div className={loading ? 'xheat is-loading' : 'xheat'}>
-                  <HeatGrid days={days} period={period} today={today} selected={day} onPick={onPick} hint={tx('sheetHint')} locale={locale} tx={tx} />
+                <div className="xleft">
+                  <div className={loading ? 'xheat is-loading' : 'xheat'}>
+                    <HeatGrid days={days} period={period} today={today} selected={day} onPick={onPick} hint={tx('sheetHint')} locale={locale} tx={tx} />
+                  </div>
+                  {day && shownDay?.data?.totals?.requests ? (
+                    <div className={dayStale ? 'xday-stats is-loading' : 'xday-stats'}>
+                      <Kpis data={shownDay.data} tx={tx} grid />
+                    </div>
+                  ) : null}
                 </div>
                 {day ? (
                   <DayDetail

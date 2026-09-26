@@ -67,8 +67,9 @@ export function createWebDataService(base, { collect = collectAll, env, home, da
         details.litellm = { fetchedAt: null, url: null, state: 'unavailable' };
       }
       if (cursor.status === 'fulfilled') {
-        records.push(...cursorPriceRecords(cursor.value.models));
-        sources.push('cursor');
+        const cursorRecords = cursorPriceRecords(cursor.value.models);
+        records.push(...cursorRecords);
+        if (cursorRecords.length) sources.push('cursor');
         details.cursor = { fetchedAt: cursor.value.fetchedAt, url: cursor.value.source, state: cursor.value.state };
         warnings.push(...(cursor.value.warnings ?? []));
       } else {
@@ -139,6 +140,16 @@ export function createWebDataService(base, { collect = collectAll, env, home, da
   getData.initialize = initialize;
   getData.refresh = refresh;
   getData.updatePrices = () => updatePrices(true);
+  getData.exportDatabase = async () => {
+    await snapshot();
+    return database.exportDatabase();
+  };
+  getData.importDatabase = async (bytes) => {
+    // An already running scan commits first; imported history then survives
+    // all later scans through its own durable table.
+    if (inflightRefresh) await inflightRefresh;
+    return database.importDatabase(bytes);
+  };
   getData.importCursor = async (csv) => {
     const parsed = parseCursorCsv(csv);
     await snapshot();

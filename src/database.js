@@ -9,6 +9,8 @@ import { DatabaseSync } from 'node:sqlite';
 import { computeCost, configDir } from './pricing.js';
 import { createPriceLookup } from './pricecatalog.js';
 import { selectCursorImports } from './cursorcsv.js';
+import { mergeUsageRows } from './usageimports.js';
+import { exportDatabaseBytes, readDatabaseBackup } from './dbtransfer.js';
 
 const SCHEMA_VERSION = 1;
 const cursorPriceKey = (model) => `cursor\u0000${model}`;
@@ -42,6 +44,12 @@ export function createUsageDatabase({ file, env, home } = {}) {
         reported_cost INTEGER NOT NULL CHECK (reported_cost IN (0, 1))
       );
       CREATE INDEX IF NOT EXISTS entries_client_timestamp ON entries (client, timestamp);
+      CREATE TABLE IF NOT EXISTS usage_imports (
+        fingerprint TEXT PRIMARY KEY,
+        data_json TEXT NOT NULL,
+        reported_cost INTEGER NOT NULL CHECK (reported_cost IN (0, 1)),
+        price_json TEXT NOT NULL
+      );
       CREATE TABLE IF NOT EXISTS cursor_imports (
         fingerprint TEXT PRIMARY KEY,
         data_json TEXT NOT NULL,
@@ -88,6 +96,10 @@ export function createUsageDatabase({ file, env, home } = {}) {
 
   const getMeta = db.prepare('SELECT * FROM snapshot_meta WHERE id = 1');
   const getEntries = db.prepare('SELECT data_json, reported_cost FROM entries ORDER BY seq');
+  const getUsageImports = db.prepare('SELECT * FROM usage_imports ORDER BY rowid');
+  const putUsageImport = db.prepare(`INSERT INTO usage_imports (fingerprint, data_json, reported_cost, price_json)
+    VALUES (?, ?, ?, ?) ON CONFLICT(fingerprint) DO UPDATE SET
+    data_json = excluded.data_json, reported_cost = excluded.reported_cost, price_json = excluded.price_json`);
   const getCursorImports = db.prepare('SELECT rowid, fingerprint, data_json, reported_cost, included FROM cursor_imports ORDER BY rowid');
   const getPrices = db.prepare(`SELECT scope, source, model_id AS modelId, name, provider, pool,
     input_usd_per_token AS input, cache_read_usd_per_token AS cacheRead,
@@ -165,11 +177,12 @@ export function createUsageDatabase({ file, env, home } = {}) {
     // Metadata and rows must come from the same committed version if another
     // toksight process refreshes while this one is loading the snapshot.
     db.exec('BEGIN');
-    let meta, rows, imports, catalogRows, updateRows;
+    let meta, rows, imports, usageImports, catalogRows, updateRows;
     try {
       meta = getMeta.get();
       rows = meta ? getEntries.all() : null;
       imports = meta ? getCursorImports.all() : null;
+      usageImports = meta ? getUsageImports.all() : null;
       catalogRows = meta ? getPrices.all() : null;
       updateRows = meta ? getPriceUpdates.all() : null;
       db.exec('COMMIT');
@@ -183,21 +196,23 @@ export function createUsageDatabase({ file, env, home } = {}) {
     }
     if (rows.length !== meta.entry_count) throw new Error('toksight database snapshot is incomplete');
     const prices = new Map(JSON.parse(meta.model_prices_json));
+    for (const row of usageImports) {
+      const entry = JSON.parse(row.data_json);
+      if (!prices.get(entry.model)) prices.set(entry.model, JSON.parse(row.price_json));
+    }
     const catalog = catalogRows.map((row) => ({ ...row,
       cacheReadFallback: Boolean(row.cacheReadFallback), cacheWriteFallback: Boolean(row.cacheWriteFallback) }));
     const lookup = createPriceLookup(catalog);
-    const catalogScopes = new Set(catalog.map((record) => record.scope));
     const priceFor = (model, client) => {
       const scope = client === 'cursor' ? 'cursor' : 'default';
-      if (catalogScopes.has(scope)) return lookup(model, client);
-      // Old databases have only the per-model snapshot map. It remains a
-      // migration fallback until that scope receives a normalized catalog.
-      return prices.get(scope === 'cursor' ? cursorPriceKey(model) : model) ?? null;
+      // Imported and legacy models retain a fallback when the destination
+      // has no current catalog rate for that model.
+      return lookup(model, client) ?? prices.get(scope === 'cursor' ? cursorPriceKey(model) : model) ?? null;
     };
     const entries = [];
     const reportedCosts = new WeakSet();
     const importWarnings = [];
-    for (const row of [...rows, ...selectCursorImports(imports, importWarnings)]) {
+    for (const row of [...mergeUsageRows(rows, usageImports), ...selectCursorImports(imports, importWarnings)]) {
       let entry = row.entry ?? JSON.parse(row.data_json);
       if (entry.client === 'cursor' && row.included && entry.costUsd == null) {
         const costUsd = computeCost(entry, priceFor(entry.model, 'cursor'));
@@ -350,10 +365,81 @@ export function createUsageDatabase({ file, env, home } = {}) {
     return { imported, duplicates, updated, snapshot: read() };
   }
 
+  function importDatabase(bytes, importedAt = new Date().toISOString()) {
+    const backup = readDatabaseBackup(bytes); // Validate completely before writing.
+    let imported = 0, duplicates = 0, updated = 0, latestAt = null;
+    const backupPrices = new Map(backup.prices);
+    const backupLookup = createPriceLookup(backup.catalog);
+    db.exec('BEGIN IMMEDIATE');
+    try {
+      const current = new Map(mergeUsageRows(getEntries.all(), getUsageImports.all()).map((r) => [r.fingerprint, r]));
+      for (const row of backup.rows) {
+        const previous = current.get(row.fingerprint);
+        const useIncoming = !previous || (row.reported_cost && !previous.reported_cost);
+        if (!previous) imported++;
+        else if (useIncoming) updated++;
+        else duplicates++;
+        const selected = useIncoming ? row : previous;
+        const entry = selected.entry ?? JSON.parse(selected.data_json);
+        // Even rows already present locally become durable imported history.
+        const rate = backupLookup(entry.model, entry.client) ?? backupPrices.get(entry.model) ?? row.price ?? null;
+        putUsageImport.run(row.fingerprint, JSON.stringify(entry), selected.reported_cost, selected.price_json ?? JSON.stringify(rate));
+        if (row.entry.timestamp != null) latestAt = Math.max(latestAt ?? row.entry.timestamp, row.entry.timestamp);
+      }
+      const cursor = new Map(selectCursorImports(getCursorImports.all()).map((r) => [r.key, r]));
+      for (const row of backup.cursor) {
+        const previous = cursor.get(row.key);
+        const changed = previous && ((row.reported_cost && !previous.reported_cost) ||
+          (!previous.reported_cost && !previous.included && row.included));
+        if (!previous) imported++;
+        else if (changed) updated++;
+        else duplicates++;
+        if (!previous || changed) putCursor.run(row.key, JSON.stringify(row.entry), row.reported_cost, row.included);
+        if (row.entry.timestamp != null) latestAt = Math.max(latestAt ?? row.entry.timestamp, row.entry.timestamp);
+      }
+      // Existing rates win conflicts; missing models and their provenance travel
+      // with the backup. No target pricing.json or agent configuration is written.
+      const priceKey = (row) => JSON.stringify([row.scope, row.modelId]);
+      const existingPrices = new Set(getPrices.all().map(priceKey));
+      for (const row of backup.catalog) {
+        if (existingPrices.has(priceKey(row))) continue;
+        insertPrice.run(row.scope, row.source, row.modelId, row.name, row.provider, row.pool,
+          row.input, row.cacheRead, row.cacheWrite, row.output, row.cacheReadFallback, row.cacheWriteFallback);
+      }
+      const existingUpdates = new Set(getPriceUpdates.all().map((r) => r.source));
+      for (const row of backup.updates) {
+        if (!existingUpdates.has(row.source)) putPriceUpdate.run(row.source, row.fetched_at, row.checked_at, row.state, row.url);
+      }
+      const previous = getMeta.get();
+      const prices = new Map([...backup.prices, ...(previous ? JSON.parse(previous.model_prices_json) : [])]);
+      // Keep a per-model fallback even if an offline pricing check has no
+      // downloaded catalog on the destination machine.
+      for (const row of [...backup.rows, ...backup.cursor]) {
+        const key = row.entry.client === 'cursor' ? cursorPriceKey(row.entry.model) : row.entry.model;
+        if (!prices.get(key)) prices.set(key, backupLookup(row.entry.model, row.entry.client) ?? row.price ?? null);
+      }
+      putMeta.run(SCHEMA_VERSION, importedAt, getEntries.all().length,
+        JSON.stringify([...new Set([...JSON.parse(backup.meta.warnings_json), ...(previous ? JSON.parse(previous.warnings_json) : [])])]),
+        JSON.stringify({ ...JSON.parse(backup.meta.pricing_sources_json), ...(previous ? JSON.parse(previous.pricing_sources_json) : {}) }),
+        previous?.pricing_config_dir ?? path.dirname(filename), JSON.stringify([...prices]));
+      db.exec('COMMIT');
+    } catch (err) {
+      db.exec('ROLLBACK');
+      throw err;
+    }
+    cached = null;
+    return { imported, duplicates, updated, latestAt, entries: read().entries.length };
+  }
+
   return {
     file: filename,
     read,
     replace,
+    exportDatabase: () => {
+      if (!read()) throw new Error('No usage snapshot; run toksight refresh first');
+      return exportDatabaseBytes(db);
+    },
+    importDatabase,
     hasIncludedCursorUsage: () => selectCursorImports(getCursorImports.all()).some((row) => row.included && !row.reported_cost),
     updateCursorPricing,
     updatePriceCatalog({ records, sourceDetails, sources }, updatedAt = new Date().toISOString()) {

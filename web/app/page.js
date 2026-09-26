@@ -10,6 +10,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Inbox, RefreshCw, TriangleAlert } from 'lucide-react';
 import Toolbar from '@/components/Toolbar';
 import ReportActions from '@/components/ReportActions';
+import DatabaseImport from '@/components/DatabaseImport';
 import SortableCards from '@/components/SortableCards';
 import HeatmapCard from '@/components/HeatmapCard';
 import AgentsCard from '@/components/AgentsCard';
@@ -57,6 +58,9 @@ export default function Page() {
   const [refreshing, setRefreshing] = useState(false);
   const [priceUpdating, setPriceUpdating] = useState(false);
   const [importing, setImporting] = useState(false);
+  const [databaseBusy, setDatabaseBusy] = useState(null);
+  const [databaseFile, setDatabaseFile] = useState(null);
+  const [databaseError, setDatabaseError] = useState(null);
   const [refreshRevision, setRefreshRevision] = useState(0);
   const [selectedDay, setSelectedDay] = useState(null);
   // null, 'open', or 'closing' while the sheet folds back into the card.
@@ -194,6 +198,52 @@ export default function Page() {
       setImporting(false);
     }
   };
+  const onSelectDatabase = (file) => {
+    setDatabaseError(null);
+    if (file.size > 256 * 1024 * 1024) {
+      pushToast({ key: 'database', tone: 'error', message: ['databaseTooLarge'] });
+      return;
+    }
+    setDatabaseFile(file);
+  };
+  const onImportDatabase = async () => {
+    setDatabaseBusy('import');
+    setDatabaseError(null);
+    try {
+      const res = await fetch('/api/import/db', { method: 'POST', headers: { 'content-type': 'application/vnd.sqlite3' }, body: databaseFile, cache: 'no-store' });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.code === 'BAD_DATABASE' ? tx('databaseInvalid') : body.code === 'DATABASE_TOO_LARGE' ? tx('databaseTooLarge') : body.error || `HTTP ${res.status}`);
+      pushToast({ key: 'database', tone: 'success', message: ['databaseImportSuccess', {
+        imported: fmtInt(body.imported), updated: fmtInt(body.updated), duplicates: fmtInt(body.duplicates),
+      }] });
+      setDatabaseFile(null);
+      if (body.latestAt != null) setPeriod((p) => currentPeriod(p?.mode ?? 'month', new Date(Math.min(body.latestAt, Date.now()))));
+      setRefreshRevision((n) => n + 1);
+    } catch (err) {
+      setDatabaseError(String(err?.message || err));
+    } finally { setDatabaseBusy(null); }
+  };
+  const onExportDatabase = async () => {
+    setDatabaseBusy('export');
+    try {
+      const res = await fetch('/api/export/db', { cache: 'no-store' });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error || `HTTP ${res.status}`);
+      }
+      const url = URL.createObjectURL(await res.blob());
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `toksight-backup-${dayKey(new Date())}-${Date.now()}.sqlite`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+      pushToast({ key: 'database', tone: 'success', message: ['databaseExportSuccess'] });
+    } catch (err) {
+      pushToast({ key: 'database', tone: 'error', message: ['databaseExportFailed', { error: String(err?.message || err) }] });
+    } finally { setDatabaseBusy(null); }
+  };
   // On the report card a click marks a day and clicking it again clears the
   // mark; inside the opened card a click always switches to the day.
   const onSelectDay = useCallback((date) => setSelectedDay((d) => (d === date ? null : date)), []);
@@ -316,13 +366,16 @@ export default function Page() {
           theme={theme}
           onTheme={onTheme}
           onLocale={onLocale}
-          loading={report.loading || refreshing || priceUpdating || importing}
+          loading={report.loading || refreshing || priceUpdating || importing || Boolean(databaseBusy)}
           onRefresh={onRefresh}
         />
         <main className="main">
           <ReportActions
             tx={tx}
-            loading={report.loading || refreshing || priceUpdating || importing}
+            loading={report.loading || refreshing || priceUpdating || importing || Boolean(databaseBusy)}
+            databaseBusy={databaseBusy}
+            onImportDatabase={onSelectDatabase}
+            onExportDatabase={onExportDatabase}
             priceUpdating={priceUpdating}
             onUpdatePrices={onUpdatePrices}
             importing={importing}
@@ -356,6 +409,7 @@ export default function Page() {
           agentLabel={agentLabel}
         />
       ) : null}
+      {databaseFile ? <DatabaseImport file={databaseFile} error={databaseError} busy={databaseBusy === 'import'} onImport={onImportDatabase} onClose={() => setDatabaseFile(null)} tx={tx} /> : null}
       <Toasts toasts={toasts.toasts} onDismiss={toasts.dismiss} tx={tx} />
     </div>
   );

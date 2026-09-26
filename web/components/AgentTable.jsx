@@ -22,7 +22,9 @@ function commonRate(row, rates) {
   return first?.source && found.every((rate) => rate?.source === first.source && RATE_PARTS.every((part) => rate[part] === first[part])) ? first : null;
 }
 
-function SortHeader({ id, sortBy, onSort, children }) {
+export { commonRate };
+
+export function SortHeader({ id, sortBy, onSort, children }) {
   const active = sortBy === id;
   return (
     <th scope="col" className={`col-num col-${id}`} aria-sort={active ? 'descending' : undefined}>
@@ -34,7 +36,7 @@ function SortHeader({ id, sortBy, onSort, children }) {
   );
 }
 
-function Cells({ row, tx }) {
+export function Cells({ row, tx }) {
   return (
     <>
       <td className="col-num">
@@ -58,7 +60,7 @@ function Cells({ row, tx }) {
 
 // Absolute token classes (with per-million rates for a model whose IDs
 // agree), cache hit, sessions and raw IDs live here instead of in the table.
-function RowTip({ tip, tx }) {
+export function RowTip({ tip, tx }) {
   const { name, row, rate, mono } = tip;
   const ids = row.modelIds ?? [];
   return (
@@ -87,21 +89,25 @@ function RowTip({ tip, tx }) {
 // One table for agents and their models. Each agent is a folder: its models
 // start collapsed, sit in their own <tbody> and follow the same sort. The
 // open set is keyed by agent id so it survives period and sort changes.
-export default function AgentTable({ clients, models, pricing, sortBy, onSort, agentLabel, tx }) {
+// `open`/`onToggle` make the expansion controlled — the day deck uses that
+// to keep its hidden measuring copy in sync with the visible table.
+export default function AgentTable({ clients, models, pricing, sortBy, onSort, agentLabel, tx, open: openProp, onToggle: onToggleProp }) {
   const agents = useMemo(() => agentRows(clients, sortBy), [clients, sortBy]);
   const grouped = useMemo(() => modelsByAgent(models, sortBy), [models, sortBy]);
   const rates = useMemo(() => new Map((pricing?.modelRates ?? []).map((rate) => [`${rate.client}\0${rate.model}`, rate])), [pricing]);
-  const [open, setOpen] = useState(() => new Set());
+  const [openState, setOpenState] = useState(() => new Set());
   const [tip, setTip] = useState(null);
   const listId = useId();
+  const open = openProp ?? openState;
+  const toggle =
+    onToggleProp ??
+    ((id) =>
+      setOpenState((prev) => {
+        const next = new Set(prev);
+        if (!next.delete(id)) next.add(id);
+        return next;
+      }));
   if (!agents.length) return null;
-
-  const toggle = (id) =>
-    setOpen((prev) => {
-      const next = new Set(prev);
-      if (!next.delete(id)) next.add(id);
-      return next;
-    });
   const tips = new Map();
   const onMove = (e) => {
     const key = e.target.closest?.('[data-tip]')?.dataset.tip;

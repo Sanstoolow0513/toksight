@@ -47,6 +47,9 @@ src/collect.js      collectAll — the one pipeline for CLI/--json/web (env/home
 src/database.js     project-owned SQLite usage snapshot (transactional refresh, pricing
                     provenance, preload, cross-process change detection); durable Cursor
                     imports survive refresh and are merged into snapshot reads
+src/dbtransfer.js   standalone SQLite backups, strict validation before merging (256 MB max)
+src/dbcommand.js    CLI import-db/export-db file orchestration
+src/usageimports.js durable usage identities and occurrence-aware merge; read-only CLI imports
 src/cursorcsv.js    zero-dependency Cursor Usage Events CSV parser (quotes/BOM/CRLF, row keys)
 src/cursorpricing.js Cursor official Markdown price table (7-day cache, model ID lookup);
                     `Included` reference estimates use these rates, not LiteLLM prices
@@ -87,7 +90,8 @@ web/                Next.js (App Router, JS, no Tailwind), statically exported t
  (the heatmap card opened over the page as a modal sheet: calendar +
  DayDetail for one day, outside `.report`).
  lib/period.js (local YYYY-MM-DD day/month/year math, Monday-start weeks)
- and lib/report.js (pure aggregations) are node:test-covered; lib/prefs.js owns every
+ and lib/report.js (pure aggregations) are node:test-covered, as is lib/deck.js
+ (the day deck's page packing); lib/prefs.js owns every
  localStorage key; lib/exportImage.js (modern-screenshot) renders
  `.report` minus `.no-export`; lib/i18n.js (zh-CN / en). Visual rules
  locked in design-spec.md
@@ -155,6 +159,15 @@ omit its session counts/details.
   so `--client`/`--since`/`--until` apply like every other slice (pinned by
   `test/payload.test.js`).
 - **Local timezone**: day grouping and `--since`/`--until` use the machine's local time, not UTC.
+- **Database transfers**: `export-db <file>` / `GET /api/export/db` export every committed row,
+  including Cursor imports and pricing, as standalone SQLite (VACUUM INTO includes WAL).
+  `import-db <file>` / `POST /api/import/db` validate the entire file before an atomic merge.
+  Non-Cursor imports live in `usage_imports`, survive refresh, and enter CLI reports through
+  `collectAll`. Identity excludes cost/title/directory; agent/session/time/model/token counts
+  plus occurrence preserve repeated requests without counting overlapping backups twice.
+  Existing reported charges win; imported reported charges can fill estimates. Imported
+  prices fill missing catalog records, with per-model fallback for offline destinations.
+  New endpoints require the same Host/origin guards as existing data/write routes.
 - **Cursor imports**: `POST /api/import/cursor` accepts a raw UTF-8 Usage Events CSV, validates
   its columns, skips zero-usage rows, and stores timestamp + model + four token classes plus
   occurrence identities in `cursor_imports`. Read paths fold legacy all-column fingerprints by
@@ -204,7 +217,8 @@ omit its session counts/details.
  in place so nothing below moves, and the sheet morphs from/to its rect with a cloned snapshot).
  Its day detail (`useDayReport`, same loader) requests one day as `since=until=<day>` and reads
  that payload's `totals`/`hourly`/`clients`/`models`/`topSessions`; it never feeds the main
- report. Stepping a day out of the period moves the report period with it. The selected-day ring
+ report. The day side is a height-paged card deck (`DayDeck`): hours, agents (still expandable),
+ a flat cross-agent model table (`ModelTable`) and sessions; the day's KPIs sit under the calendar. Stepping a day out of the period moves the report period with it. The selected-day ring
  is suppressed during export via `.report.is-exporting`. Refresh POSTs the
  database update, then reloads the current report and the loaded day. Day keys are `YYYY-MM-DD`
  strings built from local `Date` parts — never `toISOString()`. Do not add agent-config write routes.

@@ -44,6 +44,8 @@ toksight models       # grouped by model
 toksight sessions     # top sessions by cost
 toksight web          # local usage & cost report (heatmap, agents, models, image export)
 toksight refresh      # rescan agents and update the local SQLite database
+toksight export-db backup.sqlite  # export the complete committed usage database
+toksight import-db backup.sqlite  # merge a backup and deduplicate usage
 toksight env          # show detected data sources + pricing state
 ```
 
@@ -161,6 +163,30 @@ snapshot. The web server notices a refresh made by another toksight process. Ref
 updates the displayed report and the loaded day details; the footer shows when the database was last
 refreshed. `toksight refresh --offline` skips pricing fetches.
 
+**Export database** in the left action area downloads a standalone `.sqlite` backup of all
+committed usage, across every agent and date, regardless of the displayed period or startup
+filters. It includes session titles/directories, Cursor imports, prices and cost provenance;
+agent files, credentials and browser preferences are not included. Run refresh first if you
+want to collect new sessions before exporting. **Import database** accepts a toksight `.sqlite`
+or `.db` file (up to 256 MB), shows the merge behavior, then imports transactionally. Invalid or
+unsupported databases leave existing data intact. Results show added, updated and duplicate
+records; the report moves to the backup's latest usage period.
+
+Imports **merge and deduplicate**; they never replace the destination database. Non-Cursor
+records match on agent, session ID, timestamp, model and token counts, preserving the largest
+occurrence count of identical requests across backups. Paths and titles do not affect matching.
+Existing reported costs and conflicting price records win; a reported cost can fill an estimate.
+Cursor retains its CSV event matching. Changed usage fields cannot be recognized as the same
+request and may count again. Imported history survives refresh, appears in CLI reports and can
+be exported again. Estimates can change when local prices update.
+
+The same operations are available as `toksight export-db <file>` and `toksight import-db <file>`
+(`--json` prints transfer statistics). Export requires an existing snapshot (`toksight refresh`
+creates one) and refuses to overwrite an existing file. Transfers reject date/client filters.
+The web endpoints are `GET /api/export/db` (SQLite download) and `POST /api/import/db` (raw SQLite
+bytes, merge statistics as JSON); both retain the local Host check and import requires a permitted
+origin. Transfers work offline and never write agent files.
+
 The **Update prices** card beside the report calls `POST /api/prices/update` to check LiteLLM and Cursor together,
 even within the 7-day interval. Startup and report requests check automatically only when a
 source is at least 7 days old; failed checks are retried after an hour. Last successful source
@@ -182,8 +208,8 @@ a model name or token counts, that event may be counted again. The import report
 The dashboard is a one-page **token usage & cost report** for a calendar month or a whole year,
 in Claude's warm light/dark palette on a sparse dot grid (visual spec: `design-spec.md`). The
 toolbar picks **Month / Year** and steps through periods (back to your first recorded day, never
-into the future), switches light / dark / system theme and 中文 / EN, and refreshes. Three small
-cards beside the report import Cursor CSV, export an image, and update prices; on narrow screens
+into the future), switches light / dark / system theme and 中文 / EN, and refreshes. Small
+cards beside the report import Cursor CSV, export an image, update prices, and import/export the complete database; on narrow screens
 they sit above the report. The report starts with the period's tokens (total, input and output),
 reference cost (with the blended cost per million tokens), cache hit rate and requests, followed by
 two chapter cards. Tokens and cost always appear together; there is no toggle:

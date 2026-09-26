@@ -154,6 +154,42 @@ test('POST /api/import/cursor accepts local CSV and rejects foreign origins and 
   });
 });
 
+test('database download and upload enforce methods, Host, origin and size limits', async () => {
+  const bytes = Buffer.from('SQLite format 3\0fixture');
+  let imports = 0;
+  const getData = async () => payload;
+  getData.exportDatabase = async () => bytes;
+  getData.importDatabase = async (body) => {
+    assert.deepEqual(body, bytes);
+    return { imported: ++imports, duplicates: 0 };
+  };
+  await withServer({ getData }, async (url) => {
+    const download = await fetch(`${url}/api/export/db`);
+    assert.equal(download.status, 200);
+    assert.equal(download.headers.get('content-type'), 'application/vnd.sqlite3');
+    assert.match(download.headers.get('content-disposition'), /attachment.*sqlite/);
+    assert.equal(download.headers.get('cache-control'), 'no-store');
+    assert.deepEqual(Buffer.from(await download.arrayBuffer()), bytes);
+    const head = await fetch(`${url}/api/export/db`, { method: 'HEAD' });
+    assert.equal(head.headers.get('content-length'), String(bytes.length));
+    assert.equal(await head.text(), '');
+    assert.equal((await fetch(`${url}/api/import/db`, { method: 'POST', body: bytes })).status, 200);
+    assert.equal((await fetch(`${url}/api/import/db`)).status, 405);
+    assert.equal((await fetch(`${url}/api/export/db`, { method: 'POST' })).status, 405);
+    for (const headers of [{ Origin: 'https://evil.example' }, { 'Sec-Fetch-Site': 'cross-site' }]) {
+      assert.equal((await fetch(`${url}/api/import/db`, { method: 'POST', headers, body: bytes })).status, 403);
+    }
+    const port = Number(new URL(url).port);
+    for (const endpoint of ['/api/import/db', '/api/export/db']) {
+      const forged = await rawRequest(port, `GET ${endpoint} HTTP/1.1\r\nHost: evil.example\r\nConnection: close\r\n\r\n`);
+      assert.match(forged, /HTTP\/1.1 403/);
+    }
+    const oversized = await rawRequest(port, 'POST /api/import/db HTTP/1.1\r\nHost: localhost\r\nContent-Length: 268435457\r\nConnection: close\r\n\r\n');
+    assert.match(oversized, /HTTP\/1.1 413/);
+    assert.equal(imports, 1);
+  });
+});
+
 test('serves the prebuilt dashboard from outDir and 404s missing assets', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'toksight-web-'));
   fs.writeFileSync(path.join(dir, 'index.html'), '<html>toksight dashboard</html>');

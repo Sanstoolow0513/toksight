@@ -189,20 +189,25 @@ code {
 }
 
 .topbar-inner {
-  max-width: 1000px;
-  margin: 0 auto;
   padding: 12px 20px;
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  grid-template-areas: "brand period tools";
   align-items: center;
-  justify-content: space-between;
   gap: 12px 20px;
-  flex-wrap: wrap;
+}
+
+.topbar-inner.is-plain {
+  grid-template-areas: "brand . tools";
 }
 
 .brand {
+  grid-area: brand;
+  justify-self: start;
   display: inline-flex;
   align-items: center;
   gap: 10px;
+  min-width: 0;
 }
 
 .brand-name {
@@ -218,16 +223,24 @@ code {
 .brand-mark .lv-3 { fill: var(--heat-3); }
 .brand-mark .lv-4 { fill: var(--heat-4); }
 
-.toolbar,
-.toolbar-group {
+.topbar-period,
+.toolbar {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
   gap: 8px;
 }
 
+.topbar-period {
+  grid-area: period;
+  justify-self: center;
+  justify-content: center;
+}
+
 .toolbar {
-  gap: 8px 18px;
+  grid-area: tools;
+  justify-self: end;
+  min-width: 0;
 }
 
 .seg {
@@ -401,6 +414,52 @@ code {
   opacity: 0.5;
   cursor: default;
 }
+
+.report-action-label {
+  margin: 12px 0 0;
+  padding: 0 4px;
+  color: var(--text-3);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+}
+
+.report-action small {
+  display: block;
+  margin-top: 5px;
+  font-size: 10px;
+  font-weight: 400;
+  line-height: 1.4;
+  opacity: 0.75;
+}
+
+.database-dialog {
+  width: min(460px, calc(100vw - 40px));
+  max-height: calc(100dvh - 40px);
+  padding: 26px;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: var(--shadow-lift);
+}
+
+.database-dialog::backdrop {
+  background: var(--scrim);
+  backdrop-filter: blur(2px);
+}
+
+.database-dialog-head { display: flex; align-items: center; gap: 10px; }
+.database-dialog-head > svg { color: var(--accent-strong); }
+.database-dialog-head h2 { flex: 1; margin: 0; font-family: var(--serif); font-size: 23px; font-weight: 500; }
+.database-dialog-head button { display: grid; place-items: center; padding: 7px; border: 0; border-radius: 8px; background: var(--surface-2); color: var(--text-2); cursor: pointer; }
+.database-file { display: flex; flex-direction: column; gap: 6px; margin: 22px 0 18px; padding: 14px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface-2); }
+.database-file strong { overflow-wrap: anywhere; font-size: 13px; font-weight: 500; }
+.database-file span { font-size: 12px; color: var(--text-3); }
+.database-dialog p { font-size: 13px; line-height: 1.8; }
+.database-dialog .database-dialog-note { color: var(--text-3); font-size: 12px; }
+.database-dialog .database-dialog-error { color: var(--danger); }
+.database-dialog-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 24px; }
+.database-dialog-actions .report-action { width: auto; min-height: 40px; justify-content: center; border-radius: 10px; }
 
 .report {
   display: flex;
@@ -1549,7 +1608,7 @@ button.mcell:focus-visible {
 /* 1px padding keeps the content inside the shell's border. */
 .xcard {
   position: relative;
-  width: min(1360px, 100%);
+  width: 100%;
   min-height: 100%;
   margin: 0 auto;
   padding: 1px;
@@ -1636,19 +1695,13 @@ button.mcell:focus-visible {
   pointer-events: none;
 }
 
-.xcard.is-month .xheat {
+.xleft {
+  min-width: 0;
+}
+
+.xcard.is-month .xleft {
   position: sticky;
   top: calc(var(--xhead, 88px) + 16px - var(--sheet-gap));
-}
-
-.xcard.is-month .xday {
-  padding-left: 32px;
-  border-left: 1px solid var(--border);
-}
-
-.xcard.is-year .xday {
-  padding-top: 24px;
-  border-top: 1px solid var(--border);
 }
 
 .xday {
@@ -1697,33 +1750,111 @@ button.mcell:focus-visible {
   pointer-events: none;
 }
 
-.xday-main,
-.xday-side {
+.xday-stats {
+  margin-top: 20px;
+  transition: opacity 0.2s;
+}
+
+.xday-stats.is-loading {
+  opacity: 0.55;
+  pointer-events: none;
+}
+
+/* The day deck: cards pack into pages one visible screenful tall; a taller
+   card gets a page to itself and scrolls inside it. */
+.xdeck {
+  position: relative;
+}
+
+.xdeck-page {
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
   display: flex;
   flex-direction: column;
-  gap: 22px;
+  gap: 16px;
+}
+
+.xdeck-page.is-scroll {
+  bottom: 0;
+}
+
+.xdeck-page.is-scroll .xdeck-card {
+  display: flex;
+  flex-direction: column;
+  max-height: 100%;
+}
+
+.xdeck-page.is-scroll .xdeck-card-body {
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.xdeck-measure {
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.xdeck-card {
+  min-width: 0;
+  padding: 16px 18px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+
+.xdeck-card-body {
   min-width: 0;
 }
 
-.xcard.is-year .xday-content {
-  display: grid;
-  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
-  gap: 22px 40px;
-  align-items: start;
+.xdeck-pager {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 14px;
 }
 
-.xcard.is-year .xday-main:only-child {
-  grid-column: 1 / -1;
+.xdeck-dot {
+  width: 6px;
+  height: 6px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: var(--border-strong);
+  cursor: pointer;
+  transition: transform 0.2s, background-color 0.2s;
 }
 
-.xcard.is-year .xday-side > .day-section:first-child {
-  padding-top: 0;
-  border-top: 0;
+.xdeck-dot:hover {
+  background: var(--text-3);
 }
 
-.day-section {
-  padding-top: 20px;
-  border-top: 1px solid var(--border);
+.xdeck-dot.is-active {
+  background: var(--accent-strong);
+  transform: scale(1.3);
+}
+
+/* Flat cross-agent model rows: primary-row spacing, agent dot + mono name. */
+.agent-table .model-name.is-flat {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.agent-table .model-name.is-flat .model-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .day-section-head {
@@ -1914,31 +2045,19 @@ button.mcell:focus-visible {
 
 /* Too short to keep the month calendar pinned under the header. */
 @media (max-height: 699px) {
-  .xcard.is-month .xheat {
+  .xcard.is-month .xleft {
     position: static;
   }
 }
 
 /* The opened card stacks: calendar on top, the day in one column below. */
 @media (max-width: 1023px) {
-  .xcard.is-month .xcard-body,
-  .xcard.is-year .xday-content {
+  .xcard.is-month .xcard-body {
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .xcard.is-month .xheat {
+  .xcard.is-month .xleft {
     position: static;
-  }
-
-  .xcard.is-month .xday {
-    padding: 24px 0 0;
-    border-top: 1px solid var(--border);
-    border-left: 0;
-  }
-
-  .xcard.is-year .xday-side > .day-section:first-child {
-    padding-top: 20px;
-    border-top: 1px solid var(--border);
   }
 }
 
@@ -1946,9 +2065,52 @@ button.mcell:focus-visible {
   .report-actions {
     position: static;
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(6, minmax(0, 1fr));
     width: auto;
     margin: 16px 24px 8px;
+  }
+  .report-actions > .report-action { grid-column: span 2; }
+  .report-action-label { grid-column: 1 / -1; }
+  .report-actions > .report-action:nth-last-child(2),
+  .report-actions > .report-action:last-child { grid-column: span 3; }
+}
+
+@media (max-width: 960px) {
+  .topbar-inner {
+    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-areas:
+      "brand tools"
+      "period period";
+  }
+
+  .topbar-inner.is-plain {
+    grid-template-areas: "brand tools";
+  }
+
+  .brand,
+  .toolbar {
+    min-width: max-content;
+  }
+
+  .topbar-period {
+    max-width: 100%;
+  }
+}
+
+@media (max-width: 480px) {
+  .topbar-inner,
+  .topbar-inner.is-plain {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      "brand"
+      "period"
+      "tools";
+  }
+
+  .topbar-inner.is-plain {
+    grid-template-areas:
+      "brand"
+      "tools";
   }
 }
 
