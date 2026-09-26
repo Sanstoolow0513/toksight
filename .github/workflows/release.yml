@@ -2,22 +2,14 @@ name: Release
 
 on:
   push:
-    tags:
-      - 'v*'
-  workflow_dispatch:
-    inputs:
-      bump:
-        description: 'Version bump from the release branch'
-        required: true
-        type: choice
-        options: [patch, minor, major]
+    branches: [release]
 
 permissions:
   contents: read
 
 concurrency:
-  group: release
-  cancel-in-progress: false
+  group: release-publish
+  queue: max
 
 jobs:
   test:
@@ -40,14 +32,15 @@ jobs:
     uses: ./.github/workflows/package-check.yml
 
   prepare:
-    name: Verify or create release tag
+    name: Check version and create tag
     needs: [test, package]
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      pull-requests: read
     outputs:
-      tag: ${{ steps.version.outputs.tag }}
-      sha: ${{ steps.version.outputs.sha }}
+      mode: ${{ steps.plan.outputs.mode }}
+      tag: ${{ steps.plan.outputs.tag }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -55,86 +48,71 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 24
-      - name: Verify or bump version
-        id: version
+      - name: Check package version against npm and existing tags
+        id: plan
         env:
-          RELEASE_BUMP: ${{ inputs.bump }}
+          GITHUB_TOKEN: ${{ github.token }}
+          RELEASE_BEFORE_SHA: ${{ github.event.before }}
         run: |
           set -euo pipefail
           git fetch origin refs/heads/release:refs/remotes/origin/release --tags
-          if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ]; then
-            if [ "$GITHUB_REF" != refs/heads/release ]; then
-              echo '::error::Run this workflow from the release branch.'
-              exit 1
-            fi
-            node scripts/release-version.js "$RELEASE_BUMP"
-            tag="v$(node -p "require('./package.json').version")"
-            if git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
-              sha="$(git rev-parse "refs/tags/$tag^{commit}")"
-              parent="$(git rev-parse "$sha^")"
-              if [ "$parent" != "$GITHUB_SHA" ] || ! git merge-base --is-ancestor "$sha" refs/remotes/origin/release; then
-                echo "::error::$tag already exists for a different release."
-                exit 1
-              fi
-            else
-              if [ "$(git rev-parse refs/remotes/origin/release)" != "$GITHUB_SHA" ]; then
-                echo '::error::The release branch moved. Run the workflow again from its latest commit.'
-                exit 1
-              fi
-              git config user.name 'github-actions[bot]'
-              git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-              git add package.json package-lock.json web/package.json web/package-lock.json
-              git commit -m "chore: release $tag"
-              git tag "$tag"
-              git push --atomic origin HEAD:refs/heads/release "refs/tags/$tag"
-              sha="$(git rev-parse HEAD)"
-            fi
-          else
-            tag="$GITHUB_REF_NAME"
-            sha="$GITHUB_SHA"
-          fi
-          expected="v$(git show "$sha:package.json" | node -p "JSON.parse(require('fs').readFileSync(0, 'utf8')).version")"
-          if [ "$tag" != "$expected" ]; then
-            echo "::error::Tag $tag does not match package.json version $expected."
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" refs/remotes/origin/release; then
+            echo '::error::The release commit is no longer on the release branch.'
             exit 1
           fi
-          if ! git merge-base --is-ancestor "$sha" refs/remotes/origin/release; then
-            echo '::error::The release tag must point to a commit on the release branch.'
-            exit 1
+          node scripts/release-plan.js
+      - name: Create matching tag
+        if: steps.plan.outputs.mode == 'publish'
+        env:
+          RELEASE_TAG: ${{ steps.plan.outputs.tag }}
+        run: |
+          set -euo pipefail
+          if ! git show-ref --verify --quiet "refs/tags/$RELEASE_TAG"; then
+            git tag "$RELEASE_TAG" "$GITHUB_SHA"
+            git push origin "refs/tags/$RELEASE_TAG"
           fi
-          echo "tag=$tag" >> "$GITHUB_OUTPUT"
-          echo "sha=$sha" >> "$GITHUB_OUTPUT"
 
   publish:
     name: Publish to npm
     needs: prepare
+    if: needs.prepare.outputs.mode != 'skip'
     runs-on: ubuntu-latest
     permissions:
       contents: read
       id-token: write
     steps:
       - uses: actions/checkout@v4
+        if: needs.prepare.outputs.mode == 'publish'
         with:
-          ref: ${{ needs.prepare.outputs.sha }}
+          ref: ${{ github.sha }}
       - uses: actions/setup-node@v6
+        if: needs.prepare.outputs.mode == 'publish'
         with:
           node-version: 24
           registry-url: https://registry.npmjs.org
           package-manager-cache: false
       - name: Use npm with trusted publishing support
+        if: needs.prepare.outputs.mode == 'publish'
         run: npm install --global 'npm@^11.5.1'
-      - run: npm ci
-      - run: npm publish --access public
+      - if: needs.prepare.outputs.mode == 'publish'
+        run: npm ci
+      - if: needs.prepare.outputs.mode == 'publish'
+        run: |
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          npm publish --access public
+      - if: needs.prepare.outputs.mode == 'recover'
+        run: echo 'This version was already published by the same release commit.'
 
   release:
     name: GitHub Release
     needs: [prepare, publish]
+    if: needs.prepare.outputs.mode != 'skip'
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ needs.prepare.outputs.tag }}
+          target_commitish: ${{ github.sha }}
           generate_release_notes: true

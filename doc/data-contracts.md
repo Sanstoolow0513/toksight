@@ -1,0 +1,31 @@
+# Data contracts
+
+These are the collection, storage, pricing, and report contracts behind the public CLI and web API. The implementation lives in `src/`; preserve these behaviors when changing a parser or aggregation.
+
+## Normalized entries
+
+Each client parser returns `{ entries, warnings }` and emits entries with `client`, `sessionId`, `model`, `timestamp` (milliseconds since epoch or `null`), `inputTokens`, `outputTokens`, `reasoningTokens`, `cacheReadTokens`, `cacheWriteTokens`, `costUsd`, `directory`, and `title`. `src/collect.js` computes cost centrally. A parser leaves `costUsd: null` unless the agent reports a charge (OpenCode) or a Cursor CSV row reports a numeric charge or `Free`. Cursor `Included` has no billed charge; the report estimates a reference cost using Cursor's published model rate and records it under `costCoverage.sources.cursor`. A numeric CSV charge always wins. Cursor CSV has no session ID, so its entries use `null` and do not contribute session counts or details.
+
+Cache hit rate is `cacheRead / (freshInput + cacheRead)`. Cache writes are excluded: they store cold traffic rather than serve it. Attribution is per request, so model changes within one session split cleanly across agent and model views. Date grouping and `--since`/`--until` use local time; `src/dates.js` owns local calendar math, rejects invalid dates, and steps across DST using calendar days rather than fixed 24-hour increments.
+
+## Parser behavior
+
+- OpenCode v1.2+ reads `~/.local/share/opencode/opencode.db` (`message.data`, joined to `session` for directory/title). `<base>/storage/message/*.json` is a fallback only when the database is absent or unreadable. Never collect both. SQLite-era `cost: 0` is a placeholder; only nonzero database-reported costs are authoritative. Legacy JSON costs are honored as stored.
+- ZCode reads `~/.zcode/cli/db/db.sqlite` (`model_usage`); `~/.zcode/cli/rollout/*.jsonl` is a fallback only when that database is absent or unreadable. Never collect both. Both paths subtract cache reads from `input_tokens` because the source field already includes them.
+- Claude deduplicates repeated assistant message IDs by the largest token snapshot; streaming partial usage can grow before its final line. Codex prefers `last_token_usage` and diffs cumulative totals. Kimi counts every `usage.record` as a separate request, including both `turn` and `session` usage scopes.
+- Parsers tolerate malformed and unreadable files, add warnings, and skip empty-usage rows. `collectAll` gathers clients with `Promise.allSettled`. A missing root is silent; other root read errors, unreadable existing Kimi `state.json`, and timestamp-less entries excluded by date filters produce warnings. Invalid or nonfinite timestamps normalize to `null` rather than throwing.
+- Parsers receive `{ env, home }` instead of reading `process.env` directly. `collectAll(opts, { env, home })` passes those values through collection and pricing. Fixtures use `ZCODE_HOME`, `CLAUDE_CONFIG_DIR`, `CODEX_HOME`, `OPENCODE_PATH`, and `KIMI_CODE_HOME`.
+
+## SQLite, imports, and pricing
+
+A refresh replaces toksight's own SQLite snapshot transactionally and preserves durable imports. `export-db <file>` and `GET /api/export/db` export every committed row, including Cursor imports and pricing, into a standalone SQLite database that includes WAL content. `import-db <file>` and `POST /api/import/db` validate the whole file before an atomic merge (256 MB maximum). Non-Cursor imports live in `usage_imports`, survive refresh, and appear in CLI reports. Their identity uses agent/session/time/model/token counts plus occurrence, excluding cost/title/directory, so overlapping backups do not double count repeated requests. Existing reported charges win; imported reported charges can fill estimates. Imported prices fill missing catalog records, including per-model offline fallback.
+
+`POST /api/import/cursor` accepts raw UTF-8 Usage Events CSV, validates columns, skips zero-usage rows, and stores timestamp, model, four token classes, and occurrence identity in `cursor_imports`. Reads fold legacy all-column fingerprints by this identity without deleting stored rows. Overlapping reimports or changed costs do not double count; a numeric charge can replace a prior `Included` value. `Input (w/ Cache Write)` maps to cache writes, `Input (w/o Cache Write)` to fresh input, and `Cache Read` to cache reads. Refresh retains imports; CLI collection reads the same database; cross-process reads notice changes via SQLite `data_version`.
+
+The shared `model_prices` catalog stores normalized USD-per-token rates and `price_updates` stores fetch state. LiteLLM and Cursor's official Markdown rates are cached for seven days. Web startup and report reads check both sources when due; `POST /api/prices/update` forces both. `pricing.json` user overrides match an exact model name or a provider-prefixed suffix, such as `zhipuai/glm-5.3` matching `GLM-5.3`. Keep agent-reported charges separate from Cursor official-rate estimates, user overrides, LiteLLM, and built-in prices. Cursor `Auto` without a routed model remains unpriced. Cached current rates applied to historical Cursor rows are reference estimates, not historical bills.
+
+## Report payload
+
+`src/payload.js` owns the public `--json` payload: `tool`, `version`, `generatedAt`, `range`, `clientsFilter`, `totals`, `cacheHitRate`, `clients`, `models`, `daily`, `monthly`, `sessions`, `pricing` (including `unpricedModels`, `modelRates`, and `updates`), and `warnings`. `toksight refresh --json` returns database status instead. Each `clients` value includes that agent's totals and cache hit rate from the filtered entries, so `--client`, `--since`, and `--until` apply consistently. Model rows group by agent and display name while retaining original `modelIds`; grouping does not recalculate per-request charges.
+
+`GET /api/data` keeps the CLI report fields and adds dashboard fields from `src/webdata.js` and `src/webservice.js`; see [Web server and report](web-report.md). Session details and `longestSession` use active duration with idle gaps capped at five minutes. Warnings appear in CLI stderr and in JSON. New database import/export endpoints must use the same Host and origin guards as other data and write routes.
