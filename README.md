@@ -338,7 +338,7 @@ builds always export static files). `web:install` remains for updating web depen
 The CLI keeps **zero runtime dependencies**; dashboard dependencies live only in
 `web/package.json`, needed just to (re)build `web/out/`. The flows: session files →
 parsers → `collectAll` → CLI output or SQLite refresh → `/api/data`; `web/` source → Next build → `web/out/` →
-the CLI's HTTP server. Per-module notes live in [AGENTS.md](./AGENTS.md).
+the CLI's HTTP server. Per-module notes live in the [engineering docs](doc/README.md).
 
 ```bash
 npm run check:package # pack, install the tarball offline in a temp dir, then exercise
@@ -346,40 +346,18 @@ npm run check:package # pack, install the tarball offline in a temp dir, then ex
 ```
 
 It needs network only to install locked web dependencies, uses throwaway agent fixtures (never
-your real sessions), and cleans up afterward. PR, main-branch, and release-branch CI run the test suite and
+your real sessions), and cleans up afterward. PR and main-branch CI, plus the Release workflow, run the test suite and
 this check on Ubuntu/Windows.
 
 ### Releasing
 
-Releases run from the `release` branch through [.github/workflows/release.yml](.github/workflows/release.yml).
-In GitHub Actions, choose **Release → Run workflow**, select the `release` branch and a
-`patch`, `minor`, or `major` bump. The workflow runs tests (Ubuntu/Windows, Node 22/24)
-and installed-package checks first. It then updates the versions in both manifests and
-lockfiles, commits the change to `release`, creates the matching `v*` tag, publishes the
-package to npm, and creates a GitHub Release with generated notes. Pushing a matching
-tag from `release` remains supported and runs the same checks and publishing steps.
+Open a PR targeting `release` with the code to publish and an explicit stable version.
+For example, `npm run release:version -- 0.4.1` updates both manifests and lockfiles.
+PR CI checks version consistency, tests, and the installed package. Once merged, the
+Release workflow repeats those checks, then publishes the matching version to npm and
+GitHub Releases. A PR without a version change does not publish.
 
-One-time npm setup: for the existing `toksight` package, add a **GitHub Actions trusted
-publisher** in npm package settings: owner `Sanstoolow0513`, repository `toksight`,
-workflow filename `release.yml`, and allow **npm publish**. The workflow uses npm's OIDC
-authentication and needs no `NPM_TOKEN` secret. GitHub Actions must be allowed to push
-version commits and tags to `release`. The workflow must be present on the default branch
-before GitHub shows its manual Run workflow button.
-
-To prepare and push a tag locally instead, use the version helper on `release`:
-
-```bash
-git switch release
-npm run release:version -- patch  # or minor / major; updates both lockfiles too
-git add package.json package-lock.json web/package.json web/package-lock.json
-git commit -m "chore: release vX.Y.Z"
-git tag vX.Y.Z
-git push origin release vX.Y.Z
-```
-
-If a tag does not match the package version or is outside `release`, or if a check fails,
-the workflow does not publish. `prepublishOnly` reruns tests and `prepack` rebuilds
-`web/out` for the npm tarball.
+See the [release guide](doc/release.md) for branch protection, the npm publish secret, failure recovery, and verification.
 
 ### Roadmap
 

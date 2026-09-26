@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main, release]
+    branches: [main]
   pull_request:
 
 permissions:
@@ -26,3 +26,18 @@ jobs:
 
   package:
     uses: ./.github/workflows/package-check.yml
+
+  release-version:
+    name: release version
+    if: github.event_name == 'pull_request' && github.base_ref == 'release'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node scripts/check-release-version.js
+        env:
+          RELEASE_BASE_SHA: ${{ github.event.pull_request.base.sha }}

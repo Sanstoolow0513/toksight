@@ -301,43 +301,23 @@ npm run web:dev       # 同时启动 API（4729）和前端（3000），支持�
 CLI 本体保持**零运行时依赖**，仪表盘依赖只存在于 `web/package.json`，仅在（重新）构建
 `web/out/` 时需要。数据流程：会话文件 → 解析器 → `collectAll` → CLI 输出或 SQLite 刷新 → `/api/data`；
 `web/` 源码 → Next 构建 → `web/out/` → CLI 内置 HTTP 服务器。逐模块说明见
-[AGENTS.md](./AGENTS.md)。
+[工程文档](doc/README.md)。
 
 ```bash
 npm run check:package  # 打包并在临时目录离线安装，再用 fixture 验证页面、静态资源与数据 API
 ```
 
 仅安装锁定的网页依赖时需要网络；全程使用临时 Agent fixture，不碰真实数据，结束后
-自动清理。PR、main 与 release 分支的 CI 会在 Ubuntu/Windows 上运行测试与该检查。
+自动清理。PR 和 main 的 CI，以及 Release 工作流，会在 Ubuntu/Windows 上运行测试与该检查。
 
 ### 发布
 
-发布从 `release` 分支运行 [.github/workflows/release.yml](.github/workflows/release.yml)。
-在 GitHub Actions 中选择 **Release → Run workflow**，选 `release` 分支和 `patch`、
-`minor` 或 `major`。工作流先运行测试（Ubuntu/Windows，Node 22/24）与安装包检查，
-再同步更新根目录和 web 目录的 manifest 与 lockfile 版本，提交到 `release`、创建
-对应的 `v*` 标签、发布到 npm，最后生成 GitHub Release。也可以从 `release` 手工
-推送匹配的标签，走同一套检查与发布步骤。
+向 `release` 发起 PR，同时提交要发布的代码和明确的稳定版号。例如运行
+`npm run release:version -- 0.4.1`，可同步更新两个 manifest 和两个 lockfile。
+PR CI 会检查版本一致性、测试和安装包。合入后 Release 工作流重跑检查，
+再将相同版本发布到 npm 和 GitHub Releases。版本号不变的 PR 不会发版。
 
-首次使用需在 npm 的 `toksight` 包设置中添加 **GitHub Actions trusted publisher**：
-owner 填 `Sanstoolow0513`，repository 填 `toksight`，workflow filename 填
-`release.yml`，并允许 **npm publish**。工作流使用 npm OIDC 认证，无需 `NPM_TOKEN`
-secret。GitHub Actions 还需有权限向 `release` 推送版本提交与标签。工作流必须先存在于
-默认分支，GitHub 才会显示手动运行按钮。
-
-也可以在本地通过版本命令准备标签：
-
-```bash
-git switch release
-npm run release:version -- patch  # 也可用 minor / major；同时更新两个 lockfile
-git add package.json package-lock.json web/package.json web/package-lock.json
-git commit -m "chore: release vX.Y.Z"
-git tag vX.Y.Z
-git push origin release vX.Y.Z
-```
-
-标签与包版本不一致、标签不在 `release` 分支上，或检查失败时，工作流不会发布。
-`prepublishOnly` 会重跑测试，`prepack` 会将 `web/out` 重新构建进 npm 包。
+分支保护、npm 发布密钥配置、失败重试和验收方法见[发布指南](doc/release.md)。
 
 ### 路线图
 

@@ -5,7 +5,7 @@ HTTP 服务器（`src/webserver.js`）托管，数据来自同源的 `/api/data`
 
 页面是一份按月 / 按年的 token 用量与成本报告：点阵背景 + Claude 明暗配色，两张可拖动排序的
 章节卡片（热力图 · Agent 与模型），可整页导出 PNG。视觉与交互规范见仓库根目录
-`design-spec.md`（v8），实现以 spec 为准。
+`design-spec.md`（v9），实现以 spec 为准。
 
 ## 使用
 
