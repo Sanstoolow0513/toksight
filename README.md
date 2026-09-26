@@ -346,26 +346,40 @@ npm run check:package # pack, install the tarball offline in a temp dir, then ex
 ```
 
 It needs network only to install locked web dependencies, uses throwaway agent fixtures (never
-your real sessions), and cleans up afterward. PR and main-branch CI run the test suite and
+your real sessions), and cleans up afterward. PR, main-branch, and release-branch CI run the test suite and
 this check on Ubuntu/Windows.
 
 ### Releasing
 
-Releases are automated by [.github/workflows/release.yml](.github/workflows/release.yml):
-push a `v*` tag that matches `package.json`'s version and the workflow runs the full test
-matrix (Ubuntu + Windows, Node 20/22/24) and Ubuntu/Windows package checks, verifies the tag against the package version,
-then opens a GitHub Release with auto-generated notes.
+Releases run from the `release` branch through [.github/workflows/release.yml](.github/workflows/release.yml).
+In GitHub Actions, choose **Release → Run workflow**, select the `release` branch and a
+`patch`, `minor`, or `major` bump. The workflow runs tests (Ubuntu/Windows, Node 22/24)
+and installed-package checks first. It then updates the versions in both manifests and
+lockfiles, commits the change to `release`, creates the matching `v*` tag, publishes the
+package to npm, and creates a GitHub Release with generated notes. Pushing a matching
+tag from `release` remains supported and runs the same checks and publishing steps.
+
+One-time npm setup: for the existing `toksight` package, add a **GitHub Actions trusted
+publisher** in npm package settings: owner `Sanstoolow0513`, repository `toksight`,
+workflow filename `release.yml`, and allow **npm publish**. The workflow uses npm's OIDC
+authentication and needs no `NPM_TOKEN` secret. GitHub Actions must be allowed to push
+version commits and tags to `release`. The workflow must be present on the default branch
+before GitHub shows its manual Run workflow button.
+
+To prepare and push a tag locally instead, use the version helper on `release`:
 
 ```bash
-# First update both package.json versions and their lockfiles, then commit
-git tag vX.Y.Z                # X.Y.Z must match package.json
-git push origin main vX.Y.Z   # the tag starts the release workflow
+git switch release
+npm run release:version -- patch  # or minor / major; updates both lockfiles too
+git add package.json package-lock.json web/package.json web/package-lock.json
+git commit -m "chore: release vX.Y.Z"
+git tag vX.Y.Z
+git push origin release vX.Y.Z
 ```
 
-If the tag doesn't match the package version, or a test or package check fails, no release is created.
-Publishing to npm is intentionally manual — run `npm publish` yourself when needed (the
-`prepublishOnly` / `prepack` scripts re-run the tests and rebuild `web/out` into the
-tarball).
+If a tag does not match the package version or is outside `release`, or if a check fails,
+the workflow does not publish. `prepublishOnly` reruns tests and `prepack` rebuilds
+`web/out` for the npm tarball.
 
 ### Roadmap
 

@@ -1,18 +1,23 @@
-# Auto-release: push a v* tag that matches package.json's version.
-# The tag runs the full test matrix and checks the built package, then
-# opens a GitHub Release with auto-generated notes.
-# npm publishing is deliberately NOT automated — run `npm publish` manually
-# when needed (its lifecycle scripts re-run the tests and rebuild web/out).
-
 name: Release
 
 on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: 'Version bump from the release branch'
+        required: true
+        type: choice
+        options: [patch, minor, major]
 
 permissions:
-  contents: write # required to create the GitHub Release
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
 
 jobs:
   test:
@@ -34,23 +39,102 @@ jobs:
   package:
     uses: ./.github/workflows/package-check.yml
 
-  release:
-    name: GitHub Release
+  prepare:
+    name: Verify or create release tag
     needs: [test, package]
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      tag: ${{ steps.version.outputs.tag }}
+      sha: ${{ steps.version.outputs.sha }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
-      - name: Guard - tag must match package.json version
+          node-version: 24
+      - name: Verify or bump version
+        id: version
+        env:
+          RELEASE_BUMP: ${{ inputs.bump }}
         run: |
-          pkg="v$(node -p "require('./package.json').version")"
-          if [ "$pkg" != "$GITHUB_REF_NAME" ]; then
-            echo "::error::tag $GITHUB_REF_NAME does not match package.json version $pkg"
+          set -euo pipefail
+          git fetch origin refs/heads/release:refs/remotes/origin/release --tags
+          if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ]; then
+            if [ "$GITHUB_REF" != refs/heads/release ]; then
+              echo '::error::Run this workflow from the release branch.'
+              exit 1
+            fi
+            node scripts/release-version.js "$RELEASE_BUMP"
+            tag="v$(node -p "require('./package.json').version")"
+            if git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
+              sha="$(git rev-parse "refs/tags/$tag^{commit}")"
+              parent="$(git rev-parse "$sha^")"
+              if [ "$parent" != "$GITHUB_SHA" ] || ! git merge-base --is-ancestor "$sha" refs/remotes/origin/release; then
+                echo "::error::$tag already exists for a different release."
+                exit 1
+              fi
+            else
+              if [ "$(git rev-parse refs/remotes/origin/release)" != "$GITHUB_SHA" ]; then
+                echo '::error::The release branch moved. Run the workflow again from its latest commit.'
+                exit 1
+              fi
+              git config user.name 'github-actions[bot]'
+              git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+              git add package.json package-lock.json web/package.json web/package-lock.json
+              git commit -m "chore: release $tag"
+              git tag "$tag"
+              git push --atomic origin HEAD:refs/heads/release "refs/tags/$tag"
+              sha="$(git rev-parse HEAD)"
+            fi
+          else
+            tag="$GITHUB_REF_NAME"
+            sha="$GITHUB_SHA"
+          fi
+          expected="v$(git show "$sha:package.json" | node -p "JSON.parse(require('fs').readFileSync(0, 'utf8')).version")"
+          if [ "$tag" != "$expected" ]; then
+            echo "::error::Tag $tag does not match package.json version $expected."
             exit 1
           fi
+          if ! git merge-base --is-ancestor "$sha" refs/remotes/origin/release; then
+            echo '::error::The release tag must point to a commit on the release branch.'
+            exit 1
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+
+  publish:
+    name: Publish to npm
+    needs: prepare
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.sha }}
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+          package-manager-cache: false
+      - name: Use npm with trusted publishing support
+        run: npm install --global 'npm@^11.5.1'
+      - run: npm ci
+      - run: npm publish --access public
+
+  release:
+    name: GitHub Release
+    needs: [prepare, publish]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ needs.prepare.outputs.tag }}
           generate_release_notes: true

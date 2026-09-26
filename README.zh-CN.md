@@ -308,23 +308,36 @@ npm run check:package  # 打包并在临时目录离线安装，再用 fixture �
 ```
 
 仅安装锁定的网页依赖时需要网络；全程使用临时 Agent fixture，不碰真实数据，结束后
-自动清理。PR 与 main 分支的 CI 会在 Ubuntu/Windows 上运行测试与该检查。
+自动清理。PR、main 与 release 分支的 CI 会在 Ubuntu/Windows 上运行测试与该检查。
 
 ### 发布
 
-发布由 [.github/workflows/release.yml](.github/workflows/release.yml) 自动完成：推送一个与
-`package.json` 版本一致的 `v*` 标签，工作流会先跑完整测试矩阵（Ubuntu + Windows，Node
-20/22/24）与 Ubuntu/Windows 安装包检查，校验标签与包版本一致，然后用自动生成的变更记录创建 GitHub Release。
+发布从 `release` 分支运行 [.github/workflows/release.yml](.github/workflows/release.yml)。
+在 GitHub Actions 中选择 **Release → Run workflow**，选 `release` 分支和 `patch`、
+`minor` 或 `major`。工作流先运行测试（Ubuntu/Windows，Node 22/24）与安装包检查，
+再同步更新根目录和 web 目录的 manifest 与 lockfile 版本，提交到 `release`、创建
+对应的 `v*` 标签、发布到 npm，最后生成 GitHub Release。也可以从 `release` 手工
+推送匹配的标签，走同一套检查与发布步骤。
+
+首次使用需在 npm 的 `toksight` 包设置中添加 **GitHub Actions trusted publisher**：
+owner 填 `Sanstoolow0513`，repository 填 `toksight`，workflow filename 填
+`release.yml`，并允许 **npm publish**。工作流使用 npm OIDC 认证，无需 `NPM_TOKEN`
+secret。GitHub Actions 还需有权限向 `release` 推送版本提交与标签。工作流必须先存在于
+默认分支，GitHub 才会显示手动运行按钮。
+
+也可以在本地通过版本命令准备标签：
 
 ```bash
-# 先同步更新根目录与 web/package.json 的版本及对应 lockfile，再提交
-git tag vX.Y.Z                # X.Y.Z 必须与 package.json 一致
-git push origin main vX.Y.Z   # 推送标签，触发发布工作流
+git switch release
+npm run release:version -- patch  # 也可用 minor / major；同时更新两个 lockfile
+git add package.json package-lock.json web/package.json web/package-lock.json
+git commit -m "chore: release vX.Y.Z"
+git tag vX.Y.Z
+git push origin release vX.Y.Z
 ```
 
-标签与包版本不一致、测试或安装包检查失败时，都不会创建 Release。发布到 npm 是刻意保留的手动
-步骤——需要时自行运行 `npm publish`（`prepublishOnly` / `prepack` 脚本会再跑一次测试，并把
-`web/out` 重新构建进发布包）。
+标签与包版本不一致、标签不在 `release` 分支上，或检查失败时，工作流不会发布。
+`prepublishOnly` 会重跑测试，`prepack` 会将 `web/out` 重新构建进 npm 包。
 
 ### 路线图
 
