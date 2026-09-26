@@ -313,11 +313,11 @@ npm run check:package  # 打包并在临时目录离线安装，再用 fixture �
 ### 发布
 
 向 `release` 发起 PR，同时提交要发布的代码和明确的稳定版号。例如运行
-`npm run release:version -- 0.4.1`，可同步更新两个 manifest 和两个 lockfile。
+`npm run release:version -- 1.0.1`，可同步更新两个 manifest 和两个 lockfile。
 PR CI 会检查版本一致性、测试和安装包。合入后 Release 工作流重跑检查，
 再将相同版本发布到 npm 和 GitHub Releases。版本号不变的 PR 不会发版。
 
-分支保护、npm 发布密钥配置、失败重试和验收方法见[发布指南](doc/release.md)。
+分支保护、npm Trusted Publishing 配置、失败重试和验收方法见[发布指南](doc/release.md)。
 
 ### 路线图
 

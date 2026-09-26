@@ -48,7 +48,6 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 24
-          registry-url: https://registry.npmjs.org
       - name: Check package version against npm and existing tags
         id: plan
         env:
@@ -62,16 +61,6 @@ jobs:
             exit 1
           fi
           node scripts/release-plan.js
-      - name: Check npm publish token before tagging
-        if: steps.plan.outputs.mode == 'publish'
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: |
-          if [ -z "$NODE_AUTH_TOKEN" ]; then
-            echo '::error::Configure the NPM_TOKEN repository secret before releasing.'
-            exit 1
-          fi
-          npm whoami --registry=https://registry.npmjs.org
       - name: Create matching tag
         if: steps.plan.outputs.mode == 'publish'
         env:
@@ -102,14 +91,15 @@ jobs:
           node-version: 24
           registry-url: https://registry.npmjs.org
           package-manager-cache: false
+      - name: Use npm with trusted publishing support
+        if: needs.prepare.outputs.mode == 'publish'
+        run: npm install --global 'npm@^11.5.1'
       - if: needs.prepare.outputs.mode == 'publish'
         run: npm ci
       - if: needs.prepare.outputs.mode == 'publish'
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
-          npm publish --access public --provenance
+          npm publish --access public
       - if: needs.prepare.outputs.mode == 'recover'
         run: echo 'This version was already published by the same release commit.'
 

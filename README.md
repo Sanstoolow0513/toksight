@@ -352,12 +352,12 @@ this check on Ubuntu/Windows.
 ### Releasing
 
 Open a PR targeting `release` with the code to publish and an explicit stable version.
-For example, `npm run release:version -- 0.4.1` updates both manifests and lockfiles.
+For example, `npm run release:version -- 1.0.1` updates both manifests and lockfiles.
 PR CI checks version consistency, tests, and the installed package. Once merged, the
 Release workflow repeats those checks, then publishes the matching version to npm and
 GitHub Releases. A PR without a version change does not publish.
 
-See the [release guide](doc/release.md) for branch protection, the npm publish secret, failure recovery, and verification.
+See the [release guide](doc/release.md) for branch protection, npm Trusted Publishing setup, failure recovery, and verification.
 
 ### Roadmap
 
