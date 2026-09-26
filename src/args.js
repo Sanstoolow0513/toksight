@@ -8,7 +8,7 @@
 import { resolveClientIds } from './clients/index.js';
 import { endOfDay, parseDateArg, startOfDay, startOfMonth, stepDay } from './dates.js';
 
-const COMMANDS = ['overview', 'daily', 'monthly', 'models', 'sessions', 'web', 'refresh', 'env', 'help'];
+const COMMANDS = ['overview', 'daily', 'monthly', 'models', 'sessions', 'web', 'refresh', 'export-db', 'import-db', 'env', 'help'];
 
 export function parseArgs(argv, { now = Date.now() } = {}) {
   const opts = {
@@ -90,13 +90,19 @@ export function parseArgs(argv, { now = Date.now() } = {}) {
         positional.push(name);
     }
   }
-  if (positional.length > 1) throw new Error(`unexpected extra arguments: ${positional.slice(1).join(' ')}`);
-  if (positional.length === 1) {
+  const transfer = ['export-db', 'import-db'].includes(positional[0]);
+  if (positional.length > (transfer ? 2 : 1)) throw new Error(`unexpected extra arguments: ${positional.slice(transfer ? 2 : 1).join(' ')}`);
+  if (positional.length >= 1) {
     const cmd = positional[0];
     if (!COMMANDS.includes(cmd)) {
       throw new Error(`unknown command "${cmd}" (see toksight --help)`);
     }
     opts.command = cmd;
+  }
+  if (transfer) {
+    opts.file = positional[1];
+    if (!opts.file && !opts.help && !opts.version) throw new Error(`${opts.command} requires a file path`);
+    if (opts.clients || opts.since != null || opts.until != null) throw new Error('database transfers include all usage; date and client filters are not supported');
   }
   return opts;
 }

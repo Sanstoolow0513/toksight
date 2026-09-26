@@ -44,6 +44,8 @@ toksight models       # grouped by model
 toksight sessions     # top sessions by cost
 toksight web          # local usage & cost report (heatmap, agents, models, image export)
 toksight refresh      # rescan agents and update the local SQLite database
+toksight export-db backup.sqlite  # export the complete committed usage database
+toksight import-db backup.sqlite  # merge a backup and deduplicate usage
 toksight env          # show detected data sources + pricing state
 ```
 
@@ -136,8 +138,8 @@ last successful fetch and check. Cursor's billing scope uses only Cursor rates. 
 distinct IDs. Other agents use the generic source priority
 above. A published price applied to older usage is a current-rate reference estimate, not a
 historical bill. Requests are priced using their original model ID, then grouped for display by
-agent and normalized model name. The model card shows a per-million-token rate when every ID in
-that row has the same rate; JSON `pricing.modelRates` retains raw IDs, effort and rates.
+agent and normalized model name. A model row's hover tooltip shows per-million-token rates when every
+ID in that row has the same rate; JSON `pricing.modelRates` retains raw IDs, effort and rates.
 When Cursor lists `-` for a cache rate, those tokens use the listed input rate as a fallback;
 `costCoverage.cacheFallbackRequests` counts affected requests.
 
@@ -158,8 +160,32 @@ rescanning agents. Data never leaves your machine.
 Click the toolbar's refresh button, call `POST /api/refresh`, or run `toksight refresh` to rescan
 all agents and update the database in one transaction. A failed refresh keeps the previous
 snapshot. The web server notices a refresh made by another toksight process. Refreshing also
-updates the displayed report and open day card; the footer shows when the database was last
+updates the displayed report and the loaded day details; the footer shows when the database was last
 refreshed. `toksight refresh --offline` skips pricing fetches.
+
+**Export database** in the left action area downloads a standalone `.sqlite` backup of all
+committed usage, across every agent and date, regardless of the displayed period or startup
+filters. It includes session titles/directories, Cursor imports, prices and cost provenance;
+agent files, credentials and browser preferences are not included. Run refresh first if you
+want to collect new sessions before exporting. **Import database** accepts a toksight `.sqlite`
+or `.db` file (up to 256 MB), shows the merge behavior, then imports transactionally. Invalid or
+unsupported databases leave existing data intact. Results show added, updated and duplicate
+records; the report moves to the backup's latest usage period.
+
+Imports **merge and deduplicate**; they never replace the destination database. Non-Cursor
+records match on agent, session ID, timestamp, model and token counts, preserving the largest
+occurrence count of identical requests across backups. Paths and titles do not affect matching.
+Existing reported costs and conflicting price records win; a reported cost can fill an estimate.
+Cursor retains its CSV event matching. Changed usage fields cannot be recognized as the same
+request and may count again. Imported history survives refresh, appears in CLI reports and can
+be exported again. Estimates can change when local prices update.
+
+The same operations are available as `toksight export-db <file>` and `toksight import-db <file>`
+(`--json` prints transfer statistics). Export requires an existing snapshot (`toksight refresh`
+creates one) and refuses to overwrite an existing file. Transfers reject date/client filters.
+The web endpoints are `GET /api/export/db` (SQLite download) and `POST /api/import/db` (raw SQLite
+bytes, merge statistics as JSON); both retain the local Host check and import requires a permitted
+origin. Transfers work offline and never write agent files.
 
 The **Update prices** card beside the report calls `POST /api/prices/update` to check LiteLLM and Cursor together,
 even within the 7-day interval. Startup and report requests check automatically only when a
@@ -182,33 +208,39 @@ a model name or token counts, that event may be counted again. The import report
 The dashboard is a one-page **token usage & cost report** for a calendar month or a whole year,
 in Claude's warm light/dark palette on a sparse dot grid (visual spec: `design-spec.md`). The
 toolbar picks **Month / Year** and steps through periods (back to your first recorded day, never
-into the future), switches light / dark / system theme and 中文 / EN, and refreshes. Three small
-cards beside the report import Cursor CSV, export an image, and update prices; on narrow screens
-they sit above the report. The report starts with the period's tokens, reference cost, cache hit
-rate and requests, followed by three chapter cards:
+into the future), switches light / dark / system theme and 中文 / EN, and refreshes. Small
+cards beside the report import Cursor CSV, export an image, update prices, and import/export the complete database; on narrow screens
+they sit above the report. The report starts with the period's tokens (total, input and output),
+reference cost (with the blended cost per million tokens), cache hit rate and requests, followed by
+two chapter cards. Tokens and cost always appear together; there is no toggle:
 
-1. **Activity heatmap** — a calendar (month) or 53-week grid (year) of daily tokens or cost
-   (toggle on the card), plus active days, average per active day, peak day, longest streak and
-   per-day tooltips.
-2. **By agent** — each agent's share of the period's tokens or cost. In token mode the bar splits
-   into input / cache read / cache write / output; cost, cache hit rate, requests and sessions
-   sit underneath.
-3. **By model** — one row per agent and normalized model name, with that agent's cost shown by
-   default (tokens remain selectable).
-   Cursor effort suffixes such as `opus5.5-high` disappear from the label; past eight rows, the
-   tail folds into one "N other model uses" row so the card keeps a fixed height.
+1. **Activity heatmap** — a calendar (month) or 53-week grid (year) shaded by daily tokens, with
+   each calendar day showing its tokens and cost, plus active days, average per active day, peak
+   day (tokens and cost), longest streak and per-day tooltips.
+2. **Agents & models** — a table: agent (a fixed identity-color dot and model count), tokens and
+   cost (each with its share of the period), a token-mix bar (input / cache read / cache write /
+   output), a cache-hit ring and requests. Click the Tokens or Cost header to sort. Agents work
+   like folders: models start collapsed, and clicking an agent row (or pressing Enter / Space on
+   it) expands its models underneath with the same columns and sort. Hover any row for its four
+   token classes and sessions; model rows add published per-million-token rates when every
+   underlying ID agrees. Cursor effort suffixes such as `opus5.5-high` disappear from the label.
+   Past eight models for one agent, the tail folds into one "N other model uses" row.
 
-Click any day on the heatmap to open the **day card** beside the report: that day's tokens, cost,
-cache hit rate and requests, a 24-hour breakdown, the same agent and model rankings, and its
-sessions (title, time span, active time, directory, models). On wide screens the report column
-glides aside and the card unfolds from its edge, the pair staying centred; on narrow ones it floats
-over the page. Step days with ‹ ›, close with × / Esc or by clicking the day again. The card is
-never part of the exported image.
+Double-click the heatmap card (or press its ⤢ button) to **open** it over the page: the card grows
+out of its slot under a scrim while the rest of the report stays put. It keeps the calendar, drops
+the period stats and shows the picked day in full — tokens, cost, cache hit rate and requests, a
+24-hour breakdown, the same expandable agent table, and its sessions (title, tokens and cost, time
+span, active time, directory, models). A month sits beside the day, pinned while the details
+scroll; a year runs across the top. Click another day to switch, step with ‹ › or ← →
+(crossing into another month or year moves the report with it), and fold the card back with Esc,
+`-`, the − button or a click on the scrim. A single click on the report card only marks a day;
+Enter on a focused day opens it directly. The opened card is never part of the exported image.
 
 Drag a card by its handle (or focus the handle and press ↑ / ↓) to reorder the chapters. The
-order, period mode, card metrics, theme and language are remembered in `localStorage`.
-**Export image** saves the KPI summary, the three cards in their current order and the footer as one
+order, period mode, table sort, theme and language are remembered in `localStorage`.
+**Export image** saves the KPI summary, both cards in their current order and the footer as one
 PNG (`toksight-2026-09.png` / `toksight-2026.png`) with the controls stripped — ready to share.
+Expanded agents keep their model lists in the image; collapsed ones show only the agent row.
 Reference cost is an estimate from public prices, not a subscription bill; unpriced models are
 listed in the footer.
 
@@ -216,7 +248,7 @@ Startup filters (`--client`, `--since`, `--until`, `--today/--week/--month`) bou
 server can see; the report never widens that scope.
 
 The API accepts e.g. `GET /api/data?period=custom&since=2026-09-01&until=2026-09-30` (what the
-report requests; the day panel asks for a single day the same way) or `?client=claude&period=7d`. `period` is `all` (default) / `today` / `7d` /
+report requests; the opened heatmap card asks for a single day the same way) or `?client=claude&period=7d`. `period` is `all` (default) / `today` / `7d` /
 `30d` / `month` / `custom` (`custom` needs both `since` and `until`); `since`/`until` may also be
 used alone; presets cannot combine with explicit dates. Unknown, duplicate or invalid parameters
 return HTTP 400. `POST /api/refresh` updates the database and returns its refresh time and entry

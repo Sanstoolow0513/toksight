@@ -8,6 +8,8 @@ import os from 'node:os';
 import { clients } from './clients/index.js';
 import { computeCost, getPricing } from './pricing.js';
 import { createCursorPriceLookup, cursorPriceRecords, CURSOR_PRICING_URL, getCursorPricing } from './cursorpricing.js';
+import { databasePath } from './database.js';
+import { mergeUsageRows, readUsageImports, readStoredPriceFor } from './usageimports.js';
 
 // Collects every client, applies filters, prices the result. `env`/`home` are
 // threaded through to the parsers and pricing config so tests can point the
@@ -16,6 +18,9 @@ import { createCursorPriceLookup, cursorPriceRecords, CURSOR_PRICING_URL, getCur
 export async function collectAll(opts, { env = process.env, home = os.homedir() } = {}) {
   const basePricing = await getPricing({ offline: opts.offline, env, home });
   const warnings = [...basePricing.warnings];
+  const imported = readUsageImports(databasePath({ env, home }), warnings);
+  const importedPrices = new Map(imported.filter((r) => r.price).map((r) => [r.entry.model, r.price]));
+  const estimatedImports = new WeakSet();
 
   const ids = Object.keys(clients);
   // Roots are resolved with the same injected env/home the collectors see,
@@ -45,6 +50,17 @@ export async function collectAll(opts, { env = process.env, home = os.homedir() 
       const reason = r.reason instanceof Error ? r.reason.message : String(r.reason);
       warnings.push(`${id}: collection failed (${reason})`);
     }
+    if (id !== 'cursor' && imported.some((row) => row.entry.client === id)) {
+      entries = mergeUsageRows(entries.map((entry) => ({ entry, reported_cost: entry.costUsd == null ? 0 : 1 })),
+        imported.filter((row) => row.entry.client === id)).map((row) => {
+        let entry = row.entry;
+        if (!row.reported_cost && row.price_json !== undefined) {
+          if (basePricing.priceFor(entry.model) ?? row.price) entry = { ...entry, costUsd: null };
+          estimatedImports.add(entry);
+        }
+        return entry;
+      });
+    }
     perClient.push({ id, label: clients[id].label, roots: rootsById.get(id), entries });
     // Loop, not spread: `all.push(...entries)` hits the ~65k argument limit
     // on machines with very large histories.
@@ -57,7 +73,9 @@ export async function collectAll(opts, { env = process.env, home = os.homedir() 
   let cursorState = 'skipped (no Included usage)';
   let cursorRecords = [];
   let cursorSourceDetails = null;
+  let savedCursorPriceFor = () => null;
   if (filteredResult.entries.some((e) => e.client === 'cursor' && e.costUsd == null && includedCursorCosts.has(e))) {
+    savedCursorPriceFor = readStoredPriceFor(databasePath({ env, home }), warnings);
     try {
       const cursorPricing = await getCursorPricing({ offline: opts.offline, env, home });
       cursorPriceFor = createCursorPriceLookup(cursorPricing.models);
@@ -73,14 +91,14 @@ export async function collectAll(opts, { env = process.env, home = os.homedir() 
   }
   const pricing = {
     ...basePricing,
-    priceFor: (model, client) => client === 'cursor' ? cursorPriceFor(model) : basePricing.priceFor(model),
+    priceFor: (model, client) => client === 'cursor' ? cursorPriceFor(model) ?? savedCursorPriceFor(model, client) : basePricing.priceFor(model) ?? importedPrices.get(model) ?? null,
     records: [...basePricing.records, ...cursorRecords],
     sourceDetails: { ...basePricing.sourceDetails, ...(cursorSourceDetails ? { cursor: cursorSourceDetails } : {}) },
     sources: { ...basePricing.sources, cursor: cursorState },
   };
   const reportedCosts = new WeakSet();
   const entries = filteredResult.entries.map((e) => {
-    if (e.costUsd != null) reportedCosts.add(e);
+    if (e.costUsd != null && !estimatedImports.has(e)) reportedCosts.add(e);
     // A CSV charge wins. An Included row uses Cursor's current public rate as
     // a reference estimate and retains its non-reported provenance.
     const price = e.client === 'cursor' && !includedCursorCosts.has(e) ? null : pricing.priceFor(e.model, e.client);

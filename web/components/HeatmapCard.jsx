@@ -1,12 +1,12 @@
 'use client';
 
 import { memo, useMemo, useState } from 'react';
+import { Maximize2 } from 'lucide-react';
 import Card from '@/components/Card';
-import Segmented from '@/components/Segmented';
 import Tooltip from '@/components/Tooltip';
 import { calendarWeeks, periodBounds } from '@/lib/period';
-import { cacheHitRate, dailyMap, heatLevel, heatSummary, metricValue } from '@/lib/report';
-import { fmtCost, fmtInt, fmtMetric, fmtPct, fmtTokens } from '@/lib/format';
+import { cacheHitRate, dailyMap, heatLevel, heatMax, heatSummary, metricValue, openingDay } from '@/lib/report';
+import { fmtCost, fmtCostShort, fmtInt, fmtPct, fmtTokens } from '@/lib/format';
 import { MONTHS, WEEKDAYS, dayLabel, periodLabel, weekdayLabel } from '@/lib/i18n';
 
 function Stat({ label, value, sub }) {
@@ -28,8 +28,8 @@ function cellClass(base, level, date, today, selected) {
 }
 
 // Memoized so the hover tooltip re-renders only itself, not every cell.
-// Past days are buttons (clicks bubble to the card's delegated handler).
-const MonthGrid = memo(function MonthGrid({ weeks, days, metric, max, today, selected, locale, tx }) {
+// Past days are buttons (clicks bubble to the grid's delegated handler).
+const MonthGrid = memo(function MonthGrid({ weeks, days, max, today, selected, locale, tx }) {
   return (
     <div className="mheat">
       {WEEKDAYS[locale].map((w) => (
@@ -37,12 +37,18 @@ const MonthGrid = memo(function MonthGrid({ weeks, days, metric, max, today, sel
       ))}
       {weeks.flat().map((date, i) => {
         if (!date) return <span key={`pad-${i}`} className="mcell is-pad" />;
-        const value = metricValue(days.get(date), metric);
+        const row = days.get(date);
+        const value = metricValue(row, 'tokens');
         const cls = cellClass('mcell', heatLevel(value, max), date, today, selected);
         const body = (
           <>
             <span className="mcell-day">{Number(date.slice(8))}</span>
-            {value > 0 ? <span className="mcell-val">{fmtMetric(value, metric, true)}</span> : null}
+            {value > 0 ? (
+              <span className="mcell-vals">
+                <span className="mcell-val">{fmtTokens(value)}</span>
+                <span className="mcell-cost">{fmtCostShort(row.costUsd)}</span>
+              </span>
+            ) : null}
           </>
         );
         if (date > today) {
@@ -59,7 +65,7 @@ const MonthGrid = memo(function MonthGrid({ weeks, days, metric, max, today, sel
             data-date={date}
             className={cls}
             aria-pressed={date === selected}
-            aria-label={`${dayLabel(locale, date, true)} · ${value > 0 ? fmtMetric(value, metric) : tx('tipIdle')}`}
+            aria-label={`${dayLabel(locale, date, true)} · ${value > 0 ? `${fmtTokens(value)} tokens · ${fmtCost(row.costUsd)}` : tx('tipIdle')}`}
           >
             {body}
           </button>
@@ -69,7 +75,7 @@ const MonthGrid = memo(function MonthGrid({ weeks, days, metric, max, today, sel
   );
 });
 
-const YearGrid = memo(function YearGrid({ weeks, days, metric, max, today, selected, locale, year }) {
+const YearGrid = memo(function YearGrid({ weeks, days, max, today, selected, locale, year }) {
   const monthCols = MONTHS[locale].map((label, m) => {
     const first = `${year}-${String(m + 1).padStart(2, '0')}-01`;
     return { label, col: weeks.findIndex((week) => week.includes(first)) };
@@ -93,7 +99,7 @@ const YearGrid = memo(function YearGrid({ weeks, days, metric, max, today, selec
               <i
                 key={date}
                 data-date={date}
-                className={cellClass('ycell', heatLevel(metricValue(days.get(date), metric), max), date, today, selected)}
+                className={cellClass('ycell', heatLevel(metricValue(days.get(date), 'tokens'), max), date, today, selected)}
                 style={{ gridColumn: w + 2, gridRow: d + 2 }}
               />
             ) : null,
@@ -126,12 +132,14 @@ function DayTip({ date, row, today, locale, tx }) {
   );
 }
 
-export default function HeatmapCard({ data, period, today, selected, onSelect, metric, onMetric, locale, tx, index, handleProps }) {
+// The calendar shared by the report card and its opened sheet: grid, hover
+// tooltip and legend. A click on a past day reaches `onPick(date, event)`;
+// the event's `detail` tells a keyboard press (0) from mouse clicks.
+export function HeatGrid({ days, period, today, selected, onPick, hint, active = true, locale, tx }) {
   const [tip, setTip] = useState(null);
   const { since, until } = periodBounds(period);
-  const days = useMemo(() => dailyMap(data.daily), [data.daily]);
   const weeks = useMemo(() => calendarWeeks(since, until), [since, until]);
-  const summary = useMemo(() => heatSummary(days, { since, until, today }, metric), [days, since, until, today, metric]);
+  const max = useMemo(() => heatMax(days), [days]);
   const label = periodLabel(locale, period);
 
   const onMove = (e) => {
@@ -141,35 +149,11 @@ export default function HeatmapCard({ data, period, today, selected, onSelect, m
   };
   const onClick = (e) => {
     const date = e.target.closest?.('[data-date]')?.dataset.date;
-    if (date && date <= today) onSelect(date);
+    if (date && date <= today) onPick(date, e);
   };
 
   return (
-    <Card
-      index={index}
-      handleProps={handleProps}
-      title={tx('cardHeat')}
-      subtitle={tx(metric === 'cost' ? 'subHeatCost' : 'subHeatTokens', { period: label })}
-      actions={
-        <Segmented
-          compact
-          label={tx('metricGroup')}
-          value={metric}
-          onChange={onMetric}
-          options={[{ value: 'tokens', label: tx('metricTokens') }, { value: 'cost', label: tx('metricCost') }]}
-        />
-      }
-    >
-      <div className="heat-stats">
-        <Stat label={tx('statActive')} value={tx('statActiveValue', { n: summary.activeDays, total: summary.elapsedDays })} />
-        <Stat label={tx('statAverage')} value={summary.activeDays ? fmtMetric(summary.average, metric) : '—'} />
-        <Stat
-          label={tx('statPeak')}
-          value={summary.peak ? fmtMetric(summary.peak.value, metric) : '—'}
-          sub={summary.peak ? dayLabel(locale, summary.peak.date) : null}
-        />
-        <Stat label={tx('statStreak')} value={tx('statStreakValue', { n: summary.longestStreak })} />
-      </div>
+    <>
       <div
         className="heat-body"
         role="group"
@@ -179,24 +163,85 @@ export default function HeatmapCard({ data, period, today, selected, onSelect, m
         onClick={onClick}
       >
         {period.mode === 'year' ? (
-          <YearGrid weeks={weeks} days={days} metric={metric} max={summary.max} today={today} selected={selected} locale={locale} year={period.year} />
+          <YearGrid weeks={weeks} days={days} max={max} today={today} selected={selected} locale={locale} year={period.year} />
         ) : (
-          <MonthGrid weeks={weeks} days={days} metric={metric} max={summary.max} today={today} selected={selected} locale={locale} tx={tx} />
+          <MonthGrid weeks={weeks} days={days} max={max} today={today} selected={selected} locale={locale} tx={tx} />
         )}
       </div>
       <div className="heat-legend">
-        <span className="heat-hint no-export">{tx('dayHint')}</span>
+        <span className="heat-hint no-export">{hint}</span>
         <span>{tx('heatLess')}</span>
         {[0, 1, 2, 3, 4].map((level) => (
           <i key={level} className={`lv-${level}`} />
         ))}
         <span>{tx('heatMore')}</span>
       </div>
-      {tip ? (
+      {tip && active ? (
         <Tooltip x={tip.x} y={tip.y}>
           <DayTip date={tip.date} row={days.get(tip.date)} today={today} locale={locale} tx={tx} />
         </Tooltip>
       ) : null}
+    </>
+  );
+}
+
+const isControl = (target) => Boolean(target.closest?.('.card-actions'));
+
+// While `sheeted` the card is open over the page: it keeps its slot but
+// hides, so the report below never moves.
+export default function HeatmapCard({ data, period, today, selected, onSelect, onExpand, sheeted, cardRef, locale, tx, handleProps }) {
+  const { since, until } = periodBounds(period);
+  const days = useMemo(() => dailyMap(data.daily), [data.daily]);
+  const summary = useMemo(() => heatSummary(days, { since, until, today }), [days, since, until, today]);
+  const label = periodLabel(locale, period);
+  const expand = (date) => onExpand(date ?? openingDay(days, { since, until, today, selected }) ?? today);
+
+  // A mouse click marks a day and a double click anywhere opens the card;
+  // Enter on a day opens it straight away.
+  const onPick = (date, e) => {
+    if (e.detail === 0) expand(date);
+    else if (e.detail === 1) onSelect(date);
+  };
+  const onDoubleClick = (e) => {
+    if (isControl(e.target)) return;
+    const date = e.target.closest?.('[data-date]')?.dataset.date;
+    expand(date && date <= today ? date : null);
+  };
+  // Keeps a double click from selecting the text under it.
+  const onMouseDown = (e) => {
+    if (e.detail > 1 && !isControl(e.target)) e.preventDefault();
+  };
+
+  return (
+    <Card
+      ref={cardRef}
+      className={sheeted ? 'is-sheeted' : undefined}
+      onDoubleClick={onDoubleClick}
+      onMouseDown={onMouseDown}
+      handleProps={handleProps}
+      title={tx('cardHeat')}
+      subtitle={tx('subHeat', { period: label })}
+      actions={
+        <button type="button" className="card-btn" onClick={() => expand(null)} aria-label={tx('sheetOpen')} title={tx('sheetOpen')}>
+          <Maximize2 size={15} strokeWidth={2} aria-hidden="true" />
+        </button>
+      }
+    >
+      <div className="heat-stats">
+        <Stat label={tx('statActive')} value={tx('statActiveValue', { n: summary.activeDays, total: summary.elapsedDays })} />
+        <Stat
+          label={tx('statAverage')}
+          value={summary.average ? fmtTokens(summary.average.tokens) : '—'}
+          sub={summary.average ? fmtCost(summary.average.cost) : null}
+        />
+        <Stat
+          label={tx('statPeak')}
+          value={summary.peak ? fmtTokens(summary.peak.tokens) : '—'}
+          sub={summary.peak ? `${dayLabel(locale, summary.peak.date)} · ${fmtCost(summary.peak.cost)}` : null}
+        />
+        <Stat label={tx('statStreak')} value={tx('statStreakValue', { n: summary.longestStreak })} />
+      </div>
+      <HeatGrid days={days} period={period} today={today} selected={selected} onPick={onPick} hint={tx('dayHint')} active={!sheeted} locale={locale} tx={tx} />
     </Card>
   );
 }

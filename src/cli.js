@@ -14,6 +14,7 @@ import { createWebServer } from './webserver.js';
 import { createWebDataService } from './webservice.js';
 import { createUsageDatabase } from './database.js';
 import { parseArgs } from './args.js';
+import { runDatabaseTransfer } from './dbcommand.js';
 import { printEmpty, printWarnings, renderCommand, renderJson } from './render.js';
 
 const require = createRequire(import.meta.url);
@@ -32,6 +33,8 @@ Commands
   sessions      Top sessions by cost
   web           Launch the local dashboard (token usage & cost report)
   refresh       Rebuild the local SQLite usage database
+  export-db <file>  Export the complete committed database to a new SQLite file
+  import-db <file>  Merge a toksight SQLite backup, deduplicating usage
   env           Show detected data sources and pricing state
   help          Show this help
 
@@ -126,6 +129,13 @@ export async function main(argv = process.argv.slice(2)) {
   });
 
   try {
+    if (opts.command === 'export-db' || opts.command === 'import-db') {
+      const result = await runDatabaseTransfer(opts);
+      if (opts.json) console.log(JSON.stringify(result));
+      else if (opts.command === 'export-db') console.log(`Exported ${result.entries} entries to ${result.file}`);
+      else console.log(`Imported ${result.imported}, updated ${result.updated}, duplicates ${result.duplicates}; ${result.entries} total entries`);
+      return 0;
+    }
     if (opts.command === 'web') {
       await runWeb(opts);
       return 0;

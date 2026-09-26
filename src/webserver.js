@@ -8,6 +8,7 @@ import http from 'node:http';
 import { isIP } from 'node:net';
 import path from 'node:path';
 import { readFile } from 'node:fs/promises';
+import { MAX_DATABASE_BYTES } from './dbtransfer.js';
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -37,6 +38,19 @@ const JSON_HEADERS = {
 };
 
 const MAX_CSV_BYTES = 20 * 1024 * 1024;
+
+async function readDatabaseBody(req) {
+  const fail = () => Object.assign(new Error('Database is larger than 256 MB'), { status: 413, code: 'DATABASE_TOO_LARGE' });
+  if (Number(req.headers['content-length']) > MAX_DATABASE_BYTES) { req.resume(); throw fail(); }
+  const chunks = [];
+  let size = 0;
+  for await (const chunk of req) {
+    size += chunk.length;
+    if (size <= MAX_DATABASE_BYTES) chunks.push(chunk);
+  }
+  if (size > MAX_DATABASE_BYTES) throw fail();
+  return Buffer.concat(chunks);
+}
 
 async function readCsvBody(req) {
   const sizeHeader = Number(req.headers['content-length']);
@@ -238,7 +252,7 @@ export function createWebServer({
     // 127.0.0.1 is still remoteAddress-loopback, but its Host header is not.
     const localHostHeader = isLocalHostHeader(req.headers.host);
 
-    if (pathname === '/api/data' || pathname === '/api/refresh' || pathname === '/api/prices/update' || pathname === '/api/import/cursor') {
+    if (['/api/data', '/api/refresh', '/api/prices/update', '/api/import/cursor', '/api/import/db', '/api/export/db'].includes(pathname)) {
       // Loopback-bound servers (the default) reject foreign Host headers;
       // a user who deliberately binds --host 0.0.0.0 exposes the dashboard
       // to the LAN on purpose, so the Host check would only break that.
@@ -249,7 +263,9 @@ export function createWebServer({
       const refresh = pathname === '/api/refresh';
       const priceUpdate = pathname === '/api/prices/update';
       const importing = pathname === '/api/import/cursor';
-      const writing = refresh || priceUpdate || importing;
+      const importingDb = pathname === '/api/import/db';
+      const exportingDb = pathname === '/api/export/db';
+      const writing = refresh || priceUpdate || importing || importingDb;
       const allowed = writing ? req.method === 'POST' : req.method === 'GET' || req.method === 'HEAD';
       if (!allowed) {
         sendJson(res, 405, { error: 'method not allowed', code: 'METHOD_NOT_ALLOWED' }, req.method, { allow: writing ? 'POST' : 'GET, HEAD' });
@@ -260,12 +276,21 @@ export function createWebServer({
         return;
       }
       try {
-        if ((refresh && !getData.refresh) || (priceUpdate && !getData.updatePrices) || (importing && !getData.importCursor)) {
+        if ((refresh && !getData.refresh) || (priceUpdate && !getData.updatePrices) || (importing && !getData.importCursor) ||
+          (importingDb && !getData.importDatabase) || (exportingDb && !getData.exportDatabase)) {
           sendJson(res, 501, { error: 'operation is not configured', code: 'NOT_IMPLEMENTED' }, req.method);
           return;
         }
+        if (exportingDb) {
+          const bytes = await getData.exportDatabase();
+          res.writeHead(200, { ...JSON_HEADERS, 'content-type': 'application/vnd.sqlite3',
+            'content-length': bytes.length, 'content-disposition': 'attachment; filename="toksight-backup.sqlite"' });
+          res.end(req.method === 'HEAD' ? undefined : bytes);
+          return;
+        }
         const payload = refresh ? await getData.refresh() : priceUpdate ? await getData.updatePrices()
-          : importing ? await getData.importCursor(await readCsvBody(req)) : await getData(url.searchParams);
+          : importing ? await getData.importCursor(await readCsvBody(req))
+          : importingDb ? await getData.importDatabase(await readDatabaseBody(req)) : await getData(url.searchParams);
         sendJson(res, 200, payload, req.method);
       } catch (err) {
         const status = err?.status === 400 || err?.status === 413 ? err.status : 500;

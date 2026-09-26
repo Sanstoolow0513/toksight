@@ -5,6 +5,8 @@ import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import { setTimeout as delay } from 'node:timers/promises';
 import { runNpm, startNode, stopChild } from './lib/process.js';
 
@@ -192,6 +194,22 @@ async function main() {
     assert.equal((await refreshed.json()).entries, 3);
     assert.equal((await (await fetch(url + '/api/data')).json()).totals.totalTokens, 314);
     console.log('OK SQLite preload, explicit refresh and committed report reads');
+    const backupResponse = await fetch(url + '/api/export/db');
+    assert.equal(backupResponse.status, 200);
+    const backup = Buffer.from(await backupResponse.arrayBuffer());
+    assert.equal(backup.subarray(0, 16).toString(), 'SQLite format 3\0');
+    const merge = await fetch(url + '/api/import/db', { method: 'POST', body: backup });
+    assert.equal(merge.status, 200);
+    assert.equal((await merge.json()).duplicates, 3);
+    const backupFile = path.join(temp, 'portable backup.sqlite');
+    const run = promisify(execFile);
+    const cli = path.join(installed, 'bin', 'toksight.js');
+    const exported = await run(process.execPath, [cli, 'export-db', backupFile, '--json'], { env });
+    assert.equal(JSON.parse(exported.stdout).entries, 3);
+    const imported = await run(process.execPath, [cli, 'import-db', backupFile, '--json'], { env });
+    assert.equal(JSON.parse(imported.stdout).duplicates, 3);
+    assert.equal((await (await fetch(url + '/api/data')).json()).totals.totalTokens, 314);
+    console.log('OK installed database export/import through HTTP and CLI');
     console.log(`Package check passed: toksight ${pkg.version}`);
   } catch (err) {
     if (output) console.error(output);

@@ -1,9 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  calendarWeeks, currentPeriod, dayKey, dayNav, eachDayKey, periodBounds, periodKey, periodNav, shiftDay, shiftPeriod, weekdayIndex, withMode,
+  calendarWeeks, currentPeriod, dayKey, dayNav, eachDayKey, inPeriod, periodBounds, periodKey, periodNav, periodOf, shiftDay, shiftPeriod, weekdayIndex, withMode,
 } from '../web/lib/period.js';
-import { agentRows, dailyMap, heatLevel, heatSummary, hourlyBars, modelRows, sessionName, sessionRows } from '../web/lib/report.js';
+import {
+  agentRows, costPerMillion, dailyMap, heatLevel, heatMax, heatSummary, hourlyBars, modelRows, modelsByAgent, openingDay, sessionName, sessionRows,
+} from '../web/lib/report.js';
 import { fmtClock, fmtClockRange, fmtCostShort, fmtTokens } from '../web/lib/format.js';
 
 const usage = (over = {}) => {
@@ -47,7 +49,7 @@ test('calendar weeks start on Monday and pad outside the period', () => {
   assert.equal(eachDayKey('2028-02-27', '2028-03-01').length, 4);
 });
 
-test('heat levels and summaries ignore future days and keep the scale period-wide', () => {
+test('heat levels and summaries shade by tokens, ignore future days and keep the scale period-wide', () => {
   assert.equal(heatLevel(0, 10), 0);
   assert.equal(heatLevel(10, 10), 4);
   assert.equal(heatLevel(0.1, 10), 1);
@@ -60,30 +62,38 @@ test('heat levels and summaries ignore future days and keep the scale period-wid
     { date: 'unknown', ...usage() },
   ]);
   assert.equal(days.size, 3);
-  const tokens = heatSummary(days, { since: '2026-09-01', until: '2026-09-30', today: '2026-09-05' }, 'tokens');
-  assert.equal(tokens.activeDays, 3);
-  assert.equal(tokens.elapsedDays, 5);
-  assert.equal(tokens.longestStreak, 2);
-  assert.deepEqual(tokens.peak, { date: '2026-09-02', value: 1400 });
-  assert.equal(tokens.max, 1400);
-  const cost = heatSummary(days, { since: '2026-09-01', until: '2026-09-30', today: '2026-09-05' }, 'cost');
-  assert.equal(cost.average, 7 / 3);
-  const future = heatSummary(new Map(), { since: '2026-10-01', until: '2026-10-31', today: '2026-09-05' }, 'tokens');
-  assert.deepEqual([future.elapsedDays, future.peak], [0, null]);
+  const summary = heatSummary(days, { since: '2026-09-01', until: '2026-09-30', today: '2026-09-05' });
+  assert.equal(summary.activeDays, 3);
+  assert.equal(summary.elapsedDays, 5);
+  assert.equal(summary.longestStreak, 2);
+  assert.deepEqual(summary.peak, { date: '2026-09-02', tokens: 1400, cost: 5 });
+  assert.equal(summary.max, 1400);
+  assert.deepEqual(summary.average, { tokens: 2400 / 3, cost: 7 / 3 });
+  const future = heatSummary(new Map(), { since: '2026-10-01', until: '2026-10-31', today: '2026-09-05' });
+  assert.deepEqual([future.elapsedDays, future.peak, future.average], [0, null, null]);
 });
 
-test('agent rows rank by the chosen metric with shares and token-class parts', () => {
+test('blended cost per million tokens needs tokens and a known cost', () => {
+  assert.equal(costPerMillion({ totalTokens: 2_000_000, costUsd: 3 }), 1.5);
+  assert.equal(costPerMillion({ totalTokens: 0, costUsd: 3 }), null);
+  assert.equal(costPerMillion({ totalTokens: 10, costUsd: null }), null);
+});
+
+test('agent rows carry token and cost shares and only the order follows the sort', () => {
   const clients = {
     claude: { ...usage({ inputTokens: 900, costUsd: 1 }), cacheHitRate: 0.25 },
     codex: { ...usage({ costUsd: 9, pricedRequests: 0 }), cacheHitRate: 0.75 },
   };
   const byTokens = agentRows(clients, 'tokens');
   assert.deepEqual(byTokens.map((r) => r.id), ['claude', 'codex']);
-  assert.equal(byTokens[0].share, 1300 / 1800);
+  assert.equal(byTokens[0].tokenShare, 1300 / 1800);
+  assert.equal(byTokens[0].costShare, 0.1);
   assert.deepEqual(byTokens[1].parts, [0.2, 0.6, 0, 0.2]);
   assert.equal(byTokens[1].cacheHitRate, 0.75);
   assert.equal(byTokens[1].pricing, 'none');
-  assert.deepEqual(agentRows(clients, 'cost').map((r) => r.id), ['codex', 'claude']);
+  const byCost = agentRows(clients, 'cost');
+  assert.deepEqual(byCost.map((r) => r.id), ['codex', 'claude']);
+  assert.deepEqual(byCost.map((r) => r.tokenShare), [500 / 1800, 1300 / 1800]);
 });
 
 test('model rows keep agents separate, fold the tail and keep shares whole', () => {
@@ -100,13 +110,47 @@ test('model rows keep agents separate, fold the tail and keep shares whole', () 
   assert.equal(rows[0].requests, 1);
   assert.equal(rows[0].pricing, 'full');
   assert.equal(others.count, 4);
-  const shares = rows.reduce((sum, r) => sum + r.share, others.share);
-  assert.ok(Math.abs(shares - 1) < 1e-9);
+  for (const key of ['tokenShare', 'costShare']) {
+    const shares = rows.reduce((sum, r) => sum + r[key], others[key]);
+    assert.ok(Math.abs(shares - 1) < 1e-9, key);
+  }
   assert.equal(modelRows(models.slice(0, 3), 'tokens', 8).others, null);
   const sameModel = modelRows(models.slice(0, 2), 'cost').rows;
   assert.deepEqual(sameModel.map((row) => [row.client, row.model, row.costUsd]), [
     ['claude', 'm-a', 1], ['opencode', 'm-a', 1],
   ]);
+});
+
+test('models group under each agent, follow the sort and keep period-wide shares', () => {
+  const models = [
+    { client: 'claude', model: 'opus', ...usage({ costUsd: 6, inputTokens: 100 }) },
+    { client: 'claude', model: 'sonnet', ...usage({ costUsd: 3, inputTokens: 500 }) },
+    { client: 'codex', model: 'gpt', ...usage({ costUsd: 1, inputTokens: 1000 }) },
+    { client: 'codex', model: 'opus', ...usage({ costUsd: 0, inputTokens: 50 }) },
+  ];
+  const grouped = modelsByAgent(models, 'cost');
+  assert.deepEqual(grouped.get('claude').rows.map((row) => row.model), ['opus', 'sonnet']);
+  assert.equal(grouped.get('claude').rows[0].costShare, 0.6);
+  assert.deepEqual(grouped.get('codex').rows.map((row) => row.model), ['gpt', 'opus']);
+  assert.notEqual(grouped.get('claude').rows[0].id, grouped.get('codex').rows[1].id);
+  const shares = [...grouped.values()].flatMap((group) => group.rows).reduce((sum, row) => sum + row.costShare, 0);
+  assert.ok(Math.abs(shares - 1) < 1e-9);
+  assert.deepEqual(modelsByAgent(models, 'tokens').get('claude').rows.map((row) => row.model), ['sonnet', 'opus']);
+
+  const many = [
+    { client: 'claude', model: 'big', ...usage({ costUsd: 20 }) },
+    ...Array.from({ length: 8 }, (_, i) => ({ client: 'claude', model: `m-${i}`, ...usage({ costUsd: 1, outputTokens: 100 - i }) })),
+    { client: 'codex', model: 'gpt', ...usage({ costUsd: 4 }) },
+  ];
+  const folded = modelsByAgent(many, 'cost', 8);
+  assert.equal(folded.get('claude').rows.length, 7);
+  assert.equal(folded.get('claude').rows[0].model, 'big');
+  assert.equal(folded.get('claude').others.count, 2);
+  assert.equal(folded.get('claude').others.costUsd, 2);
+  assert.equal(folded.get('codex').others, null);
+  const foldedShares = [...folded.values()].flatMap((group) => [...group.rows, group.others].filter(Boolean))
+    .reduce((sum, row) => sum + row.costShare, 0);
+  assert.ok(Math.abs(foldedShares - 1) < 1e-9);
 });
 
 test('day stepping crosses month, year and leap-day boundaries in local time', () => {
@@ -120,6 +164,31 @@ test('day stepping crosses month, year and leap-day boundaries in local time', (
   assert.deepEqual(dayNav('2026-09-12', { firstDay: '2026-08-29', today: '2026-09-22' }), { canPrev: true, canNext: true });
   assert.deepEqual(dayNav('2026-08-29', { firstDay: '2026-08-29', today: '2026-09-22' }), { canPrev: false, canNext: true });
   assert.deepEqual(dayNav('2026-09-22', { firstDay: null, today: '2026-09-22' }), { canPrev: false, canNext: false });
+  // A day stepped out of the shown period brings its own period along.
+  assert.deepEqual(periodOf('2026-10-01', 'month'), { mode: 'month', year: 2026, month: 10 });
+  assert.deepEqual(periodOf('2025-12-31', 'year'), { mode: 'year', year: 2025, month: 12 });
+  assert.equal(inPeriod('2026-09-30', { mode: 'month', year: 2026, month: 9 }), true);
+  assert.equal(inPeriod('2026-10-01', { mode: 'month', year: 2026, month: 9 }), false);
+  assert.equal(inPeriod('2026-10-01', { mode: 'year', year: 2026, month: 9 }), true);
+});
+
+test('an opened heatmap starts on the marked day, else the latest active day of the period', () => {
+  const days = dailyMap([
+    { date: '2026-09-03', ...usage() },
+    { date: '2026-09-10', ...usage({ outputTokens: 900 }) },
+    { date: '2026-09-11', ...usage({ requests: 0 }) },
+  ]);
+  const sep = { since: '2026-09-01', until: '2026-09-30' };
+  assert.equal(heatMax(days), 1300);
+  assert.equal(openingDay(days, { ...sep, today: '2026-09-24', selected: '2026-09-05' }), '2026-09-05');
+  // A marked day outside the period (or in its future) is ignored.
+  assert.equal(openingDay(days, { ...sep, today: '2026-09-24', selected: '2026-08-31' }), '2026-09-10');
+  assert.equal(openingDay(days, { ...sep, today: '2026-09-08', selected: '2026-09-20' }), '2026-09-03');
+  // Days after today do not count as the latest active one.
+  assert.equal(openingDay(days, { ...sep, today: '2026-09-09', selected: null }), '2026-09-03');
+  assert.equal(openingDay(new Map(), { ...sep, today: '2026-09-24', selected: null }), '2026-09-24');
+  assert.equal(openingDay(new Map(), { since: '2026-08-01', until: '2026-08-31', today: '2026-09-24' }), '2026-08-31');
+  assert.equal(openingDay(days, { since: '2026-10-01', until: '2026-10-31', today: '2026-09-24' }), null);
 });
 
 test('hourly bars span all 24 hours and scale linearly to the busiest hour', () => {
@@ -127,18 +196,17 @@ test('hourly bars span all 24 hours and scale linearly to the busiest hour', () 
     { hour: 9, input: 100, cacheRead: 300, cacheWrite: 0, output: 100, tokens: 500, costUsd: 2, requests: 3, sessions: 1 },
     { hour: 14, input: 0, cacheRead: 0, cacheWrite: 0, output: 1000, tokens: 1000, costUsd: 1, requests: 1, sessions: 1 },
   ];
-  const tokens = hourlyBars(hourly, 'tokens');
+  const tokens = hourlyBars(hourly);
   assert.equal(tokens.bars.length, 24);
   assert.equal(tokens.max, 1000);
   assert.equal(tokens.peak.hour, 14);
   assert.equal(tokens.bars[9].height, 0.5);
   assert.deepEqual(tokens.bars[9].parts, [0.2, 0.6, 0, 0.2]);
   assert.deepEqual([tokens.bars[0].value, tokens.bars[0].height], [0, 0]);
-  assert.equal(hourlyBars(hourly, 'cost').peak.hour, 9);
-  assert.equal(hourlyBars([], 'tokens').peak, null);
+  assert.equal(hourlyBars([]).peak, null);
 });
 
-test('day sessions are named by title, then directory, and share the whole day', () => {
+test('day sessions are named by title, then directory, and keep their pricing state', () => {
   assert.equal(sessionName({ title: '  fix\n the  heatmap ', directory: '/tmp/x' }), 'fix the heatmap');
   assert.equal(sessionName({ title: '', directory: 'C:\\Users\\me\\toksight\\' }), 'toksight');
   assert.equal(sessionName({ directory: '/home/me/proj' }), 'proj');
@@ -147,14 +215,12 @@ test('day sessions are named by title, then directory, and share the whole day',
     { client: 'claude', sessionId: 'a', title: 'A', ...usage({ inputTokens: 900, costUsd: 3 }) },
     { client: 'codex', sessionId: 'b', directory: '/w/b', ...usage({ pricedRequests: 0 }) },
   ];
-  const totals = usage({ inputTokens: 2000, costUsd: 8 });
-  const rows = sessionRows(sessions, totals, 'tokens', 1);
+  const rows = sessionRows(sessions, 1);
   assert.equal(rows.length, 1);
   assert.equal(rows[0].name, 'A');
-  assert.equal(rows[0].share, 1300 / 2400);
   assert.equal(rows[0].pricing, 'full');
-  const byCost = sessionRows(sessions, totals, 'cost');
-  assert.deepEqual([byCost[1].name, byCost[1].share, byCost[1].pricing], ['b', 1 / 8, 'none']);
+  const all = sessionRows(sessions);
+  assert.deepEqual([all[1].name, all[1].pricing], ['b', 'none']);
 });
 
 test('clock times are local and collapse equal minutes', () => {

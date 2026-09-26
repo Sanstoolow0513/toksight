@@ -137,7 +137,6 @@ export default function SortableCards({ order, onReorder, handleLabel, children 
           }}
         >
           {children(id, {
-            index,
             handleProps: {
               'data-drag-handle': '',
               'aria-label': handleLabel,

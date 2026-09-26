@@ -2,18 +2,17 @@
 // finds, so a stale or hand-edited value falls back to the default.
 
 import { DEFAULT_LOCALE, LOCALES } from './i18n.js';
+import { SORT_KEYS } from './report.js';
 
-export const CARD_IDS = ['heatmap', 'agents', 'models'];
+export const CARD_IDS = ['heatmap', 'agents'];
 export const THEMES = ['light', 'dark', 'system'];
-const METRICS = ['tokens', 'cost'];
 
 const KEYS = {
   locale: 'toksight-locale',
   theme: 'toksight-theme',
   order: 'toksight-card-order',
   mode: 'toksight-period-mode',
-  metrics: 'toksight-card-metrics',
-  dayMetric: 'toksight-day-metric',
+  agentSort: 'toksight-agent-sort',
 };
 
 function read(key) {
@@ -59,22 +58,25 @@ export const writeMode = (v) => write(KEYS.mode, v);
 
 export function readOrder() {
   const v = readJson(KEYS.order);
-  const valid = Array.isArray(v) && v.length === CARD_IDS.length && CARD_IDS.every((id) => v.includes(id));
-  return valid ? v : CARD_IDS;
+  if (!Array.isArray(v)) return CARD_IDS;
+  const seen = new Set();
+  const next = [];
+  for (const id of v) {
+    if (CARD_IDS.includes(id) && !seen.has(id)) {
+      seen.add(id);
+      next.push(id);
+    }
+  }
+  // A stored order from the retired models card still keeps heatmap/agents.
+  return next.length === CARD_IDS.length ? next : CARD_IDS;
 }
 export const writeOrder = (v) => write(KEYS.order, JSON.stringify(v));
 
-export function readMetrics() {
-  const v = readJson(KEYS.metrics) ?? {};
-  return Object.fromEntries(CARD_IDS.map((id) => [id, METRICS.includes(v[id]) ? v[id] : id === 'models' ? 'cost' : 'tokens']));
+export function readAgentSort() {
+  const v = read(KEYS.agentSort);
+  return SORT_KEYS.includes(v) ? v : 'tokens';
 }
-export const writeMetrics = (v) => write(KEYS.metrics, JSON.stringify(v));
-
-export function readDayMetric() {
-  const v = read(KEYS.dayMetric);
-  return METRICS.includes(v) ? v : 'tokens';
-}
-export const writeDayMetric = (v) => write(KEYS.dayMetric, v);
+export const writeAgentSort = (v) => write(KEYS.agentSort, v);
 
 export function resolveTheme(pref) {
   if (pref !== 'system') return pref;

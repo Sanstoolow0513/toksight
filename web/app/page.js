@@ -1,42 +1,30 @@
 'use client';
 
-// toksight report: a centred column on a dot grid — KPIs, three reorderable
-// chapter cards (heatmap · agents · models) and a footer.
-// Everything inside `.report` is what "Export image" captures. Clicking a
-// heatmap day opens the day card beside the column (the pair re-centres on
-// wide screens; it floats over the page on narrow ones); the card never
-// enters the exported image.
+// toksight report: a centred column on a dot grid — KPIs, two reorderable
+// chapter cards (heatmap · agent table, with each agent's models nested) and a footer.
+// Everything inside `.report` is what "Export image" captures. Double-clicking
+// the heatmap card opens it over the page with the picked day in full; the
+// report underneath stays put and the opened card never enters the image.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Inbox, RefreshCw, TriangleAlert } from 'lucide-react';
 import Toolbar from '@/components/Toolbar';
 import ReportActions from '@/components/ReportActions';
+import DatabaseImport from '@/components/DatabaseImport';
 import SortableCards from '@/components/SortableCards';
 import HeatmapCard from '@/components/HeatmapCard';
 import AgentsCard from '@/components/AgentsCard';
-import ModelsCard from '@/components/ModelsCard';
-import DayPanel from '@/components/DayPanel';
+import ExpandedHeatmap from '@/components/ExpandedHeatmap';
+import Kpis from '@/components/Kpis';
 import BrandMark from '@/components/BrandMark';
 import Toasts, { useToasts } from '@/components/Toasts';
 import { useDayReport, useReport } from '@/lib/useReport';
-import { currentPeriod, dayKey, dayNav, periodKey, periodNav, shiftDay, shiftPeriod, withMode } from '@/lib/period';
-import { fmtCost, fmtDateTime, fmtInt, fmtPct, fmtTokens } from '@/lib/format';
+import { currentPeriod, dayKey, dayNav, inPeriod, periodKey, periodNav, periodOf, shiftDay, shiftPeriod, withMode } from '@/lib/period';
+import { fmtDateTime, fmtInt } from '@/lib/format';
 import { DEFAULT_LOCALE, periodLabel, t } from '@/lib/i18n';
 import { exportReportImage } from '@/lib/exportImage';
 import * as prefs from '@/lib/prefs';
 import { coded } from '@/components/Coded';
-
-function Kpi({ label, value, sub }) {
-  return (
-    <div className="kpi">
-      <dt>{label}</dt>
-      <dd>
-        <span className="kpi-value">{value}</span>
-        <span className="kpi-sub">{sub}</span>
-      </dd>
-    </div>
-  );
-}
 
 function StateCard({ icon, title, children }) {
   return (
@@ -52,7 +40,7 @@ function Skeleton() {
   return (
     <div className="report" aria-busy="true">
       <div className="skel skel-kpis" />
-      {[320, 260, 300].map((h) => (
+      {[320, 420].map((h) => (
         <div key={h} className="skel skel-card" style={{ height: h }} />
       ))}
     </div>
@@ -65,15 +53,20 @@ export default function Page() {
   const [period, setPeriod] = useState(null);
   const [today, setToday] = useState(null);
   const [order, setOrder] = useState(prefs.CARD_IDS);
-  const [metrics, setMetrics] = useState(() => Object.fromEntries(prefs.CARD_IDS.map((id) => [id, id === 'models' ? 'cost' : 'tokens'])));
+  const [agentSort, setAgentSort] = useState('tokens');
   const [exporting, setExporting] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [priceUpdating, setPriceUpdating] = useState(false);
   const [importing, setImporting] = useState(false);
+  const [databaseBusy, setDatabaseBusy] = useState(null);
+  const [databaseFile, setDatabaseFile] = useState(null);
+  const [databaseError, setDatabaseError] = useState(null);
   const [refreshRevision, setRefreshRevision] = useState(0);
   const [selectedDay, setSelectedDay] = useState(null);
-  const [dayMetric, setDayMetric] = useState('tokens');
+  // null, 'open', or 'closing' while the sheet folds back into the card.
+  const [sheet, setSheet] = useState(null);
   const reportRef = useRef(null);
+  const heatRef = useRef(null);
   const toasts = useToasts();
   const { push: pushToast } = toasts;
   const report = useReport(period, refreshRevision);
@@ -101,8 +94,7 @@ export default function Page() {
     setLocale(prefs.readLocale());
     setTheme(prefs.readTheme());
     setOrder(prefs.readOrder());
-    setMetrics(prefs.readMetrics());
-    setDayMetric(prefs.readDayMetric());
+    setAgentSort(prefs.readAgentSort());
     setToday(dayKey(now));
     setPeriod(currentPeriod(prefs.readMode(), now));
   }, []);
@@ -132,8 +124,7 @@ export default function Page() {
   const firstAt = data?.scopeRange?.firstAt;
   const firstDay = firstAt != null ? dayKey(new Date(firstAt)) : null;
   const nav = period && data ? periodNav(period, { firstDay, today }) : { canPrev: false, canNext: false };
-  const panelDay = selectedDay ?? dayReport.day;
-  const panelNav = panelDay ? dayNav(panelDay, { firstDay, today }) : { canPrev: false, canNext: false };
+  const selectedNav = selectedDay ? dayNav(selectedDay, { firstDay, today }) : { canPrev: false, canNext: false };
 
   const onMode = (mode) => {
     prefs.writeMode(mode);
@@ -207,24 +198,78 @@ export default function Page() {
       setImporting(false);
     }
   };
-  // Clicking the open day again closes the panel.
-  const onSelectDay = useCallback((date) => setSelectedDay((d) => (d === date ? null : date)), []);
-  const onStepDay = (delta) => setSelectedDay((d) => (d ? shiftDay(d, delta) : d));
-  const onCloseDay = useCallback(() => setSelectedDay(null), []);
-  const onDayMetric = (value) => {
-    prefs.writeDayMetric(value);
-    setDayMetric(value);
+  const onSelectDatabase = (file) => {
+    setDatabaseError(null);
+    if (file.size > 256 * 1024 * 1024) {
+      pushToast({ key: 'database', tone: 'error', message: ['databaseTooLarge'] });
+      return;
+    }
+    setDatabaseFile(file);
   };
+  const onImportDatabase = async () => {
+    setDatabaseBusy('import');
+    setDatabaseError(null);
+    try {
+      const res = await fetch('/api/import/db', { method: 'POST', headers: { 'content-type': 'application/vnd.sqlite3' }, body: databaseFile, cache: 'no-store' });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.code === 'BAD_DATABASE' ? tx('databaseInvalid') : body.code === 'DATABASE_TOO_LARGE' ? tx('databaseTooLarge') : body.error || `HTTP ${res.status}`);
+      pushToast({ key: 'database', tone: 'success', message: ['databaseImportSuccess', {
+        imported: fmtInt(body.imported), updated: fmtInt(body.updated), duplicates: fmtInt(body.duplicates),
+      }] });
+      setDatabaseFile(null);
+      if (body.latestAt != null) setPeriod((p) => currentPeriod(p?.mode ?? 'month', new Date(Math.min(body.latestAt, Date.now()))));
+      setRefreshRevision((n) => n + 1);
+    } catch (err) {
+      setDatabaseError(String(err?.message || err));
+    } finally { setDatabaseBusy(null); }
+  };
+  const onExportDatabase = async () => {
+    setDatabaseBusy('export');
+    try {
+      const res = await fetch('/api/export/db', { cache: 'no-store' });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error || `HTTP ${res.status}`);
+      }
+      const url = URL.createObjectURL(await res.blob());
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `toksight-backup-${dayKey(new Date())}-${Date.now()}.sqlite`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+      pushToast({ key: 'database', tone: 'success', message: ['databaseExportSuccess'] });
+    } catch (err) {
+      pushToast({ key: 'database', tone: 'error', message: ['databaseExportFailed', { error: String(err?.message || err) }] });
+    } finally { setDatabaseBusy(null); }
+  };
+  // On the report card a click marks a day and clicking it again clears the
+  // mark; inside the opened card a click always switches to the day.
+  const onSelectDay = useCallback((date) => setSelectedDay((d) => (d === date ? null : date)), []);
+  const onPickDay = useCallback((date) => setSelectedDay(date), []);
+  const onExpand = useCallback((date) => {
+    setSelectedDay(date);
+    setSheet('open');
+  }, []);
+  const onCollapse = useCallback(() => setSheet((s) => (s ? 'closing' : s)), []);
+  const onClosed = useCallback(() => setSheet(null), []);
+  // Stepping past the period's edge takes the report along, so the opened
+  // calendar always shows the day.
+  const onStepDay = (delta) => {
+    if (!selectedDay) return;
+    const next = shiftDay(selectedDay, delta);
+    setSelectedDay(next);
+    if (period && !inPeriod(next, period)) setPeriod(periodOf(next, period.mode));
+  };
+  const onAgentSort = useCallback((value) => {
+    prefs.writeAgentSort(value);
+    setAgentSort(value);
+  }, []);
   const onReorder = (next) => {
     prefs.writeOrder(next);
     setOrder(next);
   };
-  const onMetric = (card) => (value) =>
-    setMetrics((m) => {
-      const next = { ...m, [card]: value };
-      prefs.writeMetrics(next);
-      return next;
-    });
   const onExport = async () => {
     setExporting(true);
     try {
@@ -259,7 +304,6 @@ export default function Page() {
       </StateCard>
     );
   } else {
-    const totals = data.totals ?? {};
     const unpriced = data.pricing?.unpricedModels ?? [];
     const cursorUnpriced = (data.clients?.cursor?.pricedRequests ?? 0) < (data.clients?.cursor?.requests ?? 0);
     const cardProps = { data, period: shown, locale, tx, agentLabel };
@@ -268,31 +312,26 @@ export default function Page() {
       <div ref={reportRef} className={report.loading ? 'report is-loading' : 'report'}>
         <section className="hero">
           <h1 className="visually-hidden">{tx('eyebrow')} · {periodLabel(locale, shown)}</h1>
-          <dl className="kpis">
-            <Kpi
-              label={tx('kpiTokens')}
-              value={fmtTokens(totals.totalTokens)}
-              sub={tx('kpiTokensSub', {
-                input: fmtTokens((totals.inputTokens ?? 0) + (totals.cacheReadTokens ?? 0) + (totals.cacheWriteTokens ?? 0)),
-                output: fmtTokens(totals.outputTokens),
-              })}
-            />
-            <Kpi
-              label={tx('kpiCost')}
-              value={fmtCost(totals.costUsd)}
-              sub={unpriced.length ? tx('kpiCostUnpriced', { n: unpriced.length }) : tx('kpiCostAll')}
-            />
-            <Kpi label={tx('kpiCache')} value={fmtPct(data.cacheHitRate)} sub={tx('kpiCacheSub', { tokens: fmtTokens(totals.cacheReadTokens) })} />
-            <Kpi label={tx('kpiRequests')} value={fmtInt(totals.requests)} sub={tx('kpiRequestsSub', { n: fmtInt(totals.sessions) })} />
-          </dl>
+          <Kpis data={data} tx={tx} />
         </section>
 
         <SortableCards order={order} onReorder={onReorder} handleLabel={tx('dragHandle')}>
-          {(id, { index, handleProps }) => {
-            const shared = { ...cardProps, index, handleProps, metric: metrics[id], onMetric: onMetric(id) };
-            if (id === 'heatmap') return <HeatmapCard {...shared} today={today} selected={selectedDay} onSelect={onSelectDay} />;
-            if (id === 'agents') return <AgentsCard {...shared} />;
-            return <ModelsCard {...shared} />;
+          {(id, { handleProps }) => {
+            const shared = { ...cardProps, handleProps };
+            if (id === 'heatmap') {
+              return (
+                <HeatmapCard
+                  {...shared}
+                  cardRef={heatRef}
+                  today={today}
+                  selected={selectedDay}
+                  onSelect={onSelectDay}
+                  onExpand={onExpand}
+                  sheeted={Boolean(sheet)}
+                />
+              );
+            }
+            return <AgentsCard {...shared} sortBy={agentSort} onSort={onAgentSort} />;
           }}
         </SortableCards>
 
@@ -316,24 +355,27 @@ export default function Page() {
 
   return (
     <div className="page">
-      <Toolbar
-        locale={locale}
-        tx={tx}
-        period={period}
-        nav={nav}
-        onMode={onMode}
-        onShift={(delta) => setPeriod((p) => shiftPeriod(p, delta))}
-        theme={theme}
-        onTheme={onTheme}
-        onLocale={onLocale}
-        loading={report.loading || refreshing || priceUpdating || importing}
-        onRefresh={onRefresh}
-      />
-      <div className={selectedDay ? 'workspace has-panel' : 'workspace'}>
+      <div className="page-body" inert={Boolean(sheet)}>
+        <Toolbar
+          locale={locale}
+          tx={tx}
+          period={period}
+          nav={nav}
+          onMode={onMode}
+          onShift={(delta) => setPeriod((p) => shiftPeriod(p, delta))}
+          theme={theme}
+          onTheme={onTheme}
+          onLocale={onLocale}
+          loading={report.loading || refreshing || priceUpdating || importing || Boolean(databaseBusy)}
+          onRefresh={onRefresh}
+        />
         <main className="main">
           <ReportActions
             tx={tx}
-            loading={report.loading || refreshing || priceUpdating || importing}
+            loading={report.loading || refreshing || priceUpdating || importing || Boolean(databaseBusy)}
+            databaseBusy={databaseBusy}
+            onImportDatabase={onSelectDatabase}
+            onExportDatabase={onExportDatabase}
             priceUpdating={priceUpdating}
             onUpdatePrices={onUpdatePrices}
             importing={importing}
@@ -344,21 +386,30 @@ export default function Page() {
           />
           {content}
         </main>
-        <DayPanel
-          open={Boolean(selectedDay)}
-          day={panelDay}
-          report={dayReport}
-          nav={panelNav}
+      </div>
+      {sheet && hasData ? (
+        <ExpandedHeatmap
+          anchorRef={heatRef}
+          closing={sheet === 'closing'}
+          onCollapse={onCollapse}
+          onClosed={onClosed}
+          data={data}
+          period={shown}
+          loading={report.loading}
           today={today}
-          metric={dayMetric}
-          onMetric={onDayMetric}
+          day={selectedDay}
+          onPick={onPickDay}
+          dayReport={dayReport}
+          dayNav={selectedNav}
           onStep={onStepDay}
-          onClose={onCloseDay}
+          sortBy={agentSort}
+          onSort={onAgentSort}
           locale={locale}
           tx={tx}
           agentLabel={agentLabel}
         />
-      </div>
+      ) : null}
+      {databaseFile ? <DatabaseImport file={databaseFile} error={databaseError} busy={databaseBusy === 'import'} onImport={onImportDatabase} onClose={() => setDatabaseFile(null)} tx={tx} /> : null}
       <Toasts toasts={toasts.toasts} onDismiss={toasts.dismiss} tx={tx} />
     </div>
   );
