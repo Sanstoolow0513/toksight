@@ -1,11 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
-import { cp, mkdtemp, rm } from 'node:fs/promises';
+import { cp, mkdtemp, readFile, rm } from 'node:fs/promises';
 import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
-import { createInterface } from 'node:readline';
 import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import { startNode, stopChild } from '../scripts/lib/process.js';
@@ -47,18 +46,39 @@ test('web build explains how to install missing dependencies in a fresh checkout
 });
 
 test('development process cleanup closes descendant listening sockets', { timeout: 15000 }, async () => {
-  const descendant = `require('node:net').createServer().listen(0, '127.0.0.1', function () { console.log(this.address().port); });`;
-  const parent = `require('node:child_process').spawn(process.execPath, ['-e', ${JSON.stringify(descendant)}], { stdio: 'inherit' }); setInterval(() => {}, 1000);`;
+  const temp = await mkdtemp(path.join(os.tmpdir(), 'toksight-dev-cleanup-'));
+  const portFile = path.join(temp, 'port');
+  const descendant = `
+    const fs = require('node:fs');
+    const file = process.argv[1];
+    require('node:net').createServer().listen(0, '127.0.0.1', function () {
+      const info = this.address();
+      if (!info || !info.port) return;
+      const tmp = file + '.tmp';
+      fs.writeFileSync(tmp, String(info.port));
+      fs.renameSync(tmp, file);
+    });
+  `;
+  const parent = `require('node:child_process').spawn(process.execPath, ['-e', ${JSON.stringify(descendant)}, ${JSON.stringify(portFile)}], { stdio: 'inherit' }); setInterval(() => {}, 1000);`;
   const child = startNode(['-e', parent], {
     detached: process.platform !== 'win32', stdio: ['ignore', 'pipe', 'pipe'],
   });
-  const lines = createInterface({ input: child.stdout });
+  let stderr = '';
+  child.stderr.setEncoding('utf8');
+  child.stderr.on('data', (chunk) => { stderr += chunk; });
+  child.stdout.resume();
   try {
-    const port = await new Promise((resolve, reject) => {
-      const timer = setTimeout(() => reject(new Error('Child did not start')), 5000);
-      lines.once('line', (line) => { clearTimeout(timer); resolve(Number(line)); });
-    });
-    assert.ok(port > 0);
+    const deadline = Date.now() + 5000;
+    let port = 0;
+    while (port <= 0 && Date.now() < deadline) {
+      try {
+        port = Number(await readFile(portFile, 'utf8'));
+      } catch (err) {
+        if (err.code !== 'ENOENT' && err.code !== 'EPERM' && err.code !== 'EBUSY') throw err;
+      }
+      if (port <= 0) await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    if (!(port > 0)) throw new Error(`Child did not start${stderr.trim() ? `: ${stderr.trim()}` : ''}`);
     await stopChild(child, { tree: true });
     const probe = net.createServer();
     await new Promise((resolve, reject) => {
@@ -67,7 +87,10 @@ test('development process cleanup closes descendant listening sockets', { timeou
     });
     await new Promise((resolve) => probe.close(resolve));
   } finally {
-    lines.close();
-    await stopChild(child, { tree: true });
+    try {
+      await stopChild(child, { tree: true });
+    } finally {
+      await rm(temp, { recursive: true, force: true });
+    }
   }
 });
