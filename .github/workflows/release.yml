@@ -85,11 +85,11 @@ jobs:
         if: needs.prepare.outputs.mode == 'publish'
         with:
           ref: ${{ github.sha }}
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         if: needs.prepare.outputs.mode == 'publish'
         with:
           node-version: 24
-          registry-url: https://registry.npmjs.org
+          # registry-url writes an npm auth token entry that can mask OIDC.
           package-manager-cache: false
       - name: Use npm with trusted publishing support
         if: needs.prepare.outputs.mode == 'publish'
