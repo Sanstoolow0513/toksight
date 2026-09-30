@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Globe2, RefreshCw, TriangleAlert } from 'lucide-react';
-import Toolbar from '@/components/Toolbar';
 import Sidebar from '@/components/Sidebar';
 import Settings from '@/components/Settings';
 import ReportActions from '@/components/ReportActions';
@@ -273,9 +272,8 @@ export default function Page() {
   </div>;
 
   return <div className="page">
-    <Toolbar locale={locale} tx={tx} theme={theme} onTheme={onTheme} onLocale={onLocale} />
     <div className="app-shell">
-      <Sidebar view={view} onView={setView} timezone={timezone} tx={tx} />
+      <Sidebar view={view} onView={setView} timezone={timezone} locale={locale} theme={theme} onTheme={onTheme} onLocale={onLocale} tx={tx} />
       <main className="main" id="main-content">
         <div className="workspace-content">
           <header className="workspace-head"><div><div className="workspace-eyebrow">{tx('usageWorkspace')}</div><h1>{tx('nav' + view)}</h1><p>{tx(view + 'Description')}</p></div>

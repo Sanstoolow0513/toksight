@@ -3,7 +3,8 @@
 `toksight web` 的前端：一个 Next.js（App Router）静态导出应用，由 CLI 内置的零依赖
 HTTP 服务器（`src/webserver.js`）托管，数据来自同源的 `/api/data` JSON API；普通查询读取已提交快照。
 
-默认打开今天，侧边导航切换今天 / 日历 / 设置；灰色顶栏与导航无点阵，主内容保留点阵。
+默认打开今天，采用全高侧栏与主内容左右分区；Logo 靠侧栏顶部，今天 / 日历 / 设置导航组垂直居中，
+配色与语言切换位于底部。侧栏为无点阵灰底，主内容保留点阵；窄屏侧栏收为顶部紧凑区域，保留导航和偏好切换。
 今天直接展示 KPI、小时分布、Agent / 模型与会话；日历直接展开日期筛选及单日详情，没有弹层、拖拽或分页卡片。
 设置提供可调整时区、数据库导入导出和 Cursor CSV。刷新、图片导出与更新单价在内容顶部。
 视觉与交互规范见仓库根目录 `design-spec.md`。
@@ -58,7 +59,7 @@ npm run web:dev:ui
 
 - `app/page.js`：应用状态、操作与请求协调，默认 Today；`.report` 是图片捕获区域。
 - `app/layout.js`：本地字体、首帧主题脚本；`app/globals.css`：两套配色、应用框架、点阵、响应式样式。
-- `components/Toolbar.jsx` / `Sidebar.jsx`：品牌、配色、语言和三个导航入口。
+- `components/Sidebar.jsx`：顶部品牌、居中导航、底部配色与语言切换，以及当前时区入口。
 - `components/ReportActions.jsx`：刷新、单价更新、PNG 导出；`ReportFooter.jsx`：时间、时区和价格说明。
 - `components/Settings.jsx` / `DatabaseImport.jsx`：时区、数据管理、数据库合并确认。
 - `components/CalendarView.jsx` / `HeatGrid.jsx`：月 / 年日历、范围统计和内联单日详情。

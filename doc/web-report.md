@@ -17,7 +17,7 @@
 
 ## 页面与数据流
 
-Next App Router 静态导出为 `web/out/`，生产由 CLI 托管。页面默认打开 Today，`Sidebar` 提供今天 / 日历 / 设置；`Toolbar` 保留品牌、配色与语言。顶栏与导航为纯灰底，主内容区保留点阵。`ReportActions` 在内容顶部提供刷新、更新单价、图片导出；`Settings` 管时区、SQLite 备份 / 合并与 Cursor CSV。视觉与交互以 `design-spec.md` 为准。
+Next App Router 静态导出为 `web/out/`，生产由 CLI 托管。页面默认打开 Today，采用全高侧栏与主内容左右分区，不设独立顶栏。`Sidebar` 顶部展示品牌，今天 / 日历 / 设置导航组垂直居中，底部提供配色、语言与时区入口；导航项至少 48px 高，偏好按钮至少 44×44px。侧栏从视口顶部吸附，矮窗口内可独立滚动；≤600px 收为顶部紧凑区域，保留品牌、偏好切换与横向导航。侧栏为纯灰底，主内容区保留点阵。`ReportActions` 在内容顶部提供刷新、更新单价、图片导出；`Settings` 管时区、SQLite 备份 / 合并与 Cursor CSV。视觉与交互以 `design-spec.md` 为准。
 
 Today 请求 `period=custom&since=<今天>&until=<今天>&timezone=<IANA>`，首先展示四项 KPI，`DayBody` 直接铺开小时分布、Agent / 模型、跨 Agent 模型和会话。日历使用 `CalendarView`：月历与单日详情左右排列，窄屏上下排列，年历 / 长范围在上方；所有详情进入页面正常流，不再使用展开弹层、拖拽排序或分页卡片堆。月历下显示范围总量与 `TrendCard`。`HeatGrid` 取 `daily`，Agent 取 `clients`，模型取 `models`，导航边界取 `scopeRange`。
 

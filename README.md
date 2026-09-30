@@ -258,8 +258,11 @@ token counts cannot be distinguished from one event repeated across files; if Cu
 a model name or token counts, that event may be counted again. The import reports what it matched.
 
 The dashboard opens on **Today**, with **Calendar** and **Settings** in the sidebar.
-The header and navigation use a solid gray background; the report keeps its sparse dot grid and
-warm light/dark palette (visual spec: `design-spec.md`). Theme and 中文 / EN stay in the header.
+The full-height sidebar sits beside the report, with the logo at the top, vertically centered
+navigation, and theme and 中文 / EN controls at the bottom. Navigation and preference buttons
+have generous click targets. On small screens, the sidebar becomes a compact area above the report
+with all navigation and preference controls available. The sidebar uses a solid gray background;
+the report keeps its sparse dot grid and warm light/dark palette (visual spec: `design-spec.md`).
 **Refresh**, **Update prices**, and **Export image** are above the report.
 
 - **Today** shows tokens, reference cost, cache hit rate and requests first, followed by hourly
