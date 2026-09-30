@@ -28,6 +28,15 @@ Next 生产构建始终静态导出，不受 `TOKSIGHT_DEV_API` 影响。源码�
 
 `npm run check:package` 会先准备网页构建依赖，再打包到临时目录，用 fixture 检查安装包的页面、资源、`/api/data` 查询范围/周期、Cursor 导入和 SQLite 刷新。`scripts/` 不进入 npm 包。Windows 路径和 `C:\\...` fixture 是测试范围的一部分。
 
+## 分支与推送
+
+| 分支 | 职责 | 推送后的检查 |
+| --- | --- | --- |
+| `dev` | 日常开发，开发 PR 的目标分支 | `.github/workflows/ci.yml` 运行测试与安装包检查 |
+| `release` | 仓库默认分支，接收发布和维护 PR | `.github/workflows/release.yml` 重跑检查，再按版本决定是否发布 |
+
+日常在 `dev` 开发，用 `git push origin dev` 推送；PR 均运行 CI，以 `release` 为目标的 PR 额外校验版本。GitHub 默认分支不会改写本地分支的 upstream，也不会自动同步分支。合入 `release` 后，将 `origin/release` 合回 `dev` 并推送，同步版本和维护改动。
+
 ## 发布
 
 从当前 `release` 分支准备包含待发布代码的 PR，运行 `npm run release:version -- 1.1.0` 同步更新根 `package.json`、`web/package.json` 及两个 lockfile。PR CI 校验版本、Ubuntu/Windows 的 Node 22/24 测试和两平台的安装包检查；通过后合并到 `release`。
