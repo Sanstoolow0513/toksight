@@ -28,6 +28,8 @@ test('period and day labels are localized', () => {
   assert.equal(periodLabel('en', { mode: 'month', year: 2026, month: 9 }), 'September 2026');
   assert.equal(periodLabel('zh-CN', { mode: 'year', year: 2026, month: 9 }), '2026 年');
   assert.equal(periodLabel('en', { mode: 'year', year: 2026, month: 9 }), '2026');
+  assert.equal(periodLabel('en', { mode: 'custom', since: '2026-09-05', until: '2026-09-05' }), 'Sep 5, 2026');
+  assert.equal(periodLabel('zh-CN', { mode: 'custom', since: '2026-08-30', until: '2026-09-05' }), '2026-08-30 – 2026-09-05');
   assert.equal(dayLabel('zh-CN', '2026-09-05'), '9月5日');
   assert.equal(dayLabel('zh-CN', '2026-09-05', true), '2026年9月5日');
   assert.equal(dayLabel('en', '2026-09-05', true), 'Sep 5, 2026');

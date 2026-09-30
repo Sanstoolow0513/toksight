@@ -9,6 +9,7 @@ import {
   startOfDay,
   startOfMonth,
   stepDay,
+  validateTimezone,
 } from '../src/dates.js';
 import { localDate } from '../src/aggregate.js';
 
@@ -112,4 +113,33 @@ test('parseDateArg maps to inclusive local-day boundaries', () => {
   assert.throws(() => parseDateArg('', 'start'), /invalid date ""/);
   // Whitespace tolerance is preserved.
   assert.equal(parseDateArg(' 2026-09-02 ', 'start'), dayKeyToTs('2026-09-02'));
+});
+
+test('explicit IANA zones use their own midnight, independent of the host zone', () => {
+  assert.equal(dayKeyToTs('2026-09-30', 'Asia/Shanghai'), Date.parse('2026-09-29T16:00:00Z'));
+  assert.equal(dayKeyToTs('2026-09-30', 'Asia/Kathmandu'), Date.parse('2026-09-29T18:15:00Z'));
+  const instant = Date.parse('2026-09-30T01:00:00Z');
+  assert.equal(localDate(instant, 'Asia/Shanghai'), '2026-09-30');
+  assert.equal(localDate(instant, 'America/Los_Angeles'), '2026-09-29');
+  assert.equal(startOfMonth(instant, 'America/Los_Angeles'), Date.parse('2026-09-01T07:00:00Z'));
+  assert.equal(dayKeyToTs('2026-02-29', 'Asia/Shanghai'), null);
+  for (const zone of ['', 'not/a-zone', '+08:00', null]) assert.throws(() => validateTimezone(zone), /invalid timezone/);
+  assert.equal(validateTimezone('Asia/Shanghai'), 'Asia/Shanghai');
+});
+
+test('explicit zones include complete spring and fall days without splitting hours', () => {
+  const zone = 'America/Los_Angeles';
+  for (const [date, hours] of [['2026-03-08', 23], ['2026-11-01', 25]]) {
+    const first = parseDateArg(date, 'start', zone), last = parseDateArg(date, 'end', zone);
+    assert.equal(last - first + 1, hours * 3600000);
+    const dates = [...eachDay(stepDay(first, -1, zone), stepDay(first, 1, zone), zone)].map((ts) => localDate(ts, zone));
+    assert.equal(dates.length, 3);
+    assert.equal(new Set(dates).size, 3);
+    assert.equal(dates[1], date);
+    assert.equal(localDate(last, zone), date);
+  }
+  assert.equal(dayKeyToTs('2018-11-04', 'America/Sao_Paulo'), Date.parse('2018-11-04T03:00:00Z'));
+  assert.equal(dayKeyToTs('2011-12-30', 'Pacific/Apia'), null);
+  const apia = dayKeyToTs('2011-12-31', 'Pacific/Apia');
+  assert.equal(localDate(stepDay(apia, -1, 'Pacific/Apia'), 'Pacific/Apia'), '2011-12-29');
 });

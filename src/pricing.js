@@ -2,6 +2,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { createPriceLookup, modelIdentity, priceRecord } from './pricecatalog.js';
+import { litellmContextTiers } from './contextpricing.js';
 
 const LITELLM_URL =
   'https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json';
@@ -138,18 +139,16 @@ function buildLitellmMap(data) {
         input: v.input_cost_per_token,
         output: v.output_cost_per_token,
         // When LiteLLM lacks cache prices, fall back to the input price. This
-        // is a deliberate conservative OVERestimate (cache reads are usually
-        // ~10% of the input price) — costs are never silently undercounted,
-        // and models with real cache prices price normally. Alternative
-        // (treat the entry as unpriced) was rejected for now; a second
-        // pricing source to fill the gap is tracked in AGENTS.md
-        // ("Researched but not implemented" — models.dev).
+        // may overestimate cache reads when their actual rate is lower;
+        // models with separate cache prices use those rates. The fallback is
+        // exposed through costCoverage so reports can explain the estimate.
         cacheRead: v.cache_read_input_token_cost ?? v.input_cost_per_token,
         cacheWrite: v.cache_creation_input_token_cost ?? v.input_cost_per_token,
         source: 'litellm',
         provider: v.litellm_provider ?? null,
         cacheReadFallback: v.cache_read_input_token_cost == null,
         cacheWriteFallback: v.cache_creation_input_token_cost == null,
+        contextTiers: litellmContextTiers(v),
       },
     ]);
   }
@@ -171,7 +170,7 @@ export async function getPricing({ offline = false, force = false, env, home, no
   const lookup = createPriceLookup(records);
 
   return {
-    priceFor: (model, client) => lookup(model, client),
+    priceFor: lookup,
     records,
     warnings,
     sources: { user: Boolean(userMap), litellm: lite.state, builtin: true },

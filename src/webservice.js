@@ -4,7 +4,7 @@ import { activityRange, buildHeatmap, buildTrend, buildTrendByAgent, buildWebExt
 import { buildComparison } from './comparison.js';
 import { buildCostCoverage } from './costcoverage.js';
 import { resolveWebQuery } from './webquery.js';
-import { calendarDaysBetween, endOfDay, startOfDay, stepDay } from './dates.js';
+import { calendarDaysBetween, endOfDay, startOfDay, stepDay, weekday } from './dates.js';
 import { localDate } from './aggregate.js';
 import { createUsageDatabase } from './database.js';
 import { getPricing, PRICE_REFRESH_MS } from './pricing.js';
@@ -102,24 +102,25 @@ export function createWebDataService(base, { collect = collectAll, env, home, da
     catch (err) { err.status = 400; err.code = 'BAD_QUERY'; throw err; }
     if (initialized) await updatePrices();
     const raw = await snapshot();
+    const timezone = opts.timezone;
     const filtered = filterEntries(raw.entries, opts);
     const ctx = { ...raw, opts, entries: filtered.entries, warnings: [...raw.warnings, ...filtered.warnings, ...startupPricingWarnings] };
     const scope = filterEntries(raw.entries, { ...base, clients: opts.clients }).entries;
-    const payload = { ...buildPayload(ctx), ...buildWebExtras(ctx.entries, { top: opts.top, now: time }) };
+    const payload = { ...buildPayload(ctx), ...buildWebExtras(ctx.entries, { top: opts.top, now: time, timezone }) };
     let selection = null;
     if (opts.since != null || opts.until != null) {
-      const end = opts.until ?? endOfDay(time);
-      const start = startOfDay(opts.since ?? activityRange(ctx.entries).firstAt ?? end);
+      const end = opts.until ?? endOfDay(time, timezone);
+      const start = startOfDay(opts.since ?? activityRange(ctx.entries).firstAt ?? end, timezone);
       if (start <= end) {
-        const fullDays = calendarDaysBetween(start, end) + 1;
+        const fullDays = calendarDaysBetween(start, end, timezone) + 1;
         const days = Math.min(fullDays, 366);
-        const shownStart = stepDay(end, -(days - 1));
-        const weeks = Math.ceil((days + new Date(shownStart).getDay()) / 7);
+        const shownStart = stepDay(end, -(days - 1), timezone);
+        const weeks = Math.ceil((days + weekday(shownStart, timezone)) / 7);
         selection = {
           since: shownStart, until: end, truncated: fullDays > days,
-          rows: buildTrend(ctx.entries, { days, now: end }),
-          byAgent: buildTrendByAgent(ctx.entries, { days, now: end }),
-          heatmap: buildHeatmap(ctx.entries, { weeks, now: end }),
+          rows: buildTrend(ctx.entries, { days, now: end, timezone }),
+          byAgent: buildTrendByAgent(ctx.entries, { days, now: end, timezone }),
+          heatmap: buildHeatmap(ctx.entries, { weeks, now: end, timezone }),
         };
       }
     }
@@ -131,9 +132,9 @@ export function createWebDataService(base, { collect = collectAll, env, home, da
       costCoverage: buildCostCoverage(ctx.entries, raw),
       comparison: buildComparison(scope, opts, base, raw, time),
       view: {
-        period: opts.period, today: localDate(time), availableClients: opts.availableClients,
-        since: opts.since == null ? null : localDate(opts.since), until: opts.until == null ? null : localDate(opts.until),
-        startup: { clients: base.clients, since: base.since == null ? null : localDate(base.since), until: base.until == null ? null : localDate(base.until) },
+        period: opts.period, today: localDate(time, timezone), availableClients: opts.availableClients,
+        since: opts.since == null ? null : localDate(opts.since, timezone), until: opts.until == null ? null : localDate(opts.until, timezone),
+        startup: { clients: base.clients, since: base.since == null ? null : localDate(base.since, timezone), until: base.until == null ? null : localDate(base.until, timezone) },
       },
     };
   };

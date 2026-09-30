@@ -7,6 +7,8 @@ import path from 'node:path';
 
 import { configDir, PRICE_REFRESH_MS } from './pricing.js';
 import { createPriceLookup, priceRecord } from './pricecatalog.js';
+import { validCursorMetadata } from './cursormodels.js';
+import { CURSOR_MODEL_INDEX_URL, cursorModelPages, cursorPriceKey, parseCursorModelPage } from './cursorpricepages.js';
 
 export const CURSOR_PRICING_URL = 'https://cursor.com/docs/models-and-pricing.md';
 const FETCH_TIMEOUT_MS = 4000;
@@ -86,20 +88,23 @@ export function cursorPriceRecords(models) {
     cacheWrite: (model.cacheWrite ?? model.input) / 1e6,
     cacheReadFallback: model.cacheRead == null,
     cacheWriteFallback: model.cacheWrite == null,
+    cursor: model.cursor,
   })).filter(Boolean);
 }
 
 export function createCursorPriceLookup(models) {
   const lookup = createPriceLookup(cursorPriceRecords(models));
-  return (name) => lookup(name, 'cursor');
+  return (name, entry = null) => lookup(name, 'cursor', entry);
 }
 
 async function readCache(file) {
   try {
     const cached = JSON.parse(await fs.readFile(file, 'utf8'));
-    if (cached.version !== 1 || !Number.isFinite(cached.fetchedAt)) return null;
+    if (![1, 2].includes(cached.version) || !Number.isFinite(cached.fetchedAt)) return null;
+    if (cached.warnings != null && (!Array.isArray(cached.warnings) || !cached.warnings.every((w) => typeof w === 'string'))) return null;
     if (!Array.isArray(cached.models) || !cached.models.every((m) =>
       typeof m.name === 'string' && m.name.length > 0 &&
+      validCursorMetadata(m.cursor) &&
       Number.isFinite(m.input) && m.input >= 0 &&
       Number.isFinite(m.output) && m.output >= 0 &&
       (m.cacheRead == null || Number.isFinite(m.cacheRead) && m.cacheRead >= 0) &&
@@ -117,19 +122,64 @@ export async function getCursorPricing({ offline = false, force = false, env, ho
   const cached = await readCache(file);
   const currentTime = now();
   const fresh = cached && currentTime >= cached.fetchedAt && currentTime - cached.fetchedAt < PRICE_REFRESH_MS;
-  if ((fresh && !force) || offline) {
+  if ((fresh && cached.version === 2 && !force) || offline) {
     if (!cached) throw new Error('Cursor pricing is not cached; run an online report or import first');
-    return { source: CURSOR_PRICING_URL, fetchedAt: new Date(cached.fetchedAt).toISOString(), state: fresh ? 'fresh' : 'stale (offline)', models: cached.models, warnings: [] };
+    return { source: CURSOR_PRICING_URL, fetchedAt: new Date(cached.fetchedAt).toISOString(), state: fresh ? 'fresh' : 'stale (offline)', models: cached.models, warnings: cached.warnings ?? [] };
   }
   try {
-    const response = await fetchImpl(CURSOR_PRICING_URL, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    const models = parseCursorPricingMarkdown(await response.text());
+    const fetchText = async (url) => {
+      const response = await fetchImpl(url, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const body = await response.text();
+      if (body.length > 4 * 1024 * 1024) throw new Error('Cursor pricing page exceeds size limit');
+      return body;
+    };
+    const [table, index] = await Promise.allSettled([fetchText(CURSOR_PRICING_URL), fetchText(CURSOR_MODEL_INDEX_URL)]);
+    if (table.status === 'rejected') throw table.reason;
+    const overview = parseCursorPricingMarkdown(table.value);
+    const fetchedAt = new Date(currentTime).toISOString();
+    const catalog = new Map(overview.map((model) => [cursorPriceKey(model), { ...model, cursor: { url: CURSOR_PRICING_URL, fetchedAt } }]));
+    const warnings = [];
+    let pages = [];
+    try {
+      if (index.status === 'rejected') throw index.reason;
+      pages = cursorModelPages(index.value);
+    } catch (err) { warnings.push(`Cursor model discovery unavailable; using overview and saved prices (${err.message})`); }
+    let next = 0;
+    const results = new Array(pages.length);
+    const workers = await Promise.allSettled(Array.from({ length: Math.min(4, pages.length) }, async () => {
+      while (next < pages.length) {
+        const i = next++;
+        try { results[i] = { models: parseCursorModelPage(await fetchText(pages[i]), overview, pages[i]) }; }
+        catch (err) { results[i] = { error: err.message }; }
+      }
+    }));
+    for (const worker of workers) if (worker.status === 'rejected') throw worker.reason;
+    for (let i = 0; i < results.length; i++) {
+      if (results[i].error) { warnings.push(`Cursor model details unavailable: ${pages[i]} (${results[i].error})`); continue; }
+      for (const model of results[i].models) catalog.set(cursorPriceKey(model), { ...model, cursor: { ...model.cursor, fetchedAt } });
+    }
+    let retained = 0;
+    for (const model of cached?.models ?? []) {
+      const current = catalog.get(cursorPriceKey(model));
+      if (current) {
+        // Keep learned IDs for old CSVs when a detail page is temporarily
+        // unavailable or now publishes another spelling of the same model.
+        const aliases = [...new Set([...(current.cursor?.aliases ?? []), ...(model.cursor?.aliases ?? [])])];
+        if (aliases.length) current.cursor.aliases = aliases;
+        continue;
+      }
+      catalog.set(cursorPriceKey(model), { ...model, cursor: { ...model.cursor,
+        fetchedAt: model.cursor?.fetchedAt ?? new Date(cached.fetchedAt).toISOString(), retained: true } });
+      retained++;
+    }
+    if (retained) warnings.push(`Cursor retained ${retained} previously fetched model prices missing from this update; their original fetch dates are preserved`);
+    const models = [...catalog.values()];
     try {
       await fs.mkdir(path.dirname(file), { recursive: true });
-      await fs.writeFile(file, JSON.stringify({ version: 1, fetchedAt: currentTime, models }));
+      await fs.writeFile(file, JSON.stringify({ version: 2, fetchedAt: currentTime, models, warnings }));
     } catch { /* Rates are usable for this report even if the cache is read-only. */ }
-    return { source: CURSOR_PRICING_URL, fetchedAt: new Date(currentTime).toISOString(), state: 'refreshed', models, warnings: [] };
+    return { source: CURSOR_PRICING_URL, fetchedAt, state: 'refreshed', models, warnings };
   } catch (err) {
     if (!cached) throw new Error(`Cursor pricing unavailable: ${err.message}`, { cause: err });
     return {

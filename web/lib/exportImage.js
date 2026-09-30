@@ -1,11 +1,7 @@
 'use client';
 
-// Renders the report column (KPIs + cards in their current order + footer)
-// to a PNG. Controls marked `.no-export` are dropped from the clone; the dot
-// grid is painted onto the clone's root because the page background lives on
-// <body>, outside the captured node. The clone copies computed styles, so
-// interaction-only looks (the selected heatmap day) are switched off on the
-// live node via `.is-exporting` for the duration of the capture.
+// Capture the visible Today or Calendar report, including day details.
+// Navigation and actions stay outside this node; inline controls are filtered.
 
 export async function exportReportImage(node, filename) {
   const { domToPng } = await import('modern-screenshot');
@@ -19,7 +15,7 @@ export async function exportReportImage(node, filename) {
       scale: Math.max(2, window.devicePixelRatio || 1),
       backgroundColor: bg,
       style: {
-        backgroundImage: `radial-gradient(circle, ${dot} 1.1px, transparent 1.6px)`,
+        backgroundImage: `radial-gradient(circle, ${dot} .8px, transparent 1.1px)`,
         backgroundSize: '28px 28px',
         backgroundPosition: '14px 14px',
       },

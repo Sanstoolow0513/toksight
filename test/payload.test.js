@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { buildPayload } from '../src/payload.js';
+import { createPriceLookup, priceRecord } from '../src/pricecatalog.js';
 
 // Base entry: 2026-08-10 12:00 local time — same shape the parsers emit.
 function entry(over = {}) {
@@ -100,7 +101,9 @@ test('model rows combine Cursor effort IDs after pricing and keep agents separat
     entry({ client: 'cursor', sessionId: null, model: 'opus5.5-medium', costUsd: 3 }),
     entry({ client: 'claude', model: 'claude-opus-5-5', costUsd: 4 }),
   ];
-  const p = payload(entries);
+  const priceFor = createPriceLookup([priceRecord({ scope: 'cursor', source: 'cursor', name: 'Claude Opus 5.5',
+    input: 4e-6, output: 20e-6, cacheWrite: 5e-6, cacheRead: 0.2e-6 })]);
+  const p = payload(entries, {}, { priceFor, sources: { cursor: 'fresh' } });
   assert.equal(p.totals.costUsd, 9);
   assert.equal(p.models.length, 2);
   const cursor = p.models.find((row) => row.client === 'cursor');

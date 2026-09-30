@@ -1,12 +1,15 @@
-# Engineering documentation
+# toksight 开发知识索引
 
-This directory is the source of truth for contributor-facing project behavior. Read the topic that matches the work; user-facing commands and options remain in the bilingual root READMEs.
+这里记录当前实现的内部机制与维护约定。面向用户的安装、选项和使用方式以根目录 [README.md](../README.md) / [README.zh-CN.md](../README.zh-CN.md) 为准；视觉和交互验收以 [design-spec.md](../design-spec.md) 为准。实现细节若与本文冲突，以当前代码和测试为准，并同步修正文档。
 
-| Topic | Document |
-| --- | --- |
-| Code layout, development commands, and documentation conventions | [Architecture and development](architecture.md) |
-| Parser, normalized entry, pricing, database, date, and JSON contracts | [Data contracts](data-contracts.md) |
-| HTTP serving, API scope, and report data flow | [Web server and report](web-report.md) |
-| Release PR, version selection, checks, npm, and GitHub Release | [Release](release.md) |
+| 想查什么 | 文档 | 主要代码 |
+| --- | --- | --- |
+| 模块职责、数据流、命令入口 | [架构](architecture.md) | `src/cli.js`、`src/collect.js`、`src/webservice.js` |
+| 新增 Agent、解析器口径、容错与去重 | [采集器](collectors.md) | `src/clients/`、`src/fsutils.js` |
+| 标准记录、日期、聚合、CLI JSON 与 Web 数据字段 | [数据契约](data-contract.md) | `src/payload.js`、`src/aggregate.js`、`src/webdata.js` |
+| SQLite 快照、导入/导出、Cursor CSV、价格来源 | [存储与定价](storage-pricing.md) | `src/database.js`、`src/dbtransfer.js`、`src/pricing.js` |
+| HTTP 路由与安全边界、报告页、单日展开 | [Web 报告](web-report.md) | `src/webserver.js`、`web/` |
+| 本地验证、打包和发布入口 | [开发与发布](development-release.md) | `package.json`、`scripts/`、`.github/workflows/` |
+| 发布 PR、版本号、npm 和 GitHub Release、失败恢复 | [发布指南](release.md) | `scripts/release-*.js`、`.github/workflows/release.yml` |
 
-The [English README](../README.md) and [Chinese README](../README.zh-CN.md) explain how to use toksight. [web/README.md](../web/README.md) covers frontend development and component layout. [design-spec.md](../design-spec.md) is the visual and interaction specification. The generated [web/AGENTS.md](../web/AGENTS.md) remains the Next.js-specific instruction file.
+这些文档按主题检索，不按开发时间排列。新增事实应更新对应主题；根 [AGENTS.md](../AGENTS.md) 只保留工作边界和入口。

@@ -80,7 +80,7 @@ async function main() {
     const sessionFile = path.join(claude, 'projects', 'smoke', 'session.jsonl');
     await writeFile(sessionFile, JSON.stringify({
       type: 'assistant', sessionId: 'package-smoke', timestamp: '2026-08-29T10:00:00Z',
-      message: { id: 'package-smoke', model: 'claude-sonnet-4-5', usage: { input_tokens: 100, output_tokens: 20 } },
+      message: { id: 'package-smoke', model: 'claude-sonnet-4', usage: { input_tokens: 100, output_tokens: 20 } },
     }) + '\n');
     const env = {
       ...process.env,
@@ -186,7 +186,7 @@ async function main() {
     assert.equal((await readFile(databaseFile)).subarray(0, 16).toString(), 'SQLite format 3\0');
     await writeFile(sessionFile, JSON.stringify({
       type: 'assistant', sessionId: 'package-smoke', timestamp: '2026-08-29T10:00:00Z',
-      message: { id: 'package-smoke', model: 'claude-sonnet-4-5', usage: { input_tokens: 200, output_tokens: 20 } },
+      message: { id: 'package-smoke', model: 'claude-sonnet-4', usage: { input_tokens: 200, output_tokens: 20 } },
     }) + '\n');
     assert.equal((await (await fetch(url + '/api/data')).json()).totals.totalTokens, 214);
     const refreshed = await fetch(url + '/api/refresh', { method: 'POST' });

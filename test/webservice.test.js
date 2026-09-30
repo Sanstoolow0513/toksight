@@ -23,6 +23,61 @@ const memoryDatabase = () => createUsageDatabase({ file: ':memory:' });
 const service = (entries, opts = base) => createWebDataService(opts, { collect: async () => raw(entries), database: memoryDatabase(), now });
 const query = (text) => new URLSearchParams(text);
 
+test('timezone queries align filtering, daily/hourly series and comparisons without sharing zone state', async () => {
+  const time = Date.parse('2026-09-30T01:00:00Z');
+  const get = createWebDataService(base, { database: memoryDatabase(), now: () => time, collect: async () => raw([
+    entry({ timestamp: Date.parse('2026-09-29T15:59:59Z'), inputTokens: 1 }),
+    entry({ timestamp: Date.parse('2026-09-29T16:00:00Z'), inputTokens: 2 }),
+    entry({ timestamp: time, inputTokens: 4 }),
+    entry({ timestamp: Date.parse('2026-09-30T16:00:00Z'), inputTokens: 8 }),
+  ]) });
+  try {
+    const [shanghai, la] = await Promise.all([
+      get(query('period=today&timezone=Asia%2FShanghai')),
+      get(query('period=today&timezone=America%2FLos_Angeles')),
+    ]);
+    assert.equal(shanghai.timezone, 'Asia/Shanghai');
+    assert.equal(shanghai.view.today, '2026-09-30');
+    assert.equal(shanghai.totals.requests, 2);
+    assert.equal(shanghai.totals.inputTokens, 6);
+    assert.deepEqual(shanghai.daily.map((r) => r.date), ['2026-09-30']);
+    assert.equal(shanghai.hourly[0].requests, 1);
+    assert.equal(shanghai.hourly[9].requests, 1);
+    assert.equal(shanghai.selection.rows[0].requests, 2);
+    assert.equal(shanghai.comparison.previous.totals.requests, 1);
+    assert.equal(la.view.today, '2026-09-29');
+    assert.equal(la.totals.requests, 3);
+    assert.deepEqual(la.daily.map((r) => r.date), ['2026-09-29']);
+    assert.equal(la.hourly[18].requests, 1);
+    const month = await get(query('period=month&timezone=Asia%2FShanghai'));
+    assert.deepEqual(month.monthly.map((r) => r.month), ['2026-09']);
+    const again = await get(query('period=today&timezone=Asia%2FShanghai'));
+    assert.deepEqual(again.hourly, shanghai.hourly);
+    for (const q of ['timezone=bogus', 'timezone=', 'timezone=UTC&timezone=Asia%2FShanghai']) {
+      await assert.rejects(get(query(q)), (err) => err.status === 400 && err.code === 'BAD_QUERY');
+    }
+  } finally { get.close(); }
+});
+
+test('a 25-hour reporting day includes both repeated hours and keeps startup scope', async () => {
+  const get = createWebDataService(base, { database: memoryDatabase(), now: () => Date.parse('2026-11-01T20:00:00Z'), collect: async () => raw([
+    entry({ timestamp: Date.parse('2026-11-01T08:30:00Z') }),
+    entry({ timestamp: Date.parse('2026-11-01T09:30:00Z') }),
+    entry({ timestamp: Date.parse('2026-11-02T07:59:59Z') }),
+    entry({ timestamp: Date.parse('2026-11-02T08:00:00Z') }),
+  ]) });
+  try {
+    const data = await get(query('period=custom&since=2026-11-01&until=2026-11-01&timezone=America%2FLos_Angeles'));
+    assert.equal(data.totals.requests, 3);
+    assert.equal(data.hourly.length, 24);
+    assert.equal(data.hourly[1].requests, 2);
+    assert.equal(data.hourly[23].requests, 1);
+    assert.equal(data.comparison.days, 1);
+    const scoped = resolveWebQuery(query('period=today&timezone=Asia%2FShanghai'), { ...base, since: Date.parse('2026-09-30T00:00:00Z') }, Date.parse('2026-09-30T01:00:00Z'));
+    assert.equal(scoped.since, Date.parse('2026-09-30T00:00:00Z'));
+  } finally { get.close(); }
+});
+
 test('concurrent initial requests share collection; later reads use the committed snapshot until refresh', async () => {
   let count = 0, release;
   const gate = new Promise((resolve) => { release = resolve; });
@@ -70,6 +125,10 @@ test('Cursor CSV import is idempotent, filterable and survives refresh in the sa
     assert.equal(corrected.updated, 1);
     assert.equal(corrected.duplicates, 1);
     assert.equal((await get(query('client=cursor'))).totals.costUsd, 1);
+    const restoredMode = await get.importCursor(csv);
+    assert.equal(restoredMode.updated, 1, 'an explicit CSV can correct Max Mode metadata');
+    assert.equal(restoredMode.duplicates, 1);
+    assert.equal((await get(query('client=cursor'))).totals.costUsd, 1, 'Included cannot erase a reported charge');
     assert.equal((await get.importCursor(csv)).duplicates, 2);
     const newRow = csv.split('\n')[1].replace('2026-08-31T12:19:00.334Z', '2026-08-30T12:19:00.334Z');
     const overlap = await get.importCursor(`${csv.trimEnd()}\n${newRow}\n`);
@@ -287,7 +346,7 @@ test('real collection preserves agent-reported cost provenance alongside compute
   await cp(new URL('./fixtures/opencode/storage/message/sess1/msg1.json', import.meta.url), path.join(messages, 'msg1.json'));
   const project = path.join(home, '.claude', 'projects', 'fixture');
   await mkdir(project, { recursive: true });
-  await writeFile(path.join(project, 'session.jsonl'), JSON.stringify({ type: 'assistant', sessionId: 'claude-fixture', timestamp: '2026-09-08T10:00:00Z', message: { id: 'm', model: 'claude-sonnet-4-5', usage: { input_tokens: 100, output_tokens: 10 } } }));
+  await writeFile(path.join(project, 'session.jsonl'), JSON.stringify({ type: 'assistant', sessionId: 'claude-fixture', timestamp: '2026-09-08T10:00:00Z', message: { id: 'm', model: 'claude-sonnet-4', usage: { input_tokens: 100, output_tokens: 10 } } }));
   const get = createWebDataService(base, { home, env, now });
   const data = await get();
   assert.ok(data.costCoverage.sources.reported.requests > 0);
@@ -322,7 +381,7 @@ test('cost coverage separates reports, estimates, unpriced requests and actual c
   const pricing = await getPricing({ home, env }); // Fresh local fixture: no fetch.
   const reported = entry({ client: 'opencode', model: 'custom', costUsd: 7 });
   const coverage = buildCostCoverage([
-    reported, entry({ model: 'custom' }), entry({ model: 'explicit' }), entry({ model: 'remote' }), entry({ model: 'claude-sonnet-4-5', cacheReadTokens: 0 }), entry({ costUsd: null }),
+    reported, entry({ model: 'custom' }), entry({ model: 'explicit' }), entry({ model: 'remote' }), entry({ model: 'claude-sonnet-4', cacheReadTokens: 0 }), entry({ costUsd: null }),
   ], { pricing, reportedCosts: new WeakSet([reported]) });
   assert.equal(coverage.sources.reported.costUsd, 7);
   assert.equal(coverage.sources.user.requests, 2);

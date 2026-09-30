@@ -1,10 +1,7 @@
 'use client';
 
-// One local day in full inside the opened heatmap card: a date head with
-// day stepping, then a height-paged deck of cards — hours, agents (still
-// expandable), cross-agent model usage and the day's sessions. The day's
-// KPIs sit under the calendar. While another day loads (or failed to) the
-// previous one stays on screen, dimmed.
+// Flat day details shared by Today and the calendar. All sections remain
+// visible in the normal page flow and in exported images.
 
 import { useCallback, useMemo, useState } from 'react';
 import { ChevronLeft, ChevronRight, RefreshCw, TriangleAlert } from 'lucide-react';
@@ -12,7 +9,7 @@ import Tooltip from '@/components/Tooltip';
 import { coded } from '@/components/Coded';
 import AgentTable from '@/components/AgentTable';
 import ModelTable from '@/components/ModelTable';
-import DayDeck from '@/components/DayDeck';
+import Kpis from '@/components/Kpis';
 import { CostValue, PartsLegend, agentStyle } from '@/components/Marks';
 import { hourlyBars, sessionRows } from '@/lib/report';
 import { fmtClockRange, fmtCost, fmtInt, fmtTokens } from '@/lib/format';
@@ -69,10 +66,10 @@ function HourlyChart({ bars, peak, label, tx }) {
   );
 }
 
-function SessionRow({ row, agentLabel, locale, tx }) {
+function SessionRow({ row, agentLabel, locale, tx, timezone }) {
   const meta = [
     agentLabel(row.client),
-    fmtClockRange(row.startedAt, row.endedAt),
+    fmtClockRange(row.startedAt, row.endedAt, timezone),
     row.activeMs > 0 ? tx('sessionActive', { time: durationLabel(locale, row.activeMs) }) : null,
     tx('rowRequests', { n: fmtInt(row.requests) }),
   ].filter(Boolean);
@@ -97,14 +94,13 @@ function SessionRow({ row, agentLabel, locale, tx }) {
   );
 }
 
-// The deck's cards in display order: hours, agents, models, sessions.
-function DayBody({ data, day, sortBy, onSort, locale, tx, agentLabel, open, onToggle }) {
+// Sections in display order: hours, agents, models, sessions.
+export function DayBody({ data, day, sortBy, onSort, locale, tx, agentLabel, open, onToggle }) {
   const totals = data.totals ?? {};
   const hours = useMemo(() => hourlyBars(data.hourly), [data.hourly]);
   const sessions = useMemo(() => sessionRows(data.topSessions, SESSION_LIMIT), [data.topSessions]);
 
-  const cards = useMemo(() => {
-    if (!totals.requests) return [{ id: 'empty', title: null, note: null, node: <p className="day-empty">{tx('dayEmpty')}</p> }];
+  const sections = useMemo(() => {
     const sortNote = tx(sortBy === 'cost' ? 'subAgentsCost' : 'subAgentsTokens', { period: dayLabel(locale, day) });
     const list = [
       {
@@ -159,7 +155,7 @@ function DayBody({ data, day, sortBy, onSort, locale, tx, agentLabel, open, onTo
         node: (
           <ol className="session-list">
             {sessions.map((row) => (
-              <SessionRow key={`${row.client}/${row.sessionId}`} row={row} agentLabel={agentLabel} locale={locale} tx={tx} />
+              <SessionRow key={`${row.client}/${row.sessionId}`} row={row} agentLabel={agentLabel} locale={locale} tx={tx} timezone={data.timezone} />
             ))}
           </ol>
         ),
@@ -168,7 +164,13 @@ function DayBody({ data, day, sortBy, onSort, locale, tx, agentLabel, open, onTo
     return list;
   }, [data, day, hours, sessions, sortBy, onSort, locale, tx, agentLabel, open, onToggle, totals.requests]);
 
-  return <DayDeck cards={cards} tx={tx} />;
+  return <div className="day-sections">
+    {!totals.requests ? <p className="day-empty">{tx('dayEmpty')}</p> : null}
+    {sections.map((section) => <section key={section.id} className={`day-section section-${section.id}`}>
+      <header className="day-section-head"><h3>{section.title}</h3>{section.note ? <span>{section.note}</span> : null}</header>
+      {section.node}
+    </section>)}
+  </div>;
 }
 
 function DaySkeleton() {
@@ -184,8 +186,9 @@ function DaySkeleton() {
 export default function DayDetail({ day, report, nav, today, sortBy, onSort, onStep, locale, tx, agentLabel }) {
   const shown = report.data && report.day ? report : null;
   const stale = Boolean(shown) && (report.loading || shown.day !== day);
-  const sub = [periodLabel(locale, { mode: 'year', year: Number(day.slice(0, 4)) }), weekdayLabel(locale, day), day === today ? tx('dayToday') : null];
-  // Controlled so the deck's hidden measuring copy expands with the table.
+  const displayDay = shown?.day ?? day;
+  const sub = [periodLabel(locale, { mode: 'year', year: Number(displayDay.slice(0, 4)) }), weekdayLabel(locale, displayDay), displayDay === today ? tx('dayToday') : null, shown?.data.timezone];
+  // Keep expanded agents while moving between days.
   const [open, setOpen] = useState(() => new Set());
   const onToggle = useCallback(
     (id) =>
@@ -198,15 +201,15 @@ export default function DayDetail({ day, report, nav, today, sortBy, onSort, onS
   );
 
   return (
-    <section className="xday" aria-label={dayLabel(locale, day, true)}>
+    <section className="xday" aria-label={dayLabel(locale, displayDay, true)}>
       <header className="xday-head">
         <div>
           <h3 className="xday-title" aria-live="polite">
-            {dayLabel(locale, day)}
+            {dayLabel(locale, displayDay)}
           </h3>
           <p className="xday-sub">{sub.filter(Boolean).join(' · ')}</p>
         </div>
-        <div className="xday-nav">
+        <div className="xday-nav no-export">
           <button type="button" className="icon-btn" onClick={() => onStep(-1)} disabled={!nav.canPrev} aria-label={tx('dayPrev')} title={tx('dayPrev')}>
             <ChevronLeft {...icon} />
           </button>
@@ -229,6 +232,7 @@ export default function DayDetail({ day, report, nav, today, sortBy, onSort, onS
       ) : null}
       {shown ? (
         <div className={stale ? 'xday-content is-loading' : 'xday-content'}>
+          <Kpis data={shown.data} tx={tx} grid />
           <DayBody data={shown.data} day={shown.day} sortBy={sortBy} onSort={onSort} locale={locale} tx={tx} agentLabel={agentLabel} open={open} onToggle={onToggle} />
         </div>
       ) : report.error ? null : (

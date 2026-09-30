@@ -61,14 +61,14 @@ test('official prices are cached, usable offline and stale fallback survives fet
   assert.equal(first.models.length, 5);
   const fresh = await getCursorPricing({ env, home: dir, fetchImpl, now: () => 1_000_001 });
   assert.equal(fresh.state, 'fresh');
-  assert.equal(requests, 1);
+  assert.equal(requests, 2);
   const forced = await getCursorPricing({ env, home: dir, force: true, fetchImpl, now: () => 1_000_002 });
   assert.equal(forced.state, 'refreshed');
-  assert.equal(requests, 2);
+  assert.equal(requests, 4);
   const expired = 1_000_002 + PRICE_REFRESH_MS + 1;
   const offline = await getCursorPricing({ env, home: dir, offline: true, fetchImpl, now: () => expired });
   assert.equal(offline.state, 'stale (offline)');
-  assert.equal(requests, 2);
+  assert.equal(requests, 4);
   const stale = await getCursorPricing({ env, home: dir, fetchImpl: async () => { throw new Error('network down'); }, now: () => expired });
   assert.equal(stale.state, 'stale');
   assert.match(stale.warnings[0], /network down/);
@@ -139,5 +139,45 @@ test('Cursor Claude shorthand prices Included events and reports one model row p
     assert.deepEqual(opus.modelIds, ['opus5.5-high', 'opus5.5-medium']);
     assert.equal(buildCostCoverage(snapshot.entries, snapshot).sources.cursor.requests, 1);
     assert.equal(buildCostCoverage(snapshot.entries, snapshot).sources.reported.requests, 2);
+  } finally { db.close(); }
+});
+
+test('existing Cursor Max imports reprice and group with their base model using cached official rates', () => {
+  const models = [{ name: 'GPT-5.6 Sol', provider: 'OpenAI', pool: 'other', input: 4, cacheWrite: 5, cacheRead: 0.4, output: 20 }];
+  const db = createUsageDatabase({ file: ':memory:' });
+  try {
+    db.replace({ entries: [], warnings: [], reportedCosts: new WeakSet(), pricing: {
+      priceFor: () => null, records: [], sources: {}, configDir: '/fixture',
+    } });
+    const header = 'Date,Cloud Agent ID,Automation ID,Kind,Model,Max Mode,Input (w/ Cache Write),Input (w/o Cache Write),Cache Read,Output Tokens,Total Tokens,Cost';
+    const csv = `${header}\n` + [
+      '2026-09-01T12:00:00Z,,,Included,gpt-5.6-sol-max,Yes,5,10,30,4,49,Included',
+      '2026-09-01T12:01:00Z,,,Included,gpt-5.6-sol-xhigh,No,5,10,30,4,49,Included',
+      '2026-09-01T12:02:00Z,,,On-Demand,gpt-5.6-sol-max,Yes,5,10,30,4,49,$0.75',
+      '2026-09-01T12:03:00Z,,,Included,gpt-5.6-sol-max,Yes,5,10,30,4,49,Free',
+    ].join('\n');
+    const parsed = parseCursorCsv(csv);
+    // Legacy imports have no saved Max Mode column.
+    for (const { entry } of parsed.records) delete entry.cursorMaxMode;
+    db.importCursor(parsed.records);
+    db.updatePriceCatalog({ records: cursorPriceRecords(models), sources: ['cursor'], sourceDetails: {} });
+    const snapshot = db.read();
+    const expected = (5 * 5 + 10 * 4 + 30 * 0.4 + 4 * 20) / 1e6;
+    assert.ok(Math.abs(snapshot.entries[0].costUsd - expected) < 1e-12);
+    assert.equal(snapshot.entries[2].costUsd, 0.75);
+    assert.equal(snapshot.entries[3].costUsd, 0);
+    const payload = buildPayload({ ...snapshot, opts: { since: null, until: null, clients: null, top: 20 } });
+    assert.equal(payload.models.length, 1);
+    assert.equal(payload.models[0].model, 'GPT-5.6 Sol');
+    assert.equal(payload.models[0].requests, 4);
+    assert.deepEqual(payload.models[0].modelIds, ['gpt-5.6-sol-max', 'gpt-5.6-sol-xhigh']);
+    assert.deepEqual(payload.pricing.unpricedModels, []);
+    assert.ok(Math.abs(payload.totals.costUsd - (0.75 + expected * 2)) < 1e-12);
+    assert.equal(buildCostCoverage(snapshot.entries, snapshot).sources.reported.requests, 2);
+    assert.equal(buildCostCoverage(snapshot.entries, snapshot).sources.cursor.requests, 2);
+    assert.equal(db.importCursor(parseCursorCsv(csv).records).updated, 4);
+    assert.equal(db.importCursor(parseCursorCsv(csv).records).duplicates, 4);
+    assert.equal(db.read().entries.length, 4);
+    assert.equal(db.read().entries[0].cursorMaxMode, true);
   } finally { db.close(); }
 });

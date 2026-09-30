@@ -75,6 +75,12 @@ function cost(value) {
   return Number.isFinite(n) ? n : undefined;
 }
 
+function maxMode(value) {
+  if (/^(yes|true|1)$/i.test(value)) return true;
+  if (/^(no|false|0)$/i.test(value)) return false;
+  return null;
+}
+
 // Cursor does not export an event ID. These are the fields that identify a
 // usage event across exports while billing labels and charges may change.
 // The occurrence suffix preserves genuinely repeated, identical usage rows
@@ -122,7 +128,17 @@ export function selectCursorImports(rows, warnings = []) {
           (candidate.reported_cost === best.reported_cost && candidate.included > best.included) ||
           (candidate.reported_cost === best.reported_cost && candidate.included === best.included && candidate.rowid > best.rowid))) best = candidate;
       }
-      if (best) selected.push({ ...best, key: `v2:${identity}:${occurrence}` });
+      if (best) {
+        // A legacy row with the winning charge can lack mode metadata. Fill
+        // it from a matching import without changing the charge or identity.
+        let modeRow = null;
+        for (const variantRows of variants.values()) {
+          const candidate = variantRows.get(occurrence);
+          if (typeof candidate?.entry.cursorMaxMode === 'boolean' && (!modeRow || candidate.rowid > modeRow.rowid)) modeRow = candidate;
+        }
+        const entry = modeRow ? { ...best.entry, cursorMaxMode: modeRow.entry.cursorMaxMode } : best.entry;
+        selected.push({ ...best, entry, key: `v2:${identity}:${occurrence}` });
+      }
     }
   }
   return selected;
@@ -166,6 +182,7 @@ export function parseCursorCsv(input) {
         client: 'cursor', sessionId: null, model, timestamp,
         inputTokens, outputTokens, reasoningTokens: 0, cacheReadTokens,
         cacheWriteTokens, costUsd: costUsd ?? null, directory: null, title: null,
+        cursorMaxMode: maxMode(get('Max Mode')),
     };
     const identity = cursorIdentity(entry);
     const occurrence = occurrences.get(identity) ?? 0;

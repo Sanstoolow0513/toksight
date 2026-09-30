@@ -22,7 +22,7 @@ function makeFixture({ opencodeDbIsDir = false } = {}) {
         sessionId: 'sess-x',
         message: {
           id: 'msg_a',
-          model: 'claude-sonnet-4-5',
+          model: 'claude-sonnet-4',
           usage: { input_tokens: 100, cache_read_input_tokens: 900, cache_creation_input_tokens: 50, output_tokens: 200 },
         },
         timestamp: '2026-08-29T10:00:00.000Z',
@@ -34,7 +34,7 @@ function makeFixture({ opencodeDbIsDir = false } = {}) {
         sessionId: 'sess-x',
         message: {
           id: 'msg_b',
-          model: 'claude-sonnet-4-5',
+          model: 'claude-sonnet-4',
           usage: { input_tokens: 70, cache_read_input_tokens: 100, output_tokens: 40 },
         },
       }),
@@ -45,7 +45,7 @@ function makeFixture({ opencodeDbIsDir = false } = {}) {
         sessionId: 'sess-x',
         message: {
           id: 'msg_c',
-          model: 'claude-sonnet-4-5',
+          model: 'claude-sonnet-4',
           usage: { input_tokens: 30, output_tokens: 10 },
         },
         timestamp: 'not-a-date',
@@ -140,7 +140,7 @@ test('no-timestamp warning uses the singular for exactly one entry', async () =>
       sessionId: 'sess-x',
       message: {
         id: 'msg_a',
-        model: 'claude-sonnet-4-5',
+        model: 'claude-sonnet-4',
         usage: { input_tokens: 70, output_tokens: 40 },
       },
     }),
