@@ -16,6 +16,7 @@ import DayDetail from '@/components/DayDetail';
 import Kpis from '@/components/Kpis';
 import { dailyMap } from '@/lib/report';
 import { periodLabel } from '@/lib/i18n';
+import { compactCalendar } from '@/lib/period';
 
 const OPEN = { duration: 460, easing: 'cubic-bezier(0.22, 1, 0.36, 1)' };
 const CLOSE = { duration: 360, easing: 'cubic-bezier(0.32, 0.72, 0, 1)' };
@@ -275,7 +276,7 @@ export default function ExpandedHeatmap({
     <div ref={layerRef} className="xsheet">
       <div ref={backdropRef} className="xsheet-backdrop" aria-hidden="true" />
       <div className="xsheet-scroll" onScroll={onScroll} onPointerDown={onScrimDown} onClick={onScrimClick}>
-        <div ref={cardRef} className={`xcard is-${period.mode}`} role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1}>
+        <div ref={cardRef} className={`xcard is-${compactCalendar(period) ? 'year' : 'month'}`} role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1}>
           <div ref={shellRef} className="xcard-shell" />
           <div ref={clipRef} className="xcard-clip">
             <div ref={innerRef} className="xcard-inner">

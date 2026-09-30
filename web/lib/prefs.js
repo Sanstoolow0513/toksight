@@ -4,7 +4,7 @@
 import { DEFAULT_LOCALE, LOCALES } from './i18n.js';
 import { SORT_KEYS } from './report.js';
 
-export const CARD_IDS = ['heatmap', 'agents'];
+export const CARD_IDS = ['heatmap', 'trend', 'agents'];
 export const THEMES = ['light', 'dark', 'system'];
 
 const KEYS = {
@@ -67,8 +67,8 @@ export function readOrder() {
       next.push(id);
     }
   }
-  // A stored order from the retired models card still keeps heatmap/agents.
-  return next.length === CARD_IDS.length ? next : CARD_IDS;
+  // Keep existing card order and append newly introduced cards.
+  return [...next, ...CARD_IDS.filter((id) => !seen.has(id))];
 }
 export const writeOrder = (v) => write(KEYS.order, JSON.stringify(v));
 

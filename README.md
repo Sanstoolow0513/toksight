@@ -9,17 +9,17 @@ zero runtime dependencies, plus a local web report (`toksight web`) with heatmap
 breakdowns, and one-click image export.
 
 Inspired by [tokscale](https://github.com/junhoyeo/tokscale) (and in the same spirit as
-[ccusage](https://github.com/ryoppippi/ccusage)); the implementation is original. 中文文档见
+[ccusage](https://github.com/ccusage/ccusage)); the implementation is original. 中文文档见
 [README.zh-CN.md](./README.zh-CN.md)。
 
 ## Supported agents
 
 | Client | Data source (default) | Env override |
 | --- | --- | --- |
-| ZCode | `~/.zcode/cli/db/db.sqlite`, fallback `~/.zcode/cli/rollout/*.jsonl` | `ZCODE_HOME` |
+| ZCode | `~/.zcode/cli/db/db.sqlite`; if absent or unreadable, fallback `~/.zcode/cli/rollout/*.jsonl` | `ZCODE_HOME` |
 | Claude Code | `~/.claude/projects/**/*.jsonl` | `CLAUDE_CONFIG_DIR` |
 | Codex CLI | `~/.codex/sessions/**/*.jsonl` | `CODEX_HOME` |
-| OpenCode | `~/.local/share/opencode/opencode.db`, fallback `~/.local/share/opencode/storage/message/**/*.json` | `OPENCODE_PATH` |
+| OpenCode | `~/.local/share/opencode/opencode.db`; if absent or unreadable, fallback `~/.local/share/opencode/storage/message/**/*.json` | `OPENCODE_PATH` |
 | Kimi Code | `~/.kimi-code/sessions/**/agents/*/wire.jsonl` | `KIMI_CODE_HOME` |
 | Cursor | Usage CSV exported from Cursor, imported through `toksight web` | `TOKSIGHT_CONFIG_DIR` (import storage) |
 
@@ -96,16 +96,16 @@ Day grouping and date filters use your **local** timezone.
 
 ## Pricing
 
-For agents other than Cursor, costs are computed per request from token counts with three
-layers (later wins):
+For agents other than Cursor, token-based costs use three price layers (later wins), unless
+the agent reports a usable cost for that request:
 
 1. **Built-in table** — best-effort USD-per-MTok estimates for common model families,
    always available offline.
 2. **LiteLLM** — fetched from the community
    [model prices](https://github.com/BerriAI/litellm/blob/main/model_prices_and_context_window.json)
-   list with a 7-day disk cache at `<config>/toksight/cache/litellm-pricing.json`. `--offline`
+   list with a 7-day disk cache at `<toksight-dir>/cache/litellm-pricing.json`. `--offline`
    uses an existing cache without a network request.
-3. **User overrides** — edit `<config>/toksight/pricing.json` (per-MTok USD):
+3. **User overrides** — edit `<toksight-dir>/pricing.json` (per-MTok USD):
 
    ```json
    {
@@ -113,49 +113,77 @@ layers (later wins):
    }
    ```
 
-   Model names match exactly or by provider suffix (`zhipuai/glm-5.3` also covers `GLM-5.3`).
+   Model names match exactly or by an unambiguous provider suffix (`zhipuai/glm-5.3` can also cover `GLM-5.3`).
 
-`<config>` is `%XDG_CONFIG_HOME% || ~/.config` (override with `TOKSIGHT_CONFIG_DIR`).
+`<toksight-dir>` is `TOKSIGHT_CONFIG_DIR` when set; otherwise it is
+`$XDG_CONFIG_HOME/toksight` when that variable is set, or `~/.config/toksight`.
 Models without a price are still counted; their cost shows as `—` and they are listed under
-`pricing.unpricedModels` in JSON output. OpenCode costs reported by OpenCode itself are used as-is.
+`pricing.unpricedModels` in JSON output. OpenCode's SQLite `cost: 0` is a placeholder, so only
+nonzero reported database costs win; numeric costs in legacy JSON are kept as reported.
 For Cursor CSV `Included` rows, toksight fetches the official
-[Models & Pricing](https://cursor.com/docs/models-and-pricing) Markdown table and estimates a
+[Models & Pricing](https://cursor.com/docs/models-and-pricing) Markdown table, discovers model
+pages through the official [documentation index](https://cursor.com/docs/llms.txt), and reads
+their HTML price tables and model IDs. The downloaded catalog supplies model names, aliases,
+Fast variants and explicitly labeled long-context tiers without a model-family allowlist.
+toksight estimates a
 **reference cost** from that model's input, cache-write, cache-read and output rates. These
 estimates appear in cost totals and rankings but are not charges on your Cursor bill. Numeric CSV
-costs and `Free` remain authoritative. Unknown models (including `Auto` without a routed model)
-stay unpriced. Cursor rates are cached for 7 days at `<config>/toksight/cache/cursor-pricing.json`;
+costs and `Free` remain authoritative. An `Included` row without a matching Cursor rate (such as
+`Auto` without a routed model) stays unpriced. Cursor rates are cached for 7 days at
+`<toksight-dir>/cache/cursor-pricing.json`;
 `--offline` uses a cached copy, if available. `pricing.sources.cursor` reports the cache state,
 and dashboard `costCoverage.sources.cursor` separates these estimates from reported charges.
-The cached published rate is applied to historical rows; past plan rates, long-context multipliers,
-regional uplift and other billing terms can make the reference estimate differ from actual usage value.
+Explicit `Long Context (>N)` table tiers are selected per request using fresh input + cache
+read + cache write tokens. If one raw model ID spans multiple rates, its tooltip omits a single
+unit price and JSON marks `variableRates`. Failed detail fetches keep usable overview/cached
+rates with warnings. Previously fetched models absent from an update keep their last known
+rates and original fetch dates (`retained` / `priceFetchedAt` in `pricing.modelRates`).
+The cached published rate is applied to historical rows; past plan rates, unpublished context rules,
+regional uplift, plan-specific fees and other billing terms can make the reference estimate
+differ from actual usage value.
 Older imports did not save the CSV Cost label, so their unknown costs are treated as `Included`
 when the database is upgraded.
-Both sources are normalized into `model_prices` in toksight's own `usage.sqlite`: one row per
+The web snapshot stores normalized rates from both sources in `model_prices` in toksight's own
+`usage.sqlite`: one row per
 source, billing scope and model ID, with USD-per-token rates. `price_updates` records each source's
 last successful fetch and check. Cursor's billing scope uses only Cursor rates. CSV IDs such as
 `cursor-grok-4.6-xhigh-fast` resolve to `grok-4.6-fast`, with `xhigh` retained as an effort level;
-`opus5.5-high` resolves to the official Claude Opus 5.5 rate. Fast, 500k and Max variants keep
-distinct IDs. Other agents use the generic source priority
+`opus5.5-high` resolves to the official Claude Opus 5.5 rate. Matching prefers the most specific
+catalog name/ID before removing leftover execution-mode words (`low`, `medium`, `high`,
+`xhigh`, `thinking`, `max`). Unique brand-free shorthand is accepted; ambiguous or unknown
+names stay unpriced and retain their original display names. Thus Max modes group with the
+base model, while a published Max model remains distinct automatically. Fast and 500k require
+their own catalog prices. New catalog models work after a price update without code edits.
+Existing imports benefit without re-uploading the CSV; names in Cursor report rows come from
+the matched official catalog, including rows with reported charges.
+CSV imports preserve the `Max Mode` column as optional `cursorMaxMode` metadata in stored
+records (true/false, or null when unknown); re-importing can fill or correct this metadata
+without duplicating events or erasing reported charges. Older records lack the column until
+re-imported. A Max mode suffix is kept separately from reasoning effort internally; it does
+not imply a known historical plan or automatically add a legacy-plan surcharge.
+Other agents use the generic source priority
 above. A published price applied to older usage is a current-rate reference estimate, not a
 historical bill. Requests are priced using their original model ID, then grouped for display by
-agent and normalized model name. A model row's hover tooltip shows per-million-token rates when every
+agent and normalized model name. A model row's hover tooltip shows the rates used when every
 ID in that row has the same rate; JSON `pricing.modelRates` retains raw IDs, effort and rates.
 When Cursor lists `-` for a cache rate, those tokens use the listed input rate as a fallback;
 `costCoverage.cacheFallbackRequests` counts affected requests.
 
-When a LiteLLM entry has no separate cache prices, cached tokens are billed at that model's input
-price — a deliberately conservative overestimate (real cache reads are usually ~10% of the input
-price) so costs are never silently undercounted. Models with proper cache prices price normally.
+When a LiteLLM entry has no separate cache prices, toksight estimates cached tokens at that
+model's input rate and marks affected requests in `costCoverage.cacheFallbackRequests`. This can
+overestimate cache-read costs when their actual rate is lower. Models with separate cache prices use them.
 
 ## Web dashboard
 
 `toksight web` starts a small local server (zero-dependency `node:http`) that serves a
 statically-exported [Next.js](https://nextjs.org) dashboard plus a JSON API, and prints
-the URL (default `http://127.0.0.1:4729`). Pass `--open` to open that URL in a browser. It
-binds to localhost only. On first launch it scans agent files and creates
-`<config>/toksight/usage.sqlite` (`TOKSIGHT_CONFIG_DIR` overrides the directory). Later launches
+the URL (default `http://127.0.0.1:4729`). Pass `--open` to open that URL in a browser. By default
+it binds to the loopback interface; `--host` can change the bind address. On first launch it scans
+agent files and creates
+`<toksight-dir>/usage.sqlite`. Later launches
 preload that database; ordinary report and day requests read its committed snapshot without
-rescanning agents. Data never leaves your machine.
+rescanning agents. The default loopback bind keeps report requests local; `--host` can expose the
+API on another interface.
 
 Click the toolbar's refresh button, call `POST /api/refresh`, or run `toksight refresh` to rescan
 all agents and update the database in one transaction. A failed refresh keeps the previous
@@ -205,44 +233,58 @@ Cursor exports no event ID, so two truly distinct events with identical timestam
 token counts cannot be distinguished from one event repeated across files; if Cursor later revises
 a model name or token counts, that event may be counted again. The import reports what it matched.
 
-The dashboard is a one-page **token usage & cost report** for a calendar month or a whole year,
+The dashboard is a one-page **token usage & cost report** for a month, a year or a custom date range,
 in Claude's warm light/dark palette on a sparse dot grid (visual spec: `design-spec.md`). The
 toolbar picks **Month / Year** and steps through periods (back to your first recorded day, never
 into the future), switches light / dark / system theme and 中文 / EN, and refreshes. Small
 cards beside the report import Cursor CSV, export an image, update prices, and import/export the complete database; on narrow screens
 they sit above the report. The report starts with the period's tokens (total, input and output),
-reference cost (with the blended cost per million tokens), cache hit rate and requests, followed by
-two chapter cards. Tokens and cost always appear together; there is no toggle:
+cost (reported amounts plus available estimates), cache hit rate and requests. A blended cost per
+million tokens appears when no models are unpriced and a rate can be calculated.
+The filter bar offers **1D** (today), **7D**, **MTD** (month to date), and **30D**; rolling ranges
+include today and use local calendar days. Choose an Agent, jump directly to a month, or apply
+inclusive start/end dates. Reset returns to all agents in the current month. Filters stay in page
+memory, without changing the page URL; reloading returns to the current month/year. The frontend
+remains a static export using the existing local API; this does not add a service or a standalone
+offline HTML report. The selected dates and Agent are shown above the KPIs and included in PNGs.
+These lead into three chapter cards. Tokens and cost always appear together; there is no toggle:
 
-1. **Activity heatmap** — a calendar (month) or 53-week grid (year) shaded by daily tokens, with
-   each calendar day showing its tokens and cost, plus active days, average per active day, peak
-   day (tokens and cost), longest streak and per-day tooltips.
-2. **Agents & models** — a table: agent (a fixed identity-color dot and model count), tokens and
+1. **Activity heatmap** — a calendar (month) or whole-year week grid (53 or 54 columns) shaded by daily tokens.
+   Month cells show tokens and cost; year dots provide day details on hover. Summary stats include
+   active days, average per active day, peak day (tokens and cost) and longest streak.
+2. **Usage & cost trends** — separate token and cost bar charts for the selected Agent and dates.
+   Single-day ranges show 24 local hours; ranges up to 62 elapsed days show daily totals, longer
+   ones show monthly totals. Missing dates count as zero; partial months only include selected dates.
+3. **Agents & models** — a table: agent (a fixed identity-color dot and model count), tokens and
    cost (each with its share of the period), a token-mix bar (input / cache read / cache write /
    output), a cache-hit ring and requests. Click the Tokens or Cost header to sort. Agents work
    like folders: models start collapsed, and clicking an agent row (or pressing Enter / Space on
    it) expands its models underneath with the same columns and sort. Hover any row for its four
-   token classes and sessions; model rows add published per-million-token rates when every
-   underlying ID agrees. Cursor effort suffixes such as `opus5.5-high` disappear from the label.
+   token classes and sessions; model rows add the applied per-million-token rates when every
+   underlying ID has the same rate and source. Cursor effort suffixes such as `opus5.5-high`
+   disappear from the label.
    Past eight models for one agent, the tail folds into one "N other model uses" row.
 
 Double-click the heatmap card (or press its ⤢ button) to **open** it over the page: the card grows
 out of its slot under a scrim while the rest of the report stays put. It keeps the calendar, drops
 the period stats and shows the picked day in full — tokens, cost, cache hit rate and requests, a
-24-hour breakdown, the same expandable agent table, and its sessions (title, tokens and cost, time
-span, active time, directory, models). A month sits beside the day, pinned while the details
+24-hour breakdown, the same expandable agent table, a separate cross-agent model table, and up to
+ten sessions. Session details include title, tokens and cost, time span, active time, directory
+and models. A month sits beside the day, pinned while the details
 scroll; a year runs across the top. Click another day to switch, step with ‹ › or ← →
 (crossing into another month or year moves the report with it), and fold the card back with Esc,
-`-`, the − button or a click on the scrim. A single click on the report card only marks a day;
+`-`, the − button or a click on the scrim. A single click on a calendar day only marks it;
 Enter on a focused day opens it directly. The opened card is never part of the exported image.
+Day details keep the Agent filter; quick/custom ranges keep day navigation within the selected
+dates. Short ranges use a calendar with month/day labels; longer ones use week grids grouped by year.
 
 Drag a card by its handle (or focus the handle and press ↑ / ↓) to reorder the chapters. The
 order, period mode, table sort, theme and language are remembered in `localStorage`.
-**Export image** saves the KPI summary, both cards in their current order and the footer as one
-PNG (`toksight-2026-09.png` / `toksight-2026.png`) with the controls stripped — ready to share.
+**Export image** saves the filter summary, KPIs, all three cards in their current order and the footer as one
+PNG (e.g. `toksight-all-2026-09.png` or `toksight-codex-2026-09-01_2026-09-07.png`) with the controls stripped — ready to share.
 Expanded agents keep their model lists in the image; collapsed ones show only the agent row.
-Reference cost is an estimate from public prices, not a subscription bill; unpriced models are
-listed in the footer.
+Cost totals combine reported amounts and estimates; they are not a subscription bill. Unpriced
+models are listed in the footer.
 
 Startup filters (`--client`, `--since`, `--until`, `--today/--week/--month`) bound the data the
 server can see; the report never widens that scope.
@@ -284,9 +326,11 @@ separates fresh input, cache reads and cache writes.
 ## Privacy
 
 toksight is local-first: the CLI and web report only **read** your agents' session files. Refresh
-writes toksight's own SQLite database under its config directory; nothing is uploaded or written
-back to agent files. Cursor CSV imports are stored in that database. The only external requests
-fetch public LiteLLM prices and Cursor's official Markdown price table. Run `--offline` to
+writes toksight's own SQLite database under its config directory; price fetches may update local
+cache files. toksight does not upload usage or write back to agent files. Cursor CSV imports are
+stored in that database. If you change `--host`, other clients on that network may read the
+report/API. The only external requests
+fetch public LiteLLM prices and Cursor's official pricing overview, model index and model pages. Run `--offline` to
 disable both network requests. Report images are
 rendered in your browser and saved only where you download them.
 
@@ -338,7 +382,8 @@ builds always export static files). `web:install` remains for updating web depen
 The CLI keeps **zero runtime dependencies**; dashboard dependencies live only in
 `web/package.json`, needed just to (re)build `web/out/`. The flows: session files →
 parsers → `collectAll` → CLI output or SQLite refresh → `/api/data`; `web/` source → Next build → `web/out/` →
-the CLI's HTTP server. Per-module notes live in [AGENTS.md](./AGENTS.md).
+the CLI's HTTP server. Developer architecture, data contracts and maintenance notes are indexed in
+[doc/README.md](./doc/README.md); short agent rules live in [AGENTS.md](./AGENTS.md).
 
 ```bash
 npm run check:package # pack, install the tarball offline in a temp dir, then exercise
@@ -353,7 +398,7 @@ this check on Ubuntu/Windows.
 
 Releases are automated by [.github/workflows/release.yml](.github/workflows/release.yml):
 push a `v*` tag that matches `package.json`'s version and the workflow runs the full test
-matrix (Ubuntu + Windows, Node 20/22/24) and Ubuntu/Windows package checks, verifies the tag against the package version,
+matrix (Ubuntu + Windows, Node 22/24) and Ubuntu/Windows package checks on Node 22, verifies the tag against the package version,
 then opens a GitHub Release with auto-generated notes.
 
 ```bash

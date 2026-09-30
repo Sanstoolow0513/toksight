@@ -4,7 +4,7 @@ import { memo, useMemo, useState } from 'react';
 import { Maximize2 } from 'lucide-react';
 import Card from '@/components/Card';
 import Tooltip from '@/components/Tooltip';
-import { calendarWeeks, periodBounds } from '@/lib/period';
+import { calendarWeeks, compactCalendar, periodBounds } from '@/lib/period';
 import { cacheHitRate, dailyMap, heatLevel, heatMax, heatSummary, metricValue, openingDay } from '@/lib/report';
 import { fmtCost, fmtCostShort, fmtInt, fmtPct, fmtTokens } from '@/lib/format';
 import { MONTHS, WEEKDAYS, dayLabel, periodLabel, weekdayLabel } from '@/lib/i18n';
@@ -29,7 +29,7 @@ function cellClass(base, level, date, today, selected) {
 
 // Memoized so the hover tooltip re-renders only itself, not every cell.
 // Past days are buttons (clicks bubble to the grid's delegated handler).
-const MonthGrid = memo(function MonthGrid({ weeks, days, max, today, selected, locale, tx }) {
+const MonthGrid = memo(function MonthGrid({ weeks, days, max, today, selected, locale, tx, showMonth }) {
   return (
     <div className="mheat">
       {WEEKDAYS[locale].map((w) => (
@@ -42,7 +42,7 @@ const MonthGrid = memo(function MonthGrid({ weeks, days, max, today, selected, l
         const cls = cellClass('mcell', heatLevel(value, max), date, today, selected);
         const body = (
           <>
-            <span className="mcell-day">{Number(date.slice(8))}</span>
+            <span className="mcell-day">{showMonth ? `${Number(date.slice(5, 7))}/${Number(date.slice(8))}` : Number(date.slice(8))}</span>
             {value > 0 ? (
               <span className="mcell-vals">
                 <span className="mcell-val">{fmtTokens(value)}</span>
@@ -75,14 +75,18 @@ const MonthGrid = memo(function MonthGrid({ weeks, days, max, today, selected, l
   );
 });
 
-const YearGrid = memo(function YearGrid({ weeks, days, max, today, selected, locale, year }) {
-  const monthCols = MONTHS[locale].map((label, m) => {
-    const first = `${year}-${String(m + 1).padStart(2, '0')}-01`;
-    return { label, col: weeks.findIndex((week) => week.includes(first)) };
-  });
+const YearGrid = memo(function YearGrid({ weeks, days, max, today, selected, locale, tx }) {
+  const monthCols = [];
+  for (const [col, week] of weeks.entries()) {
+    const date = week.find((key) => key?.endsWith('-01')) ?? (monthCols.length === 0 ? week.find(Boolean) : null);
+    if (date) {
+      if (monthCols.length && col - monthCols.at(-1).col < 3) monthCols.pop();
+      monthCols.push({ label: MONTHS[locale][Number(date.slice(5, 7)) - 1], col });
+    }
+  }
   return (
     <div className="yheat-scroll">
-      <div className="yheat" style={{ '--weeks': weeks.length }}>
+      <div className="yheat" style={{ '--weeks': Math.max(53, weeks.length) }}>
         {monthCols.map(({ label, col }) => (
           <span key={label} className="yheat-month" style={{ gridColumn: col + 2 }}>
             {label}
@@ -96,9 +100,13 @@ const YearGrid = memo(function YearGrid({ weeks, days, max, today, selected, loc
         {weeks.map((week, w) =>
           week.map((date, d) =>
             date ? (
-              <i
+              <button
                 key={date}
+                type="button"
                 data-date={date}
+                disabled={date > today}
+                aria-pressed={date === selected}
+                aria-label={`${dayLabel(locale, date, true)} · ${fmtTokens(metricValue(days.get(date), 'tokens'))} tokens · ${days.get(date)?.requests ? fmtCost(days.get(date).costUsd) : tx('tipIdle')}`}
                 className={cellClass('ycell', heatLevel(metricValue(days.get(date), 'tokens'), max), date, today, selected)}
                 style={{ gridColumn: w + 2, gridRow: d + 2 }}
               />
@@ -139,6 +147,15 @@ export function HeatGrid({ days, period, today, selected, onPick, hint, active =
   const [tip, setTip] = useState(null);
   const { since, until } = periodBounds(period);
   const weeks = useMemo(() => calendarWeeks(since, until), [since, until]);
+  const compact = compactCalendar(period);
+  const years = useMemo(() => {
+    if (!compact) return [];
+    const groups = [];
+    for (let year = Number(since.slice(0, 4)); year <= Number(until.slice(0, 4)); year++) {
+      groups.push({ year, weeks: calendarWeeks(since > `${year}-01-01` ? since : `${year}-01-01`, until < `${year}-12-31` ? until : `${year}-12-31`) });
+    }
+    return groups;
+  }, [since, until, compact]);
   const max = useMemo(() => heatMax(days), [days]);
   const label = periodLabel(locale, period);
 
@@ -162,10 +179,13 @@ export function HeatGrid({ days, period, today, selected, onPick, hint, active =
         onMouseLeave={() => setTip(null)}
         onClick={onClick}
       >
-        {period.mode === 'year' ? (
-          <YearGrid weeks={weeks} days={days} max={max} today={today} selected={selected} locale={locale} year={period.year} />
+        {compact ? (
+          years.map(({ year, weeks: yearWeeks }) => <div className="heat-year" key={year}>
+            {years.length > 1 ? <p className="heat-year-label">{year}</p> : null}
+            <YearGrid weeks={yearWeeks} days={days} max={max} today={today} selected={selected} locale={locale} tx={tx} />
+          </div>)
         ) : (
-          <MonthGrid weeks={weeks} days={days} max={max} today={today} selected={selected} locale={locale} tx={tx} />
+          <MonthGrid weeks={weeks} days={days} max={max} today={today} selected={selected} locale={locale} tx={tx} showMonth={period.mode === 'custom'} />
         )}
       </div>
       <div className="heat-legend">

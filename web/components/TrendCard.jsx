@@ -1,0 +1,43 @@
+import { useMemo } from 'react';
+import Card from '@/components/Card';
+import { periodBounds } from '@/lib/period';
+import { trendSeries } from '@/lib/report';
+import { fmtCost, fmtTokens } from '@/lib/format';
+import { periodLabel } from '@/lib/i18n';
+
+function TrendPlot({ rows, metric, label, format, unit }) {
+  const max = rows.reduce((value, row) => Math.max(value, row[metric]), 0);
+  const width = 720;
+  const height = 112;
+  const step = width / Math.max(rows.length, 1);
+  const tick = (row) => unit === 'Daily' ? row.key.slice(5) : row.key;
+  return (
+    <figure className={`trend-plot is-${metric}`}>
+      <figcaption><span>{label}</span><span>{format(max)}</span></figcaption>
+      <svg viewBox={`0 0 ${width} ${height + 2}`} role="img" aria-label={label} preserveAspectRatio="none">
+        <title>{label}</title>
+        {[0, 0.5, 1].map((ratio) => <line key={ratio} x1="0" x2={width} y1={ratio * height + 1} y2={ratio * height + 1} className="trend-guide" />)}
+        {rows.map((row, i) => {
+          const barHeight = max ? row[metric] / max * height : 0;
+          return <rect key={row.key} x={i * step + step * 0.16} y={height - barHeight + 1} width={step * 0.68} height={barHeight} rx={Math.min(3, step / 5)} className="trend-bar">
+            <title>{row.key} · {format(row[metric])}</title>
+          </rect>;
+        })}
+      </svg>
+      <div className="trend-axis"><span>{rows.length ? tick(rows[0]) : ''}</span><span>{rows.length > 1 ? tick(rows[rows.length - 1]) : ''}</span></div>
+    </figure>
+  );
+}
+
+export default function TrendCard({ data, period, today, locale, tx, handleProps }) {
+  const { since, until } = periodBounds(period);
+  const series = useMemo(() => trendSeries(data.daily, data.hourly, { since, until, today }), [data.daily, data.hourly, since, until, today]);
+  return (
+    <Card title={tx('cardTrend')} subtitle={`${periodLabel(locale, period)} · ${tx(`trend${series.unit}`)}`} handleProps={handleProps}>
+      <div className="trend-charts">
+        <TrendPlot rows={series.rows} metric="tokens" label={tx('trendTokens')} format={fmtTokens} unit={series.unit} />
+        <TrendPlot rows={series.rows} metric="cost" label={tx('trendCost')} format={fmtCost} unit={series.unit} />
+      </div>
+    </Card>
+  );
+}

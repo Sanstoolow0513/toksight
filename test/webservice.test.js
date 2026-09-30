@@ -70,6 +70,10 @@ test('Cursor CSV import is idempotent, filterable and survives refresh in the sa
     assert.equal(corrected.updated, 1);
     assert.equal(corrected.duplicates, 1);
     assert.equal((await get(query('client=cursor'))).totals.costUsd, 1);
+    const restoredMode = await get.importCursor(csv);
+    assert.equal(restoredMode.updated, 1, 'an explicit CSV can correct Max Mode metadata');
+    assert.equal(restoredMode.duplicates, 1);
+    assert.equal((await get(query('client=cursor'))).totals.costUsd, 1, 'Included cannot erase a reported charge');
     assert.equal((await get.importCursor(csv)).duplicates, 2);
     const newRow = csv.split('\n')[1].replace('2026-08-31T12:19:00.334Z', '2026-08-30T12:19:00.334Z');
     const overlap = await get.importCursor(`${csv.trimEnd()}\n${newRow}\n`);

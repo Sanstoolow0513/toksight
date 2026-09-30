@@ -21,7 +21,7 @@ export default function Toolbar({ locale, tx, period, nav, onMode, onShift, them
               onChange={onMode}
               options={[{ value: 'month', label: tx('modeMonth') }, { value: 'year', label: tx('modeYear') }]}
             />
-            <div className="period-nav">
+            {period.mode !== 'custom' ? <div className="period-nav">
               <button type="button" className="icon-btn" onClick={() => onShift(-1)} disabled={!nav.canPrev} aria-label={tx('prev')} title={tx('prev')}>
                 <ChevronLeft {...icon} />
               </button>
@@ -29,7 +29,7 @@ export default function Toolbar({ locale, tx, period, nav, onMode, onShift, them
               <button type="button" className="icon-btn" onClick={() => onShift(1)} disabled={!nav.canNext} aria-label={tx('next')} title={tx('next')}>
                 <ChevronRight {...icon} />
               </button>
-            </div>
+            </div> : <span className="period-label">{tx(period.preset ? `range${period.preset}` : 'filterCustom')}</span>}
           </div>
         ) : null}
         <div className="toolbar" role="toolbar" aria-label={tx('toolbarAria')}>

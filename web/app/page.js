@@ -1,25 +1,27 @@
 'use client';
 
-// toksight report: a centred column on a dot grid — KPIs, two reorderable
-// chapter cards (heatmap · agent table, with each agent's models nested) and a footer.
+// toksight report: a centred column on a dot grid — filters, KPIs, reorderable
+// chapter cards (heatmap · trends · agent table with nested models) and a footer.
 // Everything inside `.report` is what "Export image" captures. Double-clicking
 // the heatmap card opens it over the page with the picked day in full; the
 // report underneath stays put and the opened card never enters the image.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Inbox, RefreshCw, TriangleAlert } from 'lucide-react';
+import { RefreshCw, TriangleAlert } from 'lucide-react';
 import Toolbar from '@/components/Toolbar';
 import ReportActions from '@/components/ReportActions';
 import DatabaseImport from '@/components/DatabaseImport';
 import SortableCards from '@/components/SortableCards';
 import HeatmapCard from '@/components/HeatmapCard';
 import AgentsCard from '@/components/AgentsCard';
+import ReportFilters from '@/components/ReportFilters';
+import TrendCard from '@/components/TrendCard';
 import ExpandedHeatmap from '@/components/ExpandedHeatmap';
 import Kpis from '@/components/Kpis';
 import BrandMark from '@/components/BrandMark';
 import Toasts, { useToasts } from '@/components/Toasts';
 import { useDayReport, useReport } from '@/lib/useReport';
-import { currentPeriod, dayKey, dayNav, inPeriod, periodKey, periodNav, periodOf, shiftDay, shiftPeriod, withMode } from '@/lib/period';
+import { currentPeriod, dayKey, dayNav, inPeriod, periodBounds, periodKey, periodNav, periodOf, quickPeriod, shiftDay, shiftPeriod, withMode } from '@/lib/period';
 import { fmtDateTime, fmtInt } from '@/lib/format';
 import { DEFAULT_LOCALE, periodLabel, t } from '@/lib/i18n';
 import { exportReportImage } from '@/lib/exportImage';
@@ -40,7 +42,7 @@ function Skeleton() {
   return (
     <div className="report" aria-busy="true">
       <div className="skel skel-kpis" />
-      {[320, 420].map((h) => (
+      {[320, 180, 420].map((h) => (
         <div key={h} className="skel skel-card" style={{ height: h }} />
       ))}
     </div>
@@ -51,6 +53,7 @@ export default function Page() {
   const [locale, setLocale] = useState(DEFAULT_LOCALE);
   const [theme, setTheme] = useState(null);
   const [period, setPeriod] = useState(null);
+  const [agent, setAgent] = useState('');
   const [today, setToday] = useState(null);
   const [order, setOrder] = useState(prefs.CARD_IDS);
   const [agentSort, setAgentSort] = useState('tokens');
@@ -69,10 +72,22 @@ export default function Page() {
   const heatRef = useRef(null);
   const toasts = useToasts();
   const { push: pushToast } = toasts;
-  const report = useReport(period, refreshRevision);
-  const dayReport = useDayReport(selectedDay, refreshRevision);
+  const activePeriod = period?.preset && today ? quickPeriod(period.preset, today) : period;
+  const report = useReport(activePeriod, refreshRevision, agent);
+  const dayReport = useDayReport(selectedDay, refreshRevision, report.agent ?? agent);
   const { data } = report;
   const shown = report.period;
+  const pending = Boolean(shown) && (JSON.stringify(activePeriod) !== JSON.stringify(shown) || agent !== report.agent);
+  const reportBusy = report.loading || (pending && !report.error);
+  const shownSince = shown?.mode === 'custom' ? shown.since : null;
+  const shownUntil = shown?.mode === 'custom' ? shown.until : null;
+
+  // A rolling preset can move at midnight while its day sheet is open.
+  useEffect(() => {
+    if (shownSince && shownUntil) {
+      setSelectedDay((day) => day && (day < shownSince || day > shownUntil) ? shownUntil : day);
+    }
+  }, [shownSince, shownUntil]);
 
   // With a report on screen a failed reload keeps it and only raises a toast;
   // collection warnings pop up again only when their content changes.
@@ -97,6 +112,8 @@ export default function Page() {
     setAgentSort(prefs.readAgentSort());
     setToday(dayKey(now));
     setPeriod(currentPeriod(prefs.readMode(), now));
+    const clock = setInterval(() => setToday(dayKey(new Date())), 60000);
+    return () => clearInterval(clock);
   }, []);
 
   useEffect(() => {
@@ -123,12 +140,25 @@ export default function Page() {
 
   const firstAt = data?.scopeRange?.firstAt;
   const firstDay = firstAt != null ? dayKey(new Date(firstAt)) : null;
-  const nav = period && data ? periodNav(period, { firstDay, today }) : { canPrev: false, canNext: false };
-  const selectedNav = selectedDay ? dayNav(selectedDay, { firstDay, today }) : { canPrev: false, canNext: false };
+  const nav = activePeriod && data ? periodNav(activePeriod, { firstDay, today }) : { canPrev: false, canNext: false };
+  const dayBounds = shown?.mode === 'custom' ? periodBounds(shown) : null;
+  const selectedNav = selectedDay ? dayNav(selectedDay, {
+    firstDay: dayBounds ? dayBounds.since : firstDay,
+    today: dayBounds && dayBounds.until < today ? dayBounds.until : today,
+  }) : { canPrev: false, canNext: false };
+
+  const onPeriod = (value) => {
+    setPeriod(value);
+    setSelectedDay(null);
+  };
+  const onAgent = (value) => {
+    setAgent(value);
+    setSelectedDay(null);
+  };
 
   const onMode = (mode) => {
     prefs.writeMode(mode);
-    setPeriod((p) => withMode(p, mode, today));
+    onPeriod(withMode(activePeriod, mode, today));
   };
   const onTheme = (value) => {
     prefs.writeTheme(value);
@@ -189,7 +219,7 @@ export default function Page() {
         details: { summary: ['importWarnings', { n: warnings.length }], items: warnings },
       });
       if (body.latestAt != null) {
-        setPeriod((p) => currentPeriod(p?.mode ?? 'month', new Date(Math.min(body.latestAt, Date.now()))));
+        setPeriod((p) => currentPeriod(p?.mode === 'year' ? 'year' : 'month', new Date(Math.min(body.latestAt, Date.now()))));
       }
       setRefreshRevision((n) => n + 1);
     } catch (err) {
@@ -217,7 +247,7 @@ export default function Page() {
         imported: fmtInt(body.imported), updated: fmtInt(body.updated), duplicates: fmtInt(body.duplicates),
       }] });
       setDatabaseFile(null);
-      if (body.latestAt != null) setPeriod((p) => currentPeriod(p?.mode ?? 'month', new Date(Math.min(body.latestAt, Date.now()))));
+      if (body.latestAt != null) setPeriod((p) => currentPeriod(p?.mode === 'year' ? 'year' : 'month', new Date(Math.min(body.latestAt, Date.now()))));
       setRefreshRevision((n) => n + 1);
     } catch (err) {
       setDatabaseError(String(err?.message || err));
@@ -259,8 +289,9 @@ export default function Page() {
   const onStepDay = (delta) => {
     if (!selectedDay) return;
     const next = shiftDay(selectedDay, delta);
+    if (shown?.mode === 'custom' && !inPeriod(next, shown)) return;
     setSelectedDay(next);
-    if (period && !inPeriod(next, period)) setPeriod(periodOf(next, period.mode));
+    if (shown && shown.mode !== 'custom' && !inPeriod(next, shown)) setPeriod(periodOf(next, shown.mode));
   };
   const onAgentSort = useCallback((value) => {
     prefs.writeAgentSort(value);
@@ -273,7 +304,7 @@ export default function Page() {
   const onExport = async () => {
     setExporting(true);
     try {
-      await exportReportImage(reportRef.current, `toksight-${periodKey(shown)}.png`);
+      await exportReportImage(reportRef.current, `toksight-${report.agent || 'all'}-${periodKey(shown)}.png`);
     } catch (err) {
       pushToast({ key: 'export', tone: 'error', message: ['exportFailed', { error: String(err?.message || err) }] });
     } finally {
@@ -281,7 +312,7 @@ export default function Page() {
     }
   };
 
-  const hasData = Boolean(data && firstAt != null);
+  const hasData = Boolean(data && shown);
 
   let content;
   if (!data && report.error) {
@@ -297,22 +328,18 @@ export default function Page() {
     );
   } else if (!data || !shown) {
     content = <Skeleton />;
-  } else if (!hasData) {
-    content = (
-      <StateCard icon={<Inbox size={22} strokeWidth={1.8} aria-hidden="true" />} title={tx('emptyTitle')}>
-        <p>{coded(tx('emptyBody'))}</p>
-      </StateCard>
-    );
   } else {
     const unpriced = data.pricing?.unpricedModels ?? [];
     const cursorUnpriced = (data.clients?.cursor?.pricedRequests ?? 0) < (data.clients?.cursor?.requests ?? 0);
     const cardProps = { data, period: shown, locale, tx, agentLabel };
 
     content = (
-      <div ref={reportRef} className={report.loading ? 'report is-loading' : 'report'}>
+      <div ref={reportRef} className={reportBusy ? 'report is-loading' : 'report'} aria-busy={reportBusy}>
         <section className="hero">
           <h1 className="visually-hidden">{tx('eyebrow')} · {periodLabel(locale, shown)}</h1>
+          <div className="report-context"><span>{periodLabel(locale, shown)}</span><span>{report.agent ? agentLabel(report.agent) : tx('filterAllAgents')}</span></div>
           <Kpis data={data} tx={tx} />
+          {!data.totals?.requests ? <p className="filter-empty">{tx('filterEmpty')}</p> : null}
         </section>
 
         <SortableCards order={order} onReorder={onReorder} handleLabel={tx('dragHandle')}>
@@ -331,6 +358,7 @@ export default function Page() {
                 />
               );
             }
+            if (id === 'trend') return <TrendCard {...shared} today={today} />;
             return <AgentsCard {...shared} sortBy={agentSort} onSort={onAgentSort} />;
           }}
         </SortableCards>
@@ -359,20 +387,20 @@ export default function Page() {
         <Toolbar
           locale={locale}
           tx={tx}
-          period={period}
+          period={activePeriod}
           nav={nav}
           onMode={onMode}
-          onShift={(delta) => setPeriod((p) => shiftPeriod(p, delta))}
+          onShift={(delta) => onPeriod(shiftPeriod(activePeriod, delta))}
           theme={theme}
           onTheme={onTheme}
           onLocale={onLocale}
-          loading={report.loading || refreshing || priceUpdating || importing || Boolean(databaseBusy)}
+          loading={reportBusy || refreshing || priceUpdating || importing || Boolean(databaseBusy)}
           onRefresh={onRefresh}
         />
         <main className="main">
           <ReportActions
             tx={tx}
-            loading={report.loading || refreshing || priceUpdating || importing || Boolean(databaseBusy)}
+            loading={reportBusy || refreshing || priceUpdating || importing || Boolean(databaseBusy)}
             databaseBusy={databaseBusy}
             onImportDatabase={onSelectDatabase}
             onExportDatabase={onExportDatabase}
@@ -382,8 +410,13 @@ export default function Page() {
             onImportCursor={onImportCursor}
             exporting={exporting}
             onExport={onExport}
-            canExport={hasData && !report.loading}
+            canExport={hasData && !reportBusy && !pending}
           />
+          {activePeriod && today ? <ReportFilters
+            period={activePeriod} today={today} agent={agent} clients={data?.view?.availableClients ?? []}
+            onAgent={onAgent} onPeriod={onPeriod} onReset={() => { onAgent(''); onPeriod(currentPeriod('month', new Date())); }} tx={tx}
+          /> : null}
+          <div className="filter-status no-export" role="status">{reportBusy ? tx('filterLoading') : pending && report.error ? tx('filterFailed') : ''}</div>
           {content}
         </main>
       </div>
@@ -395,7 +428,7 @@ export default function Page() {
           onClosed={onClosed}
           data={data}
           period={shown}
-          loading={report.loading}
+          loading={reportBusy}
           today={today}
           day={selectedDay}
           onPick={onPickDay}

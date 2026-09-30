@@ -2,7 +2,7 @@
 // the selected period by the server). No React, no DOM — covered by
 // test/webreport.test.js.
 
-import { eachDayKey } from './period.js';
+import { eachDayKey, shiftDay } from './period.js';
 
 export const TOKEN_PARTS = ['inputTokens', 'cacheReadTokens', 'cacheWriteTokens', 'outputTokens'];
 export const SORT_KEYS = ['tokens', 'cost'];
@@ -30,6 +30,36 @@ export function pricing(row) {
 
 export function dailyMap(daily = []) {
   return new Map(daily.filter((row) => row.date !== 'unknown').map((row) => [row.date, row]));
+}
+
+// Charts follow the requested range, not the API's rolling 30-day extras.
+// Long histories aggregate by month; no per-request/session counts are summed.
+export function trendSeries(daily = [], hourly = [], { since, until, today }) {
+  const last = until < today ? until : today;
+  if (since === last && since === until) {
+    const byHour = new Map(hourly.map((row) => [row.hour, row]));
+    return { unit: 'Hourly', rows: Array.from({ length: 24 }, (_, hour) => ({
+      key: `${String(hour).padStart(2, '0')}:00`, tokens: byHour.get(hour)?.tokens || 0, cost: byHour.get(hour)?.costUsd || 0,
+    })) };
+  }
+  const monthly = last > shiftDay(since, 61);
+  const buckets = new Map();
+  if (monthly) {
+    const [year, month] = since.split('-').map(Number);
+    for (let index = year * 12 + month - 1; ; index++) {
+      const key = `${Math.floor(index / 12)}-${String(index % 12 + 1).padStart(2, '0')}`;
+      if (key > last.slice(0, 7)) break;
+      buckets.set(key, { key, tokens: 0, cost: 0 });
+    }
+  } else {
+    for (const key of eachDayKey(since, last)) buckets.set(key, { key, tokens: 0, cost: 0 });
+  }
+  for (const row of daily) {
+    if (row.date < since || row.date > last) continue;
+    const bucket = buckets.get(monthly ? row.date.slice(0, 7) : row.date);
+    if (bucket) { bucket.tokens += row.totalTokens || 0; bucket.cost += row.costUsd || 0; }
+  }
+  return { unit: monthly ? 'Monthly' : 'Daily', rows: [...buckets.values()] };
 }
 
 // sqrt keeps a single spike day from washing every other day out to level 1.
