@@ -17,6 +17,7 @@ test('Cursor CSV maps input, cache and charges without inventing sessions or sub
   assert.deepEqual({ input: included.inputTokens, read: included.cacheReadTokens, write: included.cacheWriteTokens, output: included.outputTokens, cost: included.costUsd, session: included.sessionId },
     { input: 10, read: 30, write: 5, output: 4, cost: null, session: null });
   assert.equal(charged.costUsd, 0.25);
+  assert.equal(included.cursorMaxMode, false);
   const totals = summarize([included, charged]);
   assert.equal(totals.totalTokens, 94);
   assert.equal(totals.sessions, 0);
@@ -38,6 +39,17 @@ test('CSV quoting, CRLF, BOM, overlapping exports and duplicate rows keep stable
     .replace('"49","Included"', '"49","$0.75"');
   assert.equal(parseCursorCsv(rebilled).records[0].key, parseCursorCsv(base).records[0].key);
   assert.equal(parseCursorCsv(rebilled).records[0].entry.costUsd, 0.75);
+  assert.equal(parseCursorCsv(rebilled).records[0].entry.cursorMaxMode, true);
+});
+
+test('Cursor CSV retains unknown Max Mode without treating it as disabled or changing event identity', async () => {
+  const base = await readFile(fixture, 'utf8');
+  const original = parseCursorCsv(base).records[0];
+  for (const [value, expected] of [['Yes', true], ['true', true], ['No', false], ['false', false], ['', null], ['unknown', null]]) {
+    const row = parseCursorCsv(base.replace('"No"', `"${value}"`)).records[0];
+    assert.equal(row.entry.cursorMaxMode, expected);
+    assert.equal(row.key, original.key);
+  }
 });
 
 test('wrong headers and broken quotes fail; bad or empty usage rows are skipped', async () => {

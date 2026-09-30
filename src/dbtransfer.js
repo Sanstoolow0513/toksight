@@ -6,6 +6,9 @@ import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { selectCursorImports } from './cursorcsv.js';
 import { mergeUsageRows, usageRows } from './usageimports.js';
+import { validCursorMetadata } from './cursormodels.js';
+import { decodePriceRecord } from './pricecatalog.js';
+import { validContextTiers } from './contextpricing.js';
 
 export const MAX_DATABASE_BYTES = 256 * 1024 * 1024;
 const HEADER = Buffer.from('SQLite format 3\0');
@@ -20,12 +23,16 @@ const bit = (v) => v === 0 || v === 1;
 function check(ok, message) { if (!ok) throw new Error(message); }
 function price(value) {
   check(value === null || (object(value) && rateFields.every((key) => nonnegative(value[key]))), 'invalid model price');
+  if (value) check(validCursorMetadata(value.cursor), 'invalid Cursor price metadata');
+  if (value) check(validContextTiers(value.contextTiers), 'invalid context price metadata');
   return value;
 }
 function record(row, cursor = false) {
   const entry = JSON.parse(row.data_json);
+  const allowedFields = cursor ? [...fields, 'cursorMaxMode'] : fields;
   check(object(entry) && fields.every((field) => Object.hasOwn(entry, field)) &&
-    Object.keys(entry).length === fields.length, 'invalid usage record');
+    Object.keys(entry).every((field) => allowedFields.includes(field)), 'invalid usage record');
+  if (Object.hasOwn(entry, 'cursorMaxMode')) check(entry.cursorMaxMode === null || typeof entry.cursorMaxMode === 'boolean', 'invalid Cursor Max Mode');
   check(CLIENTS.has(entry.client) && (cursor ? entry.client === 'cursor' : entry.client !== 'cursor'), 'invalid agent');
   check(typeof entry.model === 'string' && nullableText(entry.sessionId) && nullableText(entry.title) && nullableText(entry.directory), 'invalid usage text');
   check(entry.timestamp === null || (Number.isSafeInteger(entry.timestamp) && Math.abs(entry.timestamp) <= 8640000000000000), 'invalid timestamp');
@@ -99,10 +106,12 @@ export function readDatabaseBackup(bytes) {
           record(row, true);
           check(Number(row.fingerprint.split(':').at(-1)) < cursor.length, 'Cursor occurrence exceeds row count');
         });
+        const hasMetadata = db.prepare('PRAGMA table_info(model_prices)').all().some((c) => c.name === 'metadata_json');
         const catalog = db.prepare(`SELECT scope, source, model_id AS modelId, name, provider, pool,
           input_usd_per_token AS input, cache_read_usd_per_token AS cacheRead,
           cache_write_usd_per_token AS cacheWrite, output_usd_per_token AS output,
-          cache_read_fallback AS cacheReadFallback, cache_write_fallback AS cacheWriteFallback FROM model_prices ORDER BY id`).all();
+          cache_read_fallback AS cacheReadFallback, cache_write_fallback AS cacheWriteFallback,
+          ${hasMetadata ? 'metadata_json' : "'null'"} AS metadataJson FROM model_prices ORDER BY id`).all().map(decodePriceRecord);
         for (const row of catalog) {
           price(row);
           check(['default', 'cursor'].includes(row.scope) && ['builtin', 'litellm', 'cursor', 'user'].includes(row.source) &&

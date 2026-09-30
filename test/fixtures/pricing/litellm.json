@@ -1,0 +1,57 @@
+{
+  "claude-opus-4-5": {
+    "mode": "chat", "litellm_provider": "anthropic",
+    "input_cost_per_token": 0.000005, "output_cost_per_token": 0.000025,
+    "cache_read_input_token_cost": 0.0000005, "cache_creation_input_token_cost": 0.00000625
+  },
+  "claude-opus-4-5-20251101": {
+    "mode": "chat", "litellm_provider": "anthropic",
+    "input_cost_per_token": 0.000005, "output_cost_per_token": 0.000025,
+    "cache_read_input_token_cost": 0.0000005, "cache_creation_input_token_cost": 0.00000625
+  },
+  "claude-opus-4-6": {
+    "mode": "chat", "litellm_provider": "anthropic",
+    "input_cost_per_token": 0.000005, "output_cost_per_token": 0.000025,
+    "cache_read_input_token_cost": 0.0000005, "cache_creation_input_token_cost": 0.00000625
+  },
+  "claude-opus-4-6-20260205": {
+    "mode": "chat", "litellm_provider": "anthropic",
+    "input_cost_per_token": 0.000005, "output_cost_per_token": 0.000025,
+    "cache_read_input_token_cost": 0.0000005, "cache_creation_input_token_cost": 0.00000625
+  },
+  "gemini/gemini-2.5-pro": {
+    "mode": "chat", "litellm_provider": "gemini",
+    "input_cost_per_token": 0.00000125, "output_cost_per_token": 0.00001,
+    "cache_read_input_token_cost": 0.000000125,
+    "input_cost_per_token_above_200k_tokens": 0.0000025,
+    "output_cost_per_token_above_200k_tokens": 0.000015,
+    "cache_read_input_token_cost_above_200k_tokens": 0.00000025
+  },
+  "moonshot/kimi-k3": {
+    "mode": "chat", "litellm_provider": "moonshot",
+    "input_cost_per_token": 0.000003, "output_cost_per_token": 0.000015,
+    "cache_read_input_token_cost": 0.0000003
+  },
+  "deepinfra/moonshotai/Kimi-K3": {
+    "mode": "chat", "litellm_provider": "deepinfra",
+    "input_cost_per_token": 0.00000285, "output_cost_per_token": 0.00001425,
+    "cache_read_input_token_cost": 0.000000285
+  },
+  "tiered-model": {
+    "mode": "responses", "litellm_provider": "example",
+    "input_cost_per_token": 0.000001, "output_cost_per_token": 0.000002,
+    "cache_read_input_token_cost": 0.0000002,
+    "input_cost_per_token_above_200k_tokens": 0.000002,
+    "output_cost_per_token_above_200k_tokens": 0.000003,
+    "cache_read_input_token_cost_above_200k_tokens": 0,
+    "cache_creation_input_token_cost_above_200k_tokens": 0.0000025,
+    "input_cost_per_token_above_272000_tokens": 0.000004,
+    "output_cost_per_token_above_272000_tokens": 0.000006,
+    "input_cost_per_token_priority": 0.00009,
+    "input_cost_per_token_above_128k_tokens_priority": 0.0001,
+    "input_cost_per_token_above_128k_tokens_flex": 0.0001,
+    "input_cost_per_token_above_128k_tokens_batches": 0.0001,
+    "cache_creation_input_token_cost_above_1hr": 0.0002,
+    "cache_creation_input_token_cost_above_1hr_above_200k_tokens": 0.0003
+  }
+}

@@ -1,4 +1,5 @@
 import { reportModelName } from './pricecatalog.js';
+import { dateKey } from './dates.js';
 
 export function summarize(entries) {
   const t = {
@@ -74,17 +75,13 @@ function group(entries, keyFn, decorate) {
   return rows;
 }
 
-export function localDate(ts) {
-  if (!isFiniteTs(ts)) return 'unknown';
-  const d = new Date(ts);
-  const mm = String(d.getMonth() + 1).padStart(2, '0');
-  const dd = String(d.getDate()).padStart(2, '0');
-  return `${d.getFullYear()}-${mm}-${dd}`;
+export function localDate(ts, timeZone) {
+  return dateKey(ts, timeZone);
 }
 
-export function localMonth(ts) {
+export function localMonth(ts, timeZone) {
   if (!isFiniteTs(ts)) return 'unknown';
-  return localDate(ts).slice(0, 7);
+  return localDate(ts, timeZone).slice(0, 7);
 }
 
 export function byModel(entries, priceFor = null) {
@@ -115,19 +112,19 @@ export function byClient(entries) {
   return rows.sort((a, b) => b.totals.totalTokens - a.totals.totalTokens);
 }
 
-export function byDay(entries) {
+export function byDay(entries, timeZone) {
   const rows = group(
     entries,
-    (e) => localDate(e.timestamp),
+    (e) => localDate(e.timestamp, timeZone),
     () => ({}),
   );
   return rows.sort((a, b) => (a.key === 'unknown' ? 1 : b.key === 'unknown' ? -1 : a.key.localeCompare(b.key)));
 }
 
-export function byMonth(entries) {
+export function byMonth(entries, timeZone) {
   const rows = group(
     entries,
-    (e) => localMonth(e.timestamp),
+    (e) => localMonth(e.timestamp, timeZone),
     () => ({}),
   );
   return rows.sort((a, b) => (a.key === 'unknown' ? 1 : b.key === 'unknown' ? -1 : a.key.localeCompare(b.key)));

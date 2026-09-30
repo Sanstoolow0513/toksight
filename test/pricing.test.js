@@ -16,14 +16,18 @@ test('normalizeModelName strips provider prefixes and snapshots', () => {
   assert.equal(normalizeModelName('GLM-4.5:latest'), 'glm-4.5');
 });
 
-test('builtin pricing matches by prefix', async () => {
+test('builtin pricing accepts known models and snapshots without guessing family variants', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'toksight-builtin-'));
   const { priceFor } = await getPricing({ offline: true, env: { TOKSIGHT_CONFIG_DIR: dir } });
-  const p = priceFor('GLM-5.3');
+  const p = priceFor('GLM-5');
   assert.equal(p.source, 'builtin');
   assert.equal(p.input, 0.6e-6);
-  const sonnet = priceFor('claude-sonnet-4-5');
+  const sonnet = priceFor('claude-sonnet-4-20250514');
   assert.equal(sonnet.input, 3e-6);
+  assert.equal(priceFor('gpt-5-2026-01-01').input, 1.25e-6);
+  for (const name of ['GLM-5.3', 'claude-opus-4-5', 'claude-opus-4-6', 'gpt-5.2', 'gpt-5-nano', 'gpt-4.1-mini', 'deepseek-unknown']) {
+    assert.equal(priceFor(name), null, name);
+  }
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
@@ -45,8 +49,14 @@ test('computeCost sums token classes; source cost wins', () => {
   assert.equal(computeCost({ inputTokens: 5, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, costUsd: null }, null), null);
 });
 
-test('user overrides file wins over builtin (suffix match)', async () => {
+test('an unambiguous user provider-suffix override wins over bare LiteLLM prices', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'toksight-cfg-'));
+  fs.mkdirSync(path.join(dir, 'cache'));
+  fs.writeFileSync(path.join(dir, 'cache', 'litellm-pricing.json'), JSON.stringify({
+    fetchedAt: Date.now(), data: { 'glm-5.3': {
+      mode: 'chat', input_cost_per_token: 2e-6, output_cost_per_token: 3e-6,
+    } },
+  }));
   fs.writeFileSync(
     path.join(dir, 'pricing.json'),
     JSON.stringify({ 'zhipuai/glm-5.3': { input: 1, output: 2, cacheRead: 0.1, cacheWrite: 1 } }),
@@ -57,6 +67,12 @@ test('user overrides file wins over builtin (suffix match)', async () => {
   assert.equal(p.source, 'user');
   assert.equal(p.input, 1e-6);
   assert.equal(p.output, 2e-6);
+  fs.writeFileSync(path.join(dir, 'pricing.json'), JSON.stringify({
+    'zhipuai/glm-5.3': { input: 1, output: 2 },
+    'other/glm-5.3': { input: 4, output: 5 },
+  }));
+  const ambiguous = await getPricing({ offline: true, env: { TOKSIGHT_CONFIG_DIR: dir } });
+  assert.equal(ambiguous.priceFor('GLM-5.3').source, 'litellm');
 });
 
 test('LiteLLM price cache lasts a week and a forced update bypasses it', async () => {

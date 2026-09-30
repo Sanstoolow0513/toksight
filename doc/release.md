@@ -7,7 +7,7 @@ This is the source workflow for a release PR. The repository workflows are the e
 Start from the current `release` branch and include the code to publish. Choose an explicit stable `X.Y.Z` version in the PR:
 
 ```bash
-npm run release:version -- 1.0.1
+npm run release:version -- 1.1.0
 ```
 
 The command also accepts `patch`, `minor`, or `major`. It updates `package.json`, `package-lock.json`, `web/package.json`, and `web/package-lock.json` together. Commit all four. The PR CI runs the Node 22/24 test matrix on Ubuntu and Windows, the installed-package check on both systems, and a release-version check that requires all four versions to agree and prevents a downgrade from the PR base. An unchanged version is allowed for a maintenance PR and does not publish.

@@ -89,6 +89,33 @@ test('overlapping backups preserve identical occurrences and known charges; a re
   } finally { a.close(); b.close(); }
 });
 
+test('Cursor mode metadata survives reimport and backup merging without losing charges or duplicating events', () => {
+  const source = createUsageDatabase({ file: ':memory:' }), target = createUsageDatabase({ file: ':memory:' });
+  try {
+    source.replace(collected([]));
+    target.replace(collected([]));
+    const legacy = parseCursorCsv(csv).records[0];
+    delete legacy.entry.cursorMaxMode;
+    legacy.entry.costUsd = 0.75;
+    target.importCursor([legacy]);
+    const current = parseCursorCsv(csv.replace(',No,', ',Yes,')).records;
+    source.importCursor(current);
+    assert.equal(target.importDatabase(source.exportDatabase()).updated, 1);
+    assert.equal(target.read().entries[0].cursorMaxMode, true);
+    assert.equal(target.read().entries[0].costUsd, 0.75);
+    assert.equal(target.importDatabase(source.exportDatabase()).duplicates, 1);
+    assert.equal(readDatabaseBackup(target.exportDatabase()).cursor[0].entry.cursorMaxMode, true);
+    // An explicit new CSV can correct mode metadata while its Included label
+    // cannot overwrite a known numeric charge. Unknown mode cannot erase it.
+    assert.equal(target.importCursor(parseCursorCsv(csv).records).updated, 1);
+    assert.equal(target.read().entries[0].cursorMaxMode, false);
+    assert.equal(target.read().entries[0].costUsd, 0.75);
+    assert.equal(target.importCursor([legacy]).duplicates, 1);
+    assert.equal(target.read().entries.length, 1);
+    assert.equal(target.read().entries[0].cursorMaxMode, false);
+  } finally { source.close(); target.close(); }
+});
+
 test('invalid, future-version and incomplete databases fail before changing committed usage', async (t) => {
   const ctx = await fixture(t);
   const db = createUsageDatabase({ file: ':memory:' });

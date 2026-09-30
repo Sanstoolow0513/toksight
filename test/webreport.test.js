@@ -1,10 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  calendarWeeks, currentPeriod, dayKey, dayNav, eachDayKey, inPeriod, periodBounds, periodKey, periodNav, periodOf, shiftDay, shiftPeriod, weekdayIndex, withMode,
+  calendarWeeks, compactCalendar, currentPeriod, dayKey, dayNav, eachDayKey, inPeriod, periodBounds, periodKey, periodNav, periodOf, quickPeriod, shiftDay, shiftPeriod, validRange, weekdayIndex, withMode,
 } from '../web/lib/period.js';
 import {
-  agentRows, costPerMillion, dailyMap, heatLevel, heatMax, heatSummary, hourlyBars, modelRows, modelsByAgent, openingDay, sessionName, sessionRows,
+  agentRows, costPerMillion, dailyMap, heatLevel, heatMax, heatSummary, hourlyBars, modelRows, modelsByAgent, openingDay, sessionName, sessionRows, trendSeries,
 } from '../web/lib/report.js';
 import { fmtClock, fmtClockRange, fmtCostShort, fmtTokens } from '../web/lib/format.js';
 
@@ -13,6 +13,72 @@ const usage = (over = {}) => {
   row.totalTokens = row.inputTokens + row.cacheReadTokens + row.cacheWriteTokens + row.outputTokens;
   return row;
 };
+
+test('quick ranges include today and cross leap days, years and DST as local calendar dates', () => {
+  const bounds = (preset, today) => periodBounds(quickPeriod(preset, today));
+  assert.deepEqual(bounds('1d', '2026-09-30'), { since: '2026-09-30', until: '2026-09-30' });
+  assert.deepEqual(bounds('7d', '2026-01-03'), { since: '2025-12-28', until: '2026-01-03' });
+  assert.deepEqual(bounds('30d', '2028-03-01'), { since: '2028-02-01', until: '2028-03-01' });
+  assert.deepEqual(bounds('mtd', '2028-03-01'), { since: '2028-03-01', until: '2028-03-01' });
+  assert.deepEqual(bounds('mtd', '2028-02-29'), { since: '2028-02-01', until: '2028-02-29' });
+  assert.deepEqual(bounds('7d', '2026-03-10'), { since: '2026-03-04', until: '2026-03-10' });
+  assert.deepEqual(bounds('7d', '2026-11-03'), { since: '2026-10-28', until: '2026-11-03' });
+});
+
+test('browser dates and session clocks follow the selected zone rather than the host', () => {
+  const instant = new Date('2026-09-30T01:00:00Z');
+  assert.equal(dayKey(instant, 'Asia/Shanghai'), '2026-09-30');
+  assert.equal(dayKey(instant, 'America/Los_Angeles'), '2026-09-29');
+  assert.deepEqual(currentPeriod('month', new Date('2026-10-01T01:00:00Z'), 'America/Los_Angeles'), { mode: 'month', year: 2026, month: 9 });
+  assert.equal(fmtClock(instant, 'Asia/Shanghai'), '09:00');
+  assert.equal(fmtClockRange(instant, new Date('2026-09-30T02:00:00Z'), 'America/Los_Angeles'), '18:00–19:00');
+  assert.deepEqual(eachDayKey('2011-12-29', '2011-12-31'), ['2011-12-29', '2011-12-30', '2011-12-31']);
+});
+
+test('custom dates validate calendar days and return to the containing month or year', () => {
+  assert.equal(validRange('2028-02-29', '2028-03-01', '2028-03-01'), true);
+  for (const [since, until] of [['', '2028-03-01'], ['2026-02-29', '2028-03-01'], ['2028-03-02', '2028-03-01'], ['2028-03-01', '2028-03-02'], ['2028-13-01', '2028-13-02']]) {
+    assert.equal(validRange(since, until, '2028-03-01'), false);
+  }
+  const range = quickPeriod('7d', '2026-01-03');
+  assert.equal(inPeriod('2025-12-31', range), true);
+  assert.equal(inPeriod('2026-01-04', range), false);
+  assert.equal(periodKey(range), '2025-12-28_2026-01-03');
+  assert.deepEqual(withMode(range, 'month', '2026-01-03'), { mode: 'month', year: 2026, month: 1 });
+  assert.deepEqual(withMode(range, 'year', '2026-01-03'), { mode: 'year', year: 2026, month: 1 });
+  assert.equal(compactCalendar(range), false);
+  assert.equal(compactCalendar({ mode: 'custom', since: '2025-01-01', until: '2026-01-03' }), true);
+});
+
+test('trends zero-fill the actual selected range, ignore outside rows and aggregate partial edge months', () => {
+  const daily = [
+    { date: '2025-12-31', totalTokens: 100, costUsd: 1 },
+    { date: '2026-01-01', totalTokens: 200, costUsd: 2 },
+    { date: '2026-01-03', totalTokens: 400, costUsd: 4 },
+    { date: '2026-01-04', totalTokens: 800, costUsd: 8 },
+    { date: 'unknown', totalTokens: 1600, costUsd: 16 },
+  ];
+  const short = trendSeries(daily, [], { since: '2026-01-01', until: '2026-01-05', today: '2026-01-03' });
+  assert.equal(short.unit, 'Daily');
+  assert.deepEqual(short.rows, [
+    { key: '2026-01-01', tokens: 200, cost: 2 },
+    { key: '2026-01-02', tokens: 0, cost: 0 },
+    { key: '2026-01-03', tokens: 400, cost: 4 },
+  ]);
+  const long = trendSeries(daily, [], { since: '2025-11-15', until: '2026-01-03', today: '2026-02-01' });
+  assert.equal(long.unit, 'Daily');
+  const monthly = trendSeries(daily, [], { since: '2025-10-15', until: '2026-01-03', today: '2026-02-01' });
+  assert.equal(monthly.unit, 'Monthly');
+  assert.deepEqual(monthly.rows, [
+    { key: '2025-10', tokens: 0, cost: 0 }, { key: '2025-11', tokens: 0, cost: 0 },
+    { key: '2025-12', tokens: 100, cost: 1 }, { key: '2026-01', tokens: 600, cost: 6 },
+  ]);
+  const hourly = trendSeries([], [{ hour: 9, tokens: 123, costUsd: .5 }], { since: '2026-01-03', until: '2026-01-03', today: '2026-01-03' });
+  assert.equal(hourly.unit, 'Hourly');
+  assert.equal(hourly.rows.length, 24);
+  assert.deepEqual(hourly.rows[9], { key: '09:00', tokens: 123, cost: .5 });
+  assert.deepEqual(hourly.rows[0], { key: '00:00', tokens: 0, cost: 0 });
+});
 
 test('periods cover whole local months and years, including leap Februaries', () => {
   assert.deepEqual(periodBounds({ mode: 'month', year: 2028, month: 2 }), { since: '2028-02-01', until: '2028-02-29' });
@@ -172,7 +238,7 @@ test('day stepping crosses month, year and leap-day boundaries in local time', (
   assert.equal(inPeriod('2026-10-01', { mode: 'year', year: 2026, month: 9 }), true);
 });
 
-test('an opened heatmap starts on the marked day, else the latest active day of the period', () => {
+test('the calendar starts on the selected day, else the latest active day of the period', () => {
   const days = dailyMap([
     { date: '2026-09-03', ...usage() },
     { date: '2026-09-10', ...usage({ outputTokens: 900 }) },
