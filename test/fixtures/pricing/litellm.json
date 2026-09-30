@@ -27,6 +27,16 @@
     "output_cost_per_token_above_200k_tokens": 0.000015,
     "cache_read_input_token_cost_above_200k_tokens": 0.00000025
   },
+  "moonshot/kimi-k3": {
+    "mode": "chat", "litellm_provider": "moonshot",
+    "input_cost_per_token": 0.000003, "output_cost_per_token": 0.000015,
+    "cache_read_input_token_cost": 0.0000003
+  },
+  "deepinfra/moonshotai/Kimi-K3": {
+    "mode": "chat", "litellm_provider": "deepinfra",
+    "input_cost_per_token": 0.00000285, "output_cost_per_token": 0.00001425,
+    "cache_read_input_token_cost": 0.000000285
+  },
   "tiered-model": {
     "mode": "responses", "litellm_provider": "example",
     "input_cost_per_token": 0.000001, "output_cost_per_token": 0.000002,

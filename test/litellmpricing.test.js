@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, readFile, writeFile, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { DatabaseSync } from 'node:sqlite';
 import { computeCost, getPricing } from '../src/pricing.js';
 import { createPriceLookup, priceRecord } from '../src/pricecatalog.js';
@@ -61,6 +62,86 @@ test('exact snapshot, provider and fine-tuning keys win before safe, unambiguous
   assert.equal(createPriceLookup(records)('model').source, 'user');
   const suffixed = createPriceLookup([rate('model', 1), rate('example/model-20260101', 2)]);
   assert.equal(suffixed('model-20260101').input, 2);
+});
+
+test('Kimi Code K3 endpoints use Moonshot reference prices without guessing other models or providers', async (t) => {
+  const { pricing } = await fixture(t);
+  for (const records of [pricing.records, [...pricing.records].reverse()]) {
+    const lookup = createPriceLookup(records);
+    const moonshot = lookup('moonshot/kimi-k3');
+    for (const name of ['kimi-code/k3', 'kimi-code/k3-256k', ' KIMI-CODE/K3 ']) {
+      assert.equal(lookup(name, 'kimi'), moonshot, name);
+      assert.equal(lookup(name, 'opencode'), moonshot, name);
+      assert.equal(lookup(name), moonshot, 'saved per-model prices have no client argument');
+      assert.equal(lookup(name, 'cursor'), null, 'Cursor keeps its own billing scope');
+    }
+    assert.deepEqual([moonshot.input, moonshot.output, moonshot.cacheRead, moonshot.cacheWrite], [3e-6, 15e-6, 0.3e-6, 3e-6]);
+    assert.equal(moonshot.cacheWriteFallback, true);
+    assert.equal(lookup('deepinfra/moonshotai/Kimi-K3').input, 2.85e-6);
+    for (const name of ['k3', 'other/k3', 'kimi-code/k3-fast', 'kimi-code/k4', 'kimi-code/kimi-for-coding',
+      'kimi-code/kimi-for-coding-highspeed', 'ft:kimi-code/k3']) assert.equal(lookup(name, 'kimi'), null, name);
+  }
+  const withoutMoonshot = createPriceLookup(pricing.records.filter((r) => r.provider !== 'moonshot'));
+  assert.equal(withoutMoonshot('kimi-code/k3', 'kimi'), null, 'a third-party K3 rate and the old builtin kimi rate are not fallbacks');
+});
+
+test('exact Kimi Code rates and user overrides win before reference aliases, including request context tiers', async (t) => {
+  const ctx = await fixture(t);
+  const direct = priceRecord({ name: 'kimi-code/k3', source: 'litellm',
+    input: 4e-6, output: 20e-6, cacheRead: 0.4e-6, cacheWrite: 4e-6 });
+  assert.equal(createPriceLookup([...ctx.pricing.records, direct])('kimi-code/k3'), direct);
+  const moonshot = ctx.pricing.priceFor('moonshot/kimi-k3');
+  const tiered = { ...moonshot, contextTiers: [{ contextOver: 200000, input: 6e-6, output: 30e-6,
+    cacheRead: 0.6e-6, cacheWrite: 6e-6, cacheReadFallback: false, cacheWriteFallback: true }] };
+  assert.equal(createPriceLookup([tiered])('kimi-code/k3', 'kimi', entry()).input, 6e-6);
+  for (const name of ['moonshot/kimi-k3', 'kimi-code/k3']) {
+    await writeFile(path.join(ctx.env.TOKSIGHT_CONFIG_DIR, 'pricing.json'), JSON.stringify({ [name]: { input: 7, output: 8 } }));
+    const overridden = await getPricing({ ...ctx, offline: true });
+    const lookup = createPriceLookup([...overridden.records, direct]);
+    assert.equal(lookup('kimi-code/k3').source, 'user', name);
+    assert.equal(lookup('kimi-code/k3').input, 7e-6, name);
+  }
+});
+
+test('Kimi fixture costs reach CLI and saved Web reports, price updates and offline backups without rewriting model IDs', async (t) => {
+  const ctx = await fixture(t);
+  ctx.env.KIMI_CODE_HOME = fileURLToPath(new URL('./fixtures/kimi', import.meta.url));
+  const raw = await collectAll(opts, ctx);
+  assert.equal(raw.entries.length, 5);
+  assert.ok(raw.entries.every((e) => e.model === 'kimi-code/k3' && e.costUsd > 0));
+  const payload = buildPayload({ ...raw, opts });
+  assert.deepEqual(payload.pricing.unpricedModels, []);
+  closeTo(payload.totals.costUsd, 0.002376);
+  assert.deepEqual(payload.models[0].modelIds, ['kimi-code/k3']);
+  assert.equal(payload.pricing.modelRates[0].model, 'kimi-code/k3');
+  assert.equal(payload.pricing.modelRates[0].modelId, 'moonshot/kimi-k3');
+  assert.equal(payload.pricing.modelRates[0].input, 3);
+  const file = path.join(ctx.dir, 'kimi.sqlite');
+  let db = createUsageDatabase({ file });
+  ctx.cleanup.push(() => db.close());
+  // Simulate a snapshot saved before the endpoint alias was supported.
+  db.replace({ ...raw, entries: raw.entries.map((e) => ({ ...e, costUsd: null })),
+    pricing: { ...raw.pricing, priceFor: () => null } });
+  db.close();
+  db = createUsageDatabase({ file });
+  assert.ok(db.read().entries.every((e) => e.costUsd > 0));
+  assert.equal(readStoredPriceFor(file)('kimi-code/k3').input, 3e-6);
+  const service = createWebDataService(opts, { ...ctx, database: db });
+  const web = await service(new URLSearchParams('client=kimi'));
+  assert.deepEqual(web.pricing.unpricedModels, []);
+  closeTo(web.totals.costUsd, payload.totals.costUsd);
+  db.updatePriceCatalog({ sources: ['litellm'], records: raw.pricing.records.filter((r) => r.source === 'litellm')
+    .map((r) => r.name === 'moonshot/kimi-k3' ? { ...r, input: 6e-6 } : r) });
+  closeTo((await service(new URLSearchParams('client=kimi'))).totals.costUsd, 0.002937);
+  const destination = await fixture(t, {});
+  const target = createUsageDatabase({ env: destination.env });
+  destination.cleanup.push(() => target.close());
+  target.importDatabase(db.exportDatabase());
+  const imported = await collectAll(opts, destination);
+  assert.equal(imported.entries.length, 5);
+  assert.deepEqual(buildPayload({ ...imported, opts }).pricing.unpricedModels, []);
+  closeTo(buildPayload({ ...imported, opts }).totals.costUsd, 0.002937);
+  assert.ok(imported.entries.every((e) => e.model === 'kimi-code/k3'));
 });
 
 test('context thresholds use each request including cache tokens, never output or session totals', async (t) => {

@@ -82,6 +82,19 @@ export const priceModelKey = (name) => String(name ?? '').trim().toLowerCase();
 const priceAlias = (name) => priceModelKey(name).replace(/^builtin:/, '').replace(/:latest$/, '')
   .replace(/[-_.]20\d{2}(?:-?\d{2}){2}$/, '').replace(/\s+/g, '');
 
+// Stable Kimi Code endpoints use Moonshot API prices as reference estimates.
+// Keep the provider explicit: other hosts can charge differently for K3.
+// The rolling kimi-for-coding endpoint does not identify a historical model.
+// https://www.kimi.com/code/docs/en/kimi-code/models.html
+const KIMI_CODE_REFERENCE_MODELS = new Map([
+  ['kimi-code/k3', 'moonshot/kimi-k3'],
+  ['kimi-code/k3-256k', 'moonshot/kimi-k3'],
+]);
+
+function findPrice({ exact, aliases, normalized }, key, alias = priceAlias(key)) {
+  return exact.get(key) ?? aliases.get(key) ?? exact.get(alias) ?? aliases.get(alias) ?? normalized.get(alias);
+}
+
 export function storedPriceFor(model, record, entry = null) {
   // Old snapshots may contain a family-prefix estimate for a newer variant.
   // Reusing that estimate would bypass the stricter catalog matching below.
@@ -139,10 +152,11 @@ export function createPriceLookup(records) {
     if (client === 'cursor') return cursorFor(name, entry);
     const key = priceModelKey(name), alias = priceAlias(name);
     if (!key) return null;
+    const reference = KIMI_CODE_REFERENCE_MODELS.get(key);
     // Source priority comes first; within a source, exact names precede
     // normalized aliases. Ambiguous aliases never displace an exact entry.
-    for (const { exact, aliases, normalized } of ordered) {
-      const record = exact.get(key) ?? aliases.get(key) ?? exact.get(alias) ?? aliases.get(alias) ?? normalized.get(alias);
+    for (const index of ordered) {
+      const record = findPrice(index, key, alias) ?? (reference ? findPrice(index, reference) : null);
       if (record) return priceForContext(record, entry);
     }
     return null;

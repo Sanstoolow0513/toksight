@@ -119,6 +119,16 @@ Within each price source, the original catalog ID is matched before normalized a
 Dated snapshots retain their exact prices; date-free aliases are accepted only when they
 resolve to a catalog name or equivalent rates for the same model and provider. Provider
 prefixes are resolved from catalog metadata, and fine-tuned model prefixes remain distinct.
+
+Kimi Code's versioned IDs `kimi-code/k3` and `kimi-code/k3-256k` resolve to the
+`moonshot/kimi-k3` reference price, following the official
+[model mapping](https://www.kimi.com/code/docs/en/kimi-code/models.html). Original usage IDs
+are preserved. Exact endpoint prices take precedence within a source, and user overrides
+remain highest priority. This requires a Moonshot catalog rate (an existing cache works
+offline) or a user override. The resulting cost is an API reference estimate, not Kimi Code
+subscription spending or quota consumption. Rolling IDs such as `kimi-code/kimi-for-coding`
+stay unpriced unless explicitly priced: their underlying model can change over time.
+
 LiteLLM's standard long-context fields (`*_above_200k_tokens`, for example) apply per request
 using fresh input + cache read + cache write tokens, excluding output. The highest crossed
 threshold selects the rates for the whole request; xAI's direct API uses inclusive thresholds.
