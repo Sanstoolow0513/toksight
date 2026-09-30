@@ -29,6 +29,8 @@ Web 查询 `period` 接受 `all`、`today`、`7d`、`30d`、`month`、`custom`�
 
 Cursor 的 `pricing.modelRates` 额外包含 `maxMode`（目录匹配后多出的模式词）、`variableRates`、`priceFetchedAt`、`retained`。同一原始模型 ID 的请求跨多个上下文价格时，`variableRates` 为 true，`source` 为 null，省略四种单价，避免把一档价格当作整行价格；各请求费用仍按实际匹配档位计算。模型展示名及 `modelId` 来自匹配目录，无法匹配时保留原模型名。目录别名与价格元数据随 SQLite 备份保存。
 
+非 Cursor 的 LiteLLM 长上下文估价也逐请求选档；同一原始 ID 跨多个实际单价时，`pricing.modelRates` 同样增加 `variableRates: true`、返回 `source: null` 并省略四种单价。只含同一档位的过滤结果输出该档实际单价。模型原始 ID、展示归并和已有字段的单位保持不变，不给标准用量记录增加缓存时长或服务档位字段。
+
 报告命令的 `--json` 由 `src/payload.js` 构造：元信息 `tool`、`version`、`generatedAt`、`range`、`clientsFilter`，以及 `totals`、`cacheHitRate`、`clients`、`models`、`daily`、`monthly`、`sessions`、`pricing`、`warnings`。`pricing` 有 `sources`、`configDir`、`unpricedModels`、`updates`、`modelRates`。`clients` 每项的总量和命中率都从过滤后的记录计算。`models` 按客户端和展示名聚合，并保留原始 `modelIds`；价格细节仍在 `modelRates` 按原始 ID 输出。`refresh --json` 返回数据库刷新状态，不是报告载荷。
 
 `GET /api/data` 保留这份报告载荷，额外提供：

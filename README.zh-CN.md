@@ -96,7 +96,7 @@ CLI 按天分组和日期过滤使用**本地时区**。网页可在设置里单
 
 除 Cursor 外，未使用 Agent 自报费用的请求按 token 数和三层价格计算（后者覆盖前者）：
 
-1. **内置价格表** — 常见模型系列的最佳努力估算（美元 / 百万 token），离线始终可用。
+1. **内置价格表** — 明确列出的模型的最佳努力估算（美元 / 百万 token），离线可用；新版本和变体不会沿用同系列旧型号的价格。
 2. **LiteLLM** — 从社区[模型价格库](https://github.com/BerriAI/litellm/blob/main/model_prices_and_context_window.json)拉取，
    本地缓存 7 天（`<toksight-dir>/cache/litellm-pricing.json`）；`--offline` 可读取已有缓存且不发网络请求。
 3. **用户覆盖** — 编辑 `<toksight-dir>/pricing.json`（单位：美元 / 百万 token）：
@@ -108,6 +108,16 @@ CLI 按天分组和日期过滤使用**本地时区**。网页可在设置里单
    ```
 
    模型名支持精确匹配或无歧义的提供商后缀匹配（`zhipuai/glm-5.3` 也可匹配 `GLM-5.3`）。
+
+每个价格来源内，先按原始目录 ID 精确匹配，再尝试归一化别名。带日期的版本保留各自单价；
+去掉日期后的别名只有能对应目录原名，或同模型、同提供商的候选价格完全一致时才接受。
+提供商前缀依据目录元数据匹配，微调模型前缀保持独立。
+LiteLLM 的标准长上下文字段（如 `*_above_200k_tokens`）按单次请求的新鲜输入 + 缓存读取 +
+缓存写入选择，不计输出；采用已越过的最高阈值对应单价计算整次请求，xAI 直连接口包含阈值边界。
+档位未提供输出或缓存单价时沿用已公布的基础价；基础价也未提供缓存价格时，退回所选档位的输入价。
+不推断缓存时长和服务档位的加价或折扣；用户覆盖和自报费用继续优先。
+同一模型 ID 跨多个单价时，`pricing.modelRates` 标记 `variableRates` 并省略单一单价。
+上下文价格随 SQLite 备份和离线导入保留；已有 Web 快照在下次更新单价或刷新用量时补齐这些元数据。
 
 `<toksight-dir>` 优先取 `TOKSIGHT_CONFIG_DIR`；未设置时，取 `$XDG_CONFIG_HOME/toksight`，
 再退到 `~/.config/toksight`。
@@ -129,7 +139,7 @@ CSV 中的数字费用及 `Free` 始终按原值使用。`Included` 行如果查
 等条件仍可能让参考费用与实际用量价值不同。
 旧版本导入时没有保存 CSV 的 Cost 标签，数据库升级后会将旧记录中的未知费用按 `Included` 处理。
 网页快照会把两个来源的单价归一化保存到 toksight 自己的 `usage.sqlite` 的 `model_prices` 表，
-按价格来源、计费范围和模型 ID 分行，单位为美元 / token。`price_updates` 记录各来源上次成功拉取
+保留价格来源、计费范围、原始目录名称、美元 / token 单价和上下文价格元数据。`price_updates` 记录各来源上次成功拉取
 及检查时间。Cursor 只使用 Cursor 计费范围内的价格；例如 CSV 中的
 `cursor-grok-4.6-xhigh-fast` 会匹配 `grok-4.6-fast`，`xhigh` 单独记录为 effort；
 `opus5.5-high` 会匹配 Claude Opus 5.5 官网单价。匹配优先采用目录中最完整的模型名/ID，

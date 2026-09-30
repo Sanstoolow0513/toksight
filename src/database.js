@@ -7,8 +7,8 @@ import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 
 import { computeCost, configDir } from './pricing.js';
-import { createPriceLookup } from './pricecatalog.js';
-import { cursorModelSignature, decodeCursorPrice } from './cursormodels.js';
+import { createPriceLookup, decodePriceRecord, encodePriceMetadata, priceModelKey, storedPriceFor } from './pricecatalog.js';
+import { cursorModelSignature } from './cursormodels.js';
 import { selectCursorImports } from './cursorcsv.js';
 import { mergeUsageRows } from './usageimports.js';
 import { exportDatabaseBytes, readDatabaseBackup } from './dbtransfer.js';
@@ -112,7 +112,7 @@ export function createUsageDatabase({ file, env, home } = {}) {
   const getPrices = db.prepare(`SELECT scope, source, model_id AS modelId, name, provider, pool,
     input_usd_per_token AS input, cache_read_usd_per_token AS cacheRead,
     cache_write_usd_per_token AS cacheWrite, output_usd_per_token AS output,
-    cache_read_fallback AS cacheReadFallback, cache_write_fallback AS cacheWriteFallback, metadata_json AS cursorJson
+    cache_read_fallback AS cacheReadFallback, cache_write_fallback AS cacheWriteFallback, metadata_json AS metadataJson
     FROM model_prices ORDER BY id`);
   const getPriceUpdates = db.prepare('SELECT source, fetched_at, checked_at, state, url FROM price_updates');
   const deletePriceSource = db.prepare('DELETE FROM model_prices WHERE source = ?');
@@ -170,7 +170,7 @@ export function createUsageDatabase({ file, env, home } = {}) {
       deletePriceSource.run(source);
       for (const record of rows) insertPrice.run(record.scope, source, record.modelId, record.name,
         record.provider ?? null, record.pool ?? null, record.input, record.cacheRead,
-        record.cacheWrite, record.output, record.cacheReadFallback ? 1 : 0, record.cacheWriteFallback ? 1 : 0, JSON.stringify(record.cursor ?? null));
+        record.cacheWrite, record.output, record.cacheReadFallback ? 1 : 0, record.cacheWriteFallback ? 1 : 0, encodePriceMetadata(record));
     }
     for (const [source, detail] of Object.entries(details)) {
       if (skip.has(source)) continue;
@@ -208,14 +208,14 @@ export function createUsageDatabase({ file, env, home } = {}) {
       const entry = JSON.parse(row.data_json);
       if (!prices.get(entry.model)) prices.set(entry.model, JSON.parse(row.price_json));
     }
-    const catalog = catalogRows.map(decodeCursorPrice).map((row) => ({ ...row,
+    const catalog = catalogRows.map(decodePriceRecord).map((row) => ({ ...row,
       cacheReadFallback: Boolean(row.cacheReadFallback), cacheWriteFallback: Boolean(row.cacheWriteFallback) }));
     const lookup = createPriceLookup(catalog);
     const priceFor = (model, client, entry = null) => {
       const scope = client === 'cursor' ? 'cursor' : 'default';
       // Imported and legacy models retain a fallback when the destination
       // has no current catalog rate for that model.
-      return lookup(model, client, entry) ?? prices.get(scope === 'cursor' ? cursorPriceKey(model) : model) ?? null;
+      return lookup(model, client, entry) ?? storedPriceFor(model, prices.get(scope === 'cursor' ? cursorPriceKey(model) : model), entry);
     };
     const entries = [];
     const reportedCosts = new WeakSet();
@@ -226,9 +226,11 @@ export function createUsageDatabase({ file, env, home } = {}) {
         const costUsd = computeCost(entry, priceFor(entry.model, 'cursor', entry));
         if (costUsd != null) entry = { ...entry, costUsd };
       } else if (entry.client !== 'cursor' && !row.reported_cost) {
-        const rate = priceFor(entry.model, entry.client);
+        const rate = priceFor(entry.model, entry.client, entry);
         if (rate && ['input', 'cacheRead', 'cacheWrite', 'output'].every((part) => Number.isFinite(rate[part]))) {
           entry = { ...entry, costUsd: computeCost({ ...entry, costUsd: null }, rate) };
+        } else if (!rate && prices.get(entry.model)?.source === 'builtin') {
+          entry = { ...entry, costUsd: null };
         }
       }
       entries.push(entry);
@@ -424,12 +426,12 @@ export function createUsageDatabase({ file, env, home } = {}) {
       // with the backup. No target pricing.json or agent configuration is written.
       const priceKey = (row) => row.scope === 'cursor'
         ? JSON.stringify([row.scope, cursorModelSignature(row.name), row.cursor?.contextOver ?? null])
-        : JSON.stringify([row.scope, row.modelId]);
+        : JSON.stringify([row.scope, priceModelKey(row.name)]);
       const existingPrices = new Set(getPrices.all().map(priceKey));
       for (const row of backup.catalog) {
         if (existingPrices.has(priceKey(row))) continue;
         insertPrice.run(row.scope, row.source, row.modelId, row.name, row.provider, row.pool,
-          row.input, row.cacheRead, row.cacheWrite, row.output, row.cacheReadFallback, row.cacheWriteFallback, JSON.stringify(row.cursor ?? null));
+          row.input, row.cacheRead, row.cacheWrite, row.output, row.cacheReadFallback, row.cacheWriteFallback, encodePriceMetadata(row));
       }
       const existingUpdates = new Set(getPriceUpdates.all().map((r) => r.source));
       for (const row of backup.updates) {

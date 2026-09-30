@@ -99,8 +99,8 @@ CLI day grouping and date filters use your **local** timezone. The web report ha
 For agents other than Cursor, token-based costs use three price layers (later wins), unless
 the agent reports a usable cost for that request:
 
-1. **Built-in table** — best-effort USD-per-MTok estimates for common model families,
-   always available offline.
+1. **Built-in table** — best-effort USD-per-MTok estimates for explicitly listed models,
+   available offline. New versions and variants do not inherit a family's older price.
 2. **LiteLLM** — fetched from the community
    [model prices](https://github.com/BerriAI/litellm/blob/main/model_prices_and_context_window.json)
    list with a 7-day disk cache at `<toksight-dir>/cache/litellm-pricing.json`. `--offline`
@@ -114,6 +114,20 @@ the agent reports a usable cost for that request:
    ```
 
    Model names match exactly or by an unambiguous provider suffix (`zhipuai/glm-5.3` can also cover `GLM-5.3`).
+
+Within each price source, the original catalog ID is matched before normalized aliases.
+Dated snapshots retain their exact prices; date-free aliases are accepted only when they
+resolve to a catalog name or equivalent rates for the same model and provider. Provider
+prefixes are resolved from catalog metadata, and fine-tuned model prefixes remain distinct.
+LiteLLM's standard long-context fields (`*_above_200k_tokens`, for example) apply per request
+using fresh input + cache read + cache write tokens, excluding output. The highest crossed
+threshold selects the rates for the whole request; xAI's direct API uses inclusive thresholds.
+Missing tier output/cache prices retain published base rates; a missing cache rate at both
+levels falls back to the selected input rate. Cache duration and service-tier adjustments
+are not inferred. User overrides and reported costs keep their priority.
+If a model ID spans different rates, `pricing.modelRates` marks `variableRates` and omits
+a single unit price. Context prices survive SQLite backups and offline imports. Existing
+Web snapshots gain the context metadata on the next price update or usage refresh.
 
 `<toksight-dir>` is `TOKSIGHT_CONFIG_DIR` when set; otherwise it is
 `$XDG_CONFIG_HOME/toksight` when that variable is set, or `~/.config/toksight`.
@@ -144,8 +158,8 @@ differ from actual usage value.
 Older imports did not save the CSV Cost label, so their unknown costs are treated as `Included`
 when the database is upgraded.
 The web snapshot stores normalized rates from both sources in `model_prices` in toksight's own
-`usage.sqlite`: one row per
-source, billing scope and model ID, with USD-per-token rates. `price_updates` records each source's
+`usage.sqlite`, retaining source, billing scope, original catalog names, USD-per-token rates
+and context-price metadata. `price_updates` records each source's
 last successful fetch and check. Cursor's billing scope uses only Cursor rates. CSV IDs such as
 `cursor-grok-4.6-xhigh-fast` resolve to `grok-4.6-fast`, with `xhigh` retained as an effort level;
 `opus5.5-high` resolves to the official Claude Opus 5.5 rate. Matching prefers the most specific

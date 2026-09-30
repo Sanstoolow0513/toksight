@@ -2,6 +2,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { createPriceLookup, modelIdentity, priceRecord } from './pricecatalog.js';
+import { litellmContextTiers } from './contextpricing.js';
 
 const LITELLM_URL =
   'https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json';
@@ -147,6 +148,7 @@ function buildLitellmMap(data) {
         provider: v.litellm_provider ?? null,
         cacheReadFallback: v.cache_read_input_token_cost == null,
         cacheWriteFallback: v.cache_creation_input_token_cost == null,
+        contextTiers: litellmContextTiers(v),
       },
     ]);
   }
@@ -168,7 +170,7 @@ export async function getPricing({ offline = false, force = false, env, home, no
   const lookup = createPriceLookup(records);
 
   return {
-    priceFor: (model, client) => lookup(model, client),
+    priceFor: lookup,
     records,
     warnings,
     sources: { user: Boolean(userMap), litellm: lite.state, builtin: true },

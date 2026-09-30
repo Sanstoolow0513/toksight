@@ -2,7 +2,8 @@
 // `scope` is the billing application: Cursor never falls through to another
 // application's price for a model with the same name.
 
-import { createCursorModelResolver, cursorIdentityFor, cursorModelId } from './cursormodels.js';
+import { createCursorModelResolver, cursorIdentityFor, cursorModelId, decodeCursorPrice } from './cursormodels.js';
+import { priceForContext, validContextTiers } from './contextpricing.js';
 
 const EFFORT = new Set(['low', 'medium', 'high', 'xhigh']);
 const PRIORITY = { user: 3, litellm: 2, builtin: 1, cursor: 1 };
@@ -66,52 +67,84 @@ export function reportModelName(name, client = null, rate = null) {
 }
 
 export function priceRecord({ scope = 'default', source, name, provider = null, pool = null, input, output,
-  cacheRead, cacheWrite, cacheReadFallback = false, cacheWriteFallback = false, cursor = null }) {
+  cacheRead, cacheWrite, cacheReadFallback = false, cacheWriteFallback = false, cursor = null, contextTiers = null }) {
   const modelId = scope === 'cursor' ? cursorModelId(name) : modelIdentity(name).id;
   if (!modelId || !Number.isFinite(input) || !Number.isFinite(output) ||
-      !Number.isFinite(cacheRead) || !Number.isFinite(cacheWrite)) return null;
+      !Number.isFinite(cacheRead) || !Number.isFinite(cacheWrite) || !validContextTiers(contextTiers)) return null;
   return { scope, source, modelId, name, provider, pool, input, output, cacheRead, cacheWrite,
-    cacheReadFallback: Boolean(cacheReadFallback), cacheWriteFallback: Boolean(cacheWriteFallback), ...(cursor ? { cursor } : {}) };
+    cacheReadFallback: Boolean(cacheReadFallback), cacheWriteFallback: Boolean(cacheWriteFallback), ...(cursor ? { cursor } : {}),
+    ...(contextTiers?.length ? { contextTiers } : {}) };
+}
+
+// Keep billing keys separate from report identities. In particular, dated
+// snapshots and fine-tuned models must retain their own exact catalog entry.
+export const priceModelKey = (name) => String(name ?? '').trim().toLowerCase();
+const priceAlias = (name) => priceModelKey(name).replace(/^builtin:/, '').replace(/:latest$/, '')
+  .replace(/[-_.]20\d{2}(?:-?\d{2}){2}$/, '').replace(/\s+/g, '');
+
+export function storedPriceFor(model, record, entry = null) {
+  // Old snapshots may contain a family-prefix estimate for a newer variant.
+  // Reusing that estimate would bypass the stricter catalog matching below.
+  if (record?.source === 'builtin' && record.name && priceAlias(model) !== priceAlias(record.name)) return null;
+  return priceForContext(record, entry) ?? null;
+}
+
+function sameAliasPrice(a, b) {
+  return priceAlias(a.name) === priceAlias(b.name) && a.provider === b.provider &&
+    ['input', 'output', 'cacheRead', 'cacheWrite', 'cacheReadFallback', 'cacheWriteFallback'].every((part) => a[part] === b[part]) &&
+    JSON.stringify(a.contextTiers ?? []) === JSON.stringify(b.contextTiers ?? []);
+}
+
+function addAlias(index, key, record) {
+  if (!index.has(key)) index.set(key, record);
+  else if (index.get(key) && !sameAliasPrice(index.get(key), record)) index.set(key, null);
+}
+
+export function encodePriceMetadata(record) {
+  return JSON.stringify(record.scope === 'cursor' ? record.cursor ?? null
+    : record.contextTiers?.length ? { contextTiers: record.contextTiers } : null);
+}
+
+export function decodePriceRecord({ metadataJson, ...record }) {
+  if (record.scope === 'cursor') return decodeCursorPrice({ ...record, cursorJson: metadataJson });
+  const metadata = JSON.parse(metadataJson ?? 'null');
+  if (metadata != null && (typeof metadata !== 'object' || Array.isArray(metadata) || !validContextTiers(metadata.contextTiers))) {
+    throw new Error('invalid context price metadata');
+  }
+  return { ...record, ...(metadata?.contextTiers?.length ? { contextTiers: metadata.contextTiers } : {}) };
 }
 
 export function createPriceLookup(records) {
   const cursorFor = createCursorModelResolver(records ?? []);
-  const exact = new Map(), suffix = new Map(), builtin = [];
-  const ambiguous = new Set(), ambiguousSuffix = new Set();
+  const sources = new Map();
   for (const record of records ?? []) {
-    if (!record?.modelId || record.scope === 'cursor') continue;
-    const key = `${record.scope}\0${record.modelId}`;
-    if (record.source === 'builtin') { builtin.push(record); continue; }
-    const old = exact.get(key);
-    if (old && old.source === record.source && old.name !== record.name) ambiguous.add(key);
-    else if (!old || PRIORITY[record.source] > PRIORITY[old.source]) {
-      exact.set(key, record);
-      if (old && PRIORITY[record.source] > PRIORITY[old.source]) ambiguous.delete(key);
+    if (!record?.name || record.scope !== 'default') continue;
+    if (!sources.has(record.source)) sources.set(record.source, { exact: new Map(), aliases: new Map(), normalized: new Map() });
+    const { exact, aliases, normalized } = sources.get(record.source);
+    const key = priceModelKey(record.name);
+    addAlias(exact, key, record);
+    addAlias(normalized, priceAlias(key), record);
+    const slash = key.lastIndexOf('/');
+    if (record.source !== 'builtin' && slash >= 0) {
+      addAlias(aliases, key.slice(slash + 1), record);
+      addAlias(normalized, priceAlias(key.slice(slash + 1)), record);
+    } else if (slash < 0 && record.provider) {
+      // Only construct a provider-qualified alias from catalog metadata.
+      addAlias(aliases, `${priceModelKey(record.provider)}/${key}`, record);
+      addAlias(normalized, `${priceModelKey(record.provider)}/${priceAlias(key)}`, record);
     }
   }
-  for (const key of ambiguous) exact.delete(key);
-  for (const record of exact.values()) {
-    if (record.scope !== 'default') continue;
-    const slash = record.modelId.lastIndexOf('/');
-    if (slash < 0) continue;
-    const base = record.modelId.slice(slash + 1);
-    if (ambiguousSuffix.has(base)) continue;
-    const prior = suffix.get(base);
-    if (!prior || PRIORITY[record.source] > PRIORITY[prior.source]) suffix.set(base, record);
-    else if (PRIORITY[record.source] === PRIORITY[prior.source] && prior.modelId !== record.modelId) {
-      suffix.delete(base); ambiguousSuffix.add(base);
-    }
-  }
-  builtin.sort((a, b) => b.modelId.length - a.modelId.length);
+  const ordered = [...sources].sort(([a], [b]) => PRIORITY[b] - PRIORITY[a]).map(([, index]) => index);
   return (name, client = null, entry = null) => {
     if (client === 'cursor') return cursorFor(name, entry);
-    const { id } = modelIdentity(name, client);
-    if (!id) return null;
-    const exactHit = exact.get(`default\0${id}`);
-    const suffixHit = suffix.get(id);
-    // A user override keyed as provider/model must beat a bare LiteLLM
-    // match for that model. At equal priority, keep the exact match.
-    if (exactHit && (!suffixHit || PRIORITY[exactHit.source] >= PRIORITY[suffixHit.source])) return exactHit;
-    return suffixHit ?? builtin.find((record) => id.startsWith(record.modelId)) ?? null;
+    const key = priceModelKey(name), alias = priceAlias(name);
+    if (!key) return null;
+    // Source priority comes first; within a source, exact names precede
+    // normalized aliases. Ambiguous aliases never displace an exact entry.
+    for (const { exact, aliases, normalized } of ordered) {
+      const record = exact.get(key) ?? aliases.get(key) ?? exact.get(alias) ?? aliases.get(alias) ?? normalized.get(alias);
+      if (record) return priceForContext(record, entry);
+    }
+    return null;
   };
 }

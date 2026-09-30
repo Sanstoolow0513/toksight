@@ -32,6 +32,7 @@ function modelRateRows(entries, pricing) {
       model: entry.model, displayModel: reportModelName(entry.model, entry.client, baseRate),
       modelId: baseRate?.modelId ?? identity.id,
       effort: identity.effort, source: validRate ? rate.source : null, pool: rate?.pool ?? null,
+      ...(entry.client !== 'cursor' && !consistent ? { variableRates: true } : {}),
       ...(entry.client === 'cursor' ? { maxMode: Boolean(identity.maxMode), variableRates: !consistent,
         priceFetchedAt: rate?.cursor?.fetchedAt ?? null, retained: Boolean(rate?.cursor?.retained) } : {}),
       ...(validRate ? { input: rate.input * 1e6, cacheRead: rate.cacheRead * 1e6,

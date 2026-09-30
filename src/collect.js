@@ -7,6 +7,7 @@ import os from 'node:os';
 
 import { clients } from './clients/index.js';
 import { computeCost, getPricing } from './pricing.js';
+import { storedPriceFor } from './pricecatalog.js';
 import { createCursorPriceLookup, cursorPriceRecords, CURSOR_PRICING_URL, getCursorPricing } from './cursorpricing.js';
 import { databasePath } from './database.js';
 import { mergeUsageRows, readUsageImports, readStoredPriceFor } from './usageimports.js';
@@ -91,7 +92,8 @@ export async function collectAll(opts, { env = process.env, home = os.homedir() 
   }
   const pricing = {
     ...basePricing,
-    priceFor: (model, client, entry = null) => client === 'cursor' ? cursorPriceFor(model, entry) ?? savedCursorPriceFor(model, client, entry) : basePricing.priceFor(model) ?? importedPrices.get(model) ?? null,
+    priceFor: (model, client, entry = null) => client === 'cursor' ? cursorPriceFor(model, entry) ?? savedCursorPriceFor(model, client, entry)
+      : basePricing.priceFor(model, client, entry) ?? storedPriceFor(model, importedPrices.get(model), entry),
     records: [...basePricing.records, ...cursorRecords],
     sourceDetails: { ...basePricing.sourceDetails, ...(cursorSourceDetails ? { cursor: cursorSourceDetails } : {}) },
     sources: { ...basePricing.sources, cursor: cursorState },

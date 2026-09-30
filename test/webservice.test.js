@@ -346,7 +346,7 @@ test('real collection preserves agent-reported cost provenance alongside compute
   await cp(new URL('./fixtures/opencode/storage/message/sess1/msg1.json', import.meta.url), path.join(messages, 'msg1.json'));
   const project = path.join(home, '.claude', 'projects', 'fixture');
   await mkdir(project, { recursive: true });
-  await writeFile(path.join(project, 'session.jsonl'), JSON.stringify({ type: 'assistant', sessionId: 'claude-fixture', timestamp: '2026-09-08T10:00:00Z', message: { id: 'm', model: 'claude-sonnet-4-5', usage: { input_tokens: 100, output_tokens: 10 } } }));
+  await writeFile(path.join(project, 'session.jsonl'), JSON.stringify({ type: 'assistant', sessionId: 'claude-fixture', timestamp: '2026-09-08T10:00:00Z', message: { id: 'm', model: 'claude-sonnet-4', usage: { input_tokens: 100, output_tokens: 10 } } }));
   const get = createWebDataService(base, { home, env, now });
   const data = await get();
   assert.ok(data.costCoverage.sources.reported.requests > 0);
@@ -381,7 +381,7 @@ test('cost coverage separates reports, estimates, unpriced requests and actual c
   const pricing = await getPricing({ home, env }); // Fresh local fixture: no fetch.
   const reported = entry({ client: 'opencode', model: 'custom', costUsd: 7 });
   const coverage = buildCostCoverage([
-    reported, entry({ model: 'custom' }), entry({ model: 'explicit' }), entry({ model: 'remote' }), entry({ model: 'claude-sonnet-4-5', cacheReadTokens: 0 }), entry({ costUsd: null }),
+    reported, entry({ model: 'custom' }), entry({ model: 'explicit' }), entry({ model: 'remote' }), entry({ model: 'claude-sonnet-4', cacheReadTokens: 0 }), entry({ costUsd: null }),
   ], { pricing, reportedCosts: new WeakSet([reported]) });
   assert.equal(coverage.sources.reported.costUsd, 7);
   assert.equal(coverage.sources.user.requests, 2);
