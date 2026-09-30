@@ -2,6 +2,30 @@
 
 This is the source workflow for a release PR. The repository workflows are the executable authority; this document explains how to prepare, verify, and recover a release. A local edit or passing local test is not evidence that npm or GitHub Releases has been updated.
 
+## Branches and CI
+
+`dev` is the daily development branch and the target for development PRs. Pushes to
+`dev` and all PRs run `.github/workflows/ci.yml`, including the cross-platform tests
+and installed-package checks. PRs targeting `release` also validate the version.
+
+`release` is the repository's default branch and the target for release and
+maintenance PRs. Its branch protection requires PRs and successful CI checks.
+Pushes to `release` run `.github/workflows/release.yml`; only a valid version bump
+publishes a new package. An unchanged version is allowed for maintenance.
+
+The default branch controls GitHub's default view and PR base; it does not change
+an existing local branch's upstream or synchronize branches. Use `git push origin dev`
+for development pushes. After merging into `release`, synchronize `dev`:
+
+```bash
+git fetch origin
+git switch dev
+git merge origin/release
+git push origin dev
+```
+
+This carries release versions and maintenance changes back into daily development.
+
 ## Prepare a PR
 
 Start from the current `release` branch and include the code to publish. Choose an explicit stable `X.Y.Z` version in the PR:

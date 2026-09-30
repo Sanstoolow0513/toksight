@@ -379,6 +379,10 @@ report's navigation bounds), `selection` (selected trends/heatmap, null without 
 
 ## Development
 
+Use `dev` for daily development and development PRs. `release` is the repository's
+default branch and receives release and maintenance PRs. Push development commits
+with `git push origin dev`; prepare a PR targeting `release` when ready to publish.
+
 ```bash
 npm test             # node:test suite with per-client fixtures (no network needed)
 node bin/toksight.js # run the CLI from source
@@ -405,7 +409,7 @@ npm run check:package # pack, install the tarball offline in a temp dir, then ex
 ```
 
 It needs network only to install locked web dependencies, uses throwaway agent fixtures (never
-your real sessions), and cleans up afterward. PR and main-branch CI, plus the Release workflow, run the test suite and
+your real sessions), and cleans up afterward. PR and dev-branch CI, plus the Release workflow, run the test suite and
 this check on Ubuntu/Windows.
 
 ### Releasing
@@ -414,7 +418,8 @@ Open a PR targeting `release` with the code to publish and an explicit stable ve
 For example, `npm run release:version -- 1.1.0` updates both manifests and lockfiles.
 PR CI checks version consistency, tests, and the installed package. Once merged, the
 Release workflow repeats those checks, then publishes the matching version to npm and
-GitHub Releases. A PR without a version change does not publish.
+GitHub Releases. A PR without a version change does not publish. After merging into
+`release`, merge `origin/release` back into `dev` and push `dev` to keep it up to date.
 
 See the [release guide](doc/release.md) for branch protection, npm Trusted Publishing setup, failure recovery, and verification.
 

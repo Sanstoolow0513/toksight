@@ -321,6 +321,9 @@ entries 构建，`--client` / `--since` / `--until` 对它与其余切片一样�
 
 ## 开发
 
+日常开发和开发 PR 使用 `dev`；`release` 是仓库默认分支，接收发布及维护 PR。
+开发提交通过 `git push origin dev` 推送，准备发布时再向 `release` 发起 PR。
+
 ```bash
 npm test              # node:test 套件 + 各客户端 fixture（无需联网）
 node bin/toksight.js  # 从源码直接运行
@@ -345,7 +348,7 @@ npm run check:package  # 打包并在临时目录离线安装，再用 fixture �
 ```
 
 仅安装锁定的网页依赖时需要网络；全程使用临时 Agent fixture，不碰真实数据，结束后
-自动清理。PR 和 main 的 CI，以及 Release 工作流，会在 Ubuntu/Windows 上运行测试与该检查。
+自动清理。PR 和 dev 的 CI，以及 Release 工作流，会在 Ubuntu/Windows 上运行测试与该检查。
 
 ### 发布
 
@@ -353,6 +356,7 @@ npm run check:package  # 打包并在临时目录离线安装，再用 fixture �
 `npm run release:version -- 1.1.0`，可同步更新两个 manifest 和两个 lockfile。
 PR CI 会检查版本一致性、测试和安装包。合入后 Release 工作流重跑检查，
 再将相同版本发布到 npm 和 GitHub Releases。版本号不变的 PR 不会发版。
+合入 `release` 后，将 `origin/release` 合回 `dev` 并推送，保持开发分支同步。
 
 分支保护、npm Trusted Publishing 配置、失败重试和验收方法见[发布指南](doc/release.md)。
 
