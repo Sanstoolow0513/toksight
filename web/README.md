@@ -3,15 +3,15 @@
 `toksight web` 的前端：一个 Next.js（App Router）静态导出应用，由 CLI 内置的零依赖
 HTTP 服务器（`src/webserver.js`）托管，数据来自同源的 `/api/data` JSON API；普通查询读取已提交快照。
 
-页面是一份按月 / 按年 / 自定义日期的 token 用量与成本报告：点阵背景 + Claude 明暗配色，三张可拖动排序的
-章节卡片（热力图 · 用量与费用趋势 · Agent 与模型），可整页导出 PNG。筛选栏支持 Agent、1D / 7D / MTD / 30D、
-月份直达和包含首尾日期的自定义范围；条件只保存在页面内存，不写页面 URL。继续静态导出并使用现有本地 API。
-视觉与交互规范见仓库根目录 `design-spec.md`，实现以 spec 为准。
+默认打开今天，侧边导航切换今天 / 日历 / 设置；灰色顶栏与导航无点阵，主内容保留点阵。
+今天直接展示 KPI、小时分布、Agent / 模型与会话；日历直接展开日期筛选及单日详情，没有弹层、拖拽或分页卡片。
+设置提供可调整时区、数据库导入导出和 Cursor CSV。刷新、图片导出与更新单价在内容顶部。
+视觉与交互规范见仓库根目录 `design-spec.md`。
 
 ## 使用
 
 安装包用户直接运行 `toksight web`，无需构建或安装 Next。
-点击报告左侧的“导入 Cursor CSV”小卡片，选择 Cursor 导出的 Usage Events 文件，即可把历史用量加入报告。
+点击设置中的“导入 Cursor CSV”，选择 Cursor 导出的 Usage Events 文件，即可把历史用量加入报告。
 导入通过本机 API 写入 toksight 自己的 SQLite；重复导入会去重，普通刷新不会清除导入数据。
 从源码预览发布版页面时，在仓库根目录运行（Node >=22.5）：
 
@@ -56,32 +56,27 @@ npm run web:dev:ui
 
 ## 结构
 
-- `app/layout.js` — 字体（Geist Sans/Mono、自托管 Source Serif 4）与首帧前写入 `data-theme` 的内联脚本
-- `app/page.js` — 报告页：顶栏 → 左侧操作卡片 + 筛选栏 + `.report`（筛选摘要、KPI、三张卡片、页脚）；`.report` 就是导出图片的范围
-- `app/globals.css` — 明暗两套 CSS 变量、点阵背景与全部组件样式
-- `components/Toolbar.jsx` — 月/年、周期翻页、配色、语言、刷新
-- `components/ReportFilters.jsx` — Agent、快捷日期、自定义日期、月份直达与重置
-- `components/TrendCard.jsx` — 所选范围的 Token/费用柱状图，单日按小时、短范围按日、长范围按月
-- `components/ReportActions.jsx` — 报告左侧的 CSV 导入、图片导出、单价更新小卡片；窄屏排在报告上方
-- `components/SortableCards.jsx` — 手柄拖动排序（Pointer Events、边缘自动滚动、FLIP 归位、↑/↓ 键）
-- `components/HeatmapCard.jsx` / `AgentsCard.jsx` — 两个章节；Agent 表格可按 Tokens / 费用排序，Agent 行展开出其模型，默认折叠（`AgentTable.jsx`）
-- `components/ExpandedHeatmap.jsx` — 双击热力图卡片后覆盖整页的展开卡片（遮罩、容器变形动画、滚动锁定、Esc / `-` 收起）；月历下方排当日 KPI，单日内容在 `DayDetail.jsx`
-- `components/DayDeck.jsx` — 单日卡片堆：隐藏列测量卡片高度，`lib/deck.js` 按一屏可见高度贪心装箱分页，堆叠翻页动画，‹ › / 圆点 / ↑↓ 翻页；超高卡片独占一页并卡内滚动
-- `components/ModelTable.jsx` — 展开卡片里跨 Agent 的扁平模型用量表（复用 `AgentTable.jsx` 的单元格、排序表头与悬停提示）
-- `components/Kpis.jsx` — 页首与展开卡片月历下方共用的四项 KPI；`Marks.jsx` 为 Agent 身份色、构成色条、缓存命中环与金额显示。`Card`、`Segmented`、`Tooltip`、`BrandMark` 为共享件
-- `lib/period.js` — 本地日期的月/年/自定义边界、快捷日期、日期校验、翻页与周一开头的日历周
-- `lib/report.js` — 纯聚合：热力图统计、Agent 与按 Agent 分组的模型行（tokens 与费用份额、排序）、构成分段、“其他 N 项模型用量”
-- `lib/deck.js` — 单日卡片堆的纯装箱函数（贪心按序装页、超高卡独占滚动页），node:test 覆盖
-- `lib/useReport.js` — 按周期请求 `/api/data`，取消过期请求、加载时保留旧数据
-- `lib/exportImage.js` — 用 `modern-screenshot` 把 `.report` 导出为 PNG（去掉 `.no-export`）
-- `lib/prefs.js` — 所有 `localStorage` 偏好（语言、配色、周期模式、卡片顺序、表格排序）
-- `lib/format.js` / `lib/i18n.js` — 数字格式化与中英文案
-- `next.config.mjs` — 静态导出 / dev 代理配置
+- `app/page.js`：应用状态、操作与请求协调，默认 Today；`.report` 是图片捕获区域。
+- `app/layout.js`：本地字体、首帧主题脚本；`app/globals.css`：两套配色、应用框架、点阵、响应式样式。
+- `components/Toolbar.jsx` / `Sidebar.jsx`：品牌、配色、语言和三个导航入口。
+- `components/ReportActions.jsx`：刷新、单价更新、PNG 导出；`ReportFooter.jsx`：时间、时区和价格说明。
+- `components/Settings.jsx` / `DatabaseImport.jsx`：时区、数据管理、数据库合并确认。
+- `components/CalendarView.jsx` / `HeatGrid.jsx`：月 / 年日历、范围统计和内联单日详情。
+- `components/ReportFilters.jsx`：Agent、快捷范围、月份、自定义日期与重置。
+- `components/DayDetail.jsx`：单日头和直接展开的 `DayBody`，Today 复用同样内容。
+- `components/TrendCard.jsx`：所选范围的 tokens / 费用趋势，平铺显示。
+- `components/AgentTable.jsx` / `ModelTable.jsx`：可展开 Agent 与跨 Agent 模型表、排序与悬停明细。
+- `components/Kpis.jsx` / `Marks.jsx`：四项 KPI、构成条、身份色、缓存命中环与费用标记。
+- `lib/period.js`：浏览器时区检测、IANA 校验、日期标签、范围与日历运算。
+- `lib/useReport.js`：独立范围 / 单日请求，将日期、Agent、时区纳入取消和过期响应校验。
+- `lib/report.js`：纯聚合、排序、模型分组、小时柱与趋势序列。
+- `lib/prefs.js`：localStorage 语言、主题、时区、日历模式和表格排序；旧卡片顺序不再读取。
+- `lib/format.js` / `lib/i18n.js`：数值与所选时区时间格式、中英文案。
+- `lib/exportImage.js`：捕获报告为 PNG，过滤 `.no-export`。
+- `next.config.mjs`：静态导出 / 开发代理配置。
 
-`lib/period.js`、`lib/report.js`、`lib/i18n.js` 不依赖 React，由根目录 `test/webreport.test.js` 与
-`test/i18n.test.js` 覆盖。
+日期与纯计算由根目录 `test/webreport.test.js`、`test/dates.test.js`、`test/webservice.test.js` 覆盖；
+中英文案键一致性由 `test/i18n.test.js` 覆盖。
 
-页面每次只请求一个日期范围：`GET /api/data?period=custom&since=2026-09-01&until=2026-09-30`，选择 Agent 时附加 `client`，单日详情沿用同一 Agent。
-热力图取 `daily`、Agent 取 `clients`、各 Agent 下的模型取 `models`（每行一个 Agent 与统一模型名），翻页边界取
-`scopeRange`。这些字段由 `src/payload.js` / `src/webservice.js` 计算，按本机时区分组，日期与
-启动范围取交集。
+范围与单日都请求 `GET /api/data?period=custom&since=…&until=…&timezone=Asia%2FShanghai`，
+Agent 筛选附加 `client`。服务端在所选时区分组与计算边界，仍与启动范围取交集，CLI 继续使用系统本地时区。

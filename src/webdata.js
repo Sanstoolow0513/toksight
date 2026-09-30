@@ -1,10 +1,10 @@
 // Web-dashboard aggregations for `toksight web`.
 // Pure functions over normalized entries — no I/O, no CLI coupling, so they are
-// trivially testable. All day/hour bucketing uses the machine's LOCAL time,
+// trivially testable. Day/hour bucketing uses the requested zone, or the machine default,
 // matching the `daily`/`monthly` grouping in aggregate.js.
 
 import { summarize, cacheHitRate, localDate, localMonth, bySession } from './aggregate.js';
-import { dayKeyToTs, eachDay, startOfDay, stepDay } from './dates.js';
+import { dateParts, dayKeyToTs, eachDay, startOfDay, stepDay, weekday } from './dates.js';
 
 function roundUsd(v) {
   return Math.round(v * 1e6) / 1e6;
@@ -16,11 +16,11 @@ function zeroDay(date) {
 
 // One bucket per local day that has timestamped activity. Entries without a
 // timestamp are unattributable and intentionally excluded from time-series.
-function buildDayBuckets(entries) {
+function buildDayBuckets(entries, timezone) {
   const buckets = new Map();
   for (const e of entries) {
     if (!Number.isFinite(e.timestamp)) continue;
-    const key = localDate(e.timestamp);
+    const key = localDate(e.timestamp, timezone);
     let b = buckets.get(key);
     if (!b) {
       b = { input: 0, cacheRead: 0, cacheWrite: 0, output: 0, costUsd: 0, requests: 0, sessions: new Set() };
@@ -57,29 +57,29 @@ function bucketRow(b, date) {
 // GitHub-style grid: whole weeks starting on Sunday, ending at today. The last
 // column is partial (only up to today's weekday), so days.length is
 // (weeks - 1) * 7 + weekdayOf(now) + 1.
-export function buildHeatmap(entries, { weeks = 53, now = Date.now() } = {}) {
-  const buckets = buildDayBuckets(entries);
-  const todayStart = startOfDay(now);
-  const gridStart = stepDay(todayStart, -((weeks - 1) * 7 + new Date(now).getDay()));
+export function buildHeatmap(entries, { weeks = 53, now = Date.now(), timezone } = {}) {
+  const buckets = buildDayBuckets(entries, timezone);
+  const todayStart = startOfDay(now, timezone);
+  const gridStart = stepDay(todayStart, -((weeks - 1) * 7 + weekday(now, timezone)), timezone);
   const days = [];
   let maxTokens = 0;
-  for (const ts of eachDay(gridStart, todayStart)) {
-    const date = localDate(ts);
+  for (const ts of eachDay(gridStart, todayStart, timezone)) {
+    const date = localDate(ts, timezone);
     const row = buckets.has(date) ? bucketRow(buckets.get(date), date) : zeroDay(date);
     if (row.tokens > maxTokens) maxTokens = row.tokens;
     days.push(row);
   }
-  return { days, weeks, maxTokens, start: localDate(gridStart), end: localDate(todayStart) };
+  return { days, weeks, maxTokens, start: localDate(gridStart, timezone), end: localDate(todayStart, timezone) };
 }
 
 // Zero-filled per-day rows for the recent-trend chart, with token classes kept
 // separate so the UI can stack fresh input / cache reads / output.
-export function buildTrend(entries, { days = 30, now = Date.now() } = {}) {
-  const buckets = buildDayBuckets(entries);
-  const todayStart = startOfDay(now);
+export function buildTrend(entries, { days = 30, now = Date.now(), timezone } = {}) {
+  const buckets = buildDayBuckets(entries, timezone);
+  const todayStart = startOfDay(now, timezone);
   const rows = [];
-  for (const ts of eachDay(stepDay(todayStart, -(days - 1)), todayStart)) {
-    const date = localDate(ts);
+  for (const ts of eachDay(stepDay(todayStart, -(days - 1), timezone), todayStart, timezone)) {
+    const date = localDate(ts, timezone);
     rows.push(buckets.has(date) ? bucketRow(buckets.get(date), date) : zeroDay(date));
   }
   return rows;
@@ -90,12 +90,12 @@ export function buildTrend(entries, { days = 30, now = Date.now() } = {}) {
 // clients: {id: tokens} }`; agents absent on a day are simply missing from
 // the map (treated as 0). cost/sessions are day totals shared with the
 // class-split trend rows.
-export function buildTrendByAgent(entries, { days = 30, now = Date.now() } = {}) {
-  const buckets = buildDayBuckets(entries);
+export function buildTrendByAgent(entries, { days = 30, now = Date.now(), timezone } = {}) {
+  const buckets = buildDayBuckets(entries, timezone);
   const perClient = new Map();
   for (const e of entries) {
     if (!Number.isFinite(e.timestamp)) continue;
-    const key = localDate(e.timestamp);
+    const key = localDate(e.timestamp, timezone);
     let c = perClient.get(key);
     if (!c) {
       c = new Map();
@@ -104,10 +104,10 @@ export function buildTrendByAgent(entries, { days = 30, now = Date.now() } = {})
     const t = e.inputTokens + e.outputTokens + e.cacheReadTokens + e.cacheWriteTokens;
     c.set(e.client, (c.get(e.client) || 0) + t);
   }
-  const todayStart = startOfDay(now);
+  const todayStart = startOfDay(now, timezone);
   const rows = [];
-  for (const ts of eachDay(stepDay(todayStart, -(days - 1)), todayStart)) {
-    const date = localDate(ts);
+  for (const ts of eachDay(stepDay(todayStart, -(days - 1), timezone), todayStart, timezone)) {
+    const date = localDate(ts, timezone);
     const b = buckets.get(date);
     const c = perClient.get(date);
     rows.push({
@@ -121,7 +121,7 @@ export function buildTrendByAgent(entries, { days = 30, now = Date.now() } = {})
   return rows;
 }
 
-export function buildHourly(entries) {
+export function buildHourly(entries, timezone) {
   const hours = Array.from({ length: 24 }, (_, hour) => ({
     hour,
     input: 0,
@@ -134,7 +134,7 @@ export function buildHourly(entries) {
   }));
   for (const e of entries) {
     if (!Number.isFinite(e.timestamp)) continue;
-    const h = hours[new Date(e.timestamp).getHours()];
+    const h = hours[dateParts(e.timestamp, timezone).hour];
     h.input += e.inputTokens;
     h.cacheRead += e.cacheReadTokens;
     h.cacheWrite += e.cacheWriteTokens;
@@ -250,65 +250,65 @@ function localTimezone() {
 
 // Consecutive active-day runs over ALL history (not just the heatmap window).
 // `current` may end yesterday: a day still in progress shouldn't reset it.
-function computeStreaks(activeDates, now) {
+function computeStreaks(activeDates, now, timezone) {
   const active = new Set(activeDates);
   let longest = 0;
   let run = 0;
   let prev = null;
   for (const date of activeDates) {
-    const ts = dayKeyToTs(date);
-    run = prev != null && stepDay(prev, 1) === ts ? run + 1 : 1;
+    const ts = dayKeyToTs(date, timezone);
+    run = prev != null && stepDay(prev, 1, timezone) === ts ? run + 1 : 1;
     if (run > longest) longest = run;
     prev = ts;
   }
-  let cursor = startOfDay(now);
-  if (!active.has(localDate(cursor))) cursor = stepDay(cursor, -1);
+  let cursor = startOfDay(now, timezone);
+  if (!active.has(localDate(cursor, timezone))) cursor = stepDay(cursor, -1, timezone);
   let current = 0;
-  while (active.has(localDate(cursor))) {
+  while (active.has(localDate(cursor, timezone))) {
     current += 1;
-    cursor = stepDay(cursor, -1);
+    cursor = stepDay(cursor, -1, timezone);
   }
   return { current, longest };
 }
 
 // Per-day rows over the FULL history (heatmap only covers the recent window).
-function allDayRows(entries) {
-  return [...buildDayBuckets(entries).entries()]
+function allDayRows(entries, timezone) {
+  return [...buildDayBuckets(entries, timezone).entries()]
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([date, b]) => bucketRow(b, date));
 }
 
 // Everything the dashboard needs beyond the `--json` payload. `top` mirrors the
 // CLI --top limit for the sessions table.
-export function buildWebExtras(entries, { top = 20, weeks = 53, now = Date.now() } = {}) {
+export function buildWebExtras(entries, { top = 20, weeks = 53, now = Date.now(), timezone } = {}) {
   const { topSessions, longestSession } = buildSessionRows(entries, { top });
-  const todayStart = startOfDay(now);
-  const activeDays = allDayRows(entries).filter((d) => d.tokens > 0);
+  const todayStart = startOfDay(now, timezone);
+  const activeDays = allDayRows(entries, timezone).filter((d) => d.tokens > 0);
   const peakDay = activeDays.reduce(
     (best, d) => (best == null || d.tokens > best.tokens ? { date: d.date, tokens: d.tokens, costUsd: d.costUsd } : best),
     null,
   );
   return {
-    timezone: localTimezone(),
+    timezone: timezone ?? localTimezone(),
     activityRange: activityRange(entries),
-    heatmap: buildHeatmap(entries, { weeks, now }),
-    trend: buildTrend(entries, { days: 30, now }),
-    trend7: buildTrend(entries, { days: 7, now }),
-    trend90: buildTrend(entries, { days: 90, now }),
+    heatmap: buildHeatmap(entries, { weeks, now, timezone }),
+    trend: buildTrend(entries, { days: 30, now, timezone }),
+    trend7: buildTrend(entries, { days: 7, now, timezone }),
+    trend90: buildTrend(entries, { days: 90, now, timezone }),
     trendByAgent: {
-      7: buildTrendByAgent(entries, { days: 7, now }),
-      30: buildTrendByAgent(entries, { days: 30, now }),
-      90: buildTrendByAgent(entries, { days: 90, now }),
+      7: buildTrendByAgent(entries, { days: 7, now, timezone }),
+      30: buildTrendByAgent(entries, { days: 30, now, timezone }),
+      90: buildTrendByAgent(entries, { days: 90, now, timezone }),
     },
-    hourly: buildHourly(entries),
-    today: rangeStats(entries, (e) => Number.isFinite(e.timestamp) && localDate(e.timestamp) === localDate(now)),
-    last7Days: rangeStats(entries, (e) => Number.isFinite(e.timestamp) && e.timestamp >= stepDay(todayStart, -6)),
-    last30Days: rangeStats(entries, (e) => Number.isFinite(e.timestamp) && e.timestamp >= stepDay(todayStart, -29)),
-    thisMonth: rangeStats(entries, (e) => Number.isFinite(e.timestamp) && localMonth(e.timestamp) === localMonth(now)),
+    hourly: buildHourly(entries, timezone),
+    today: rangeStats(entries, (e) => Number.isFinite(e.timestamp) && localDate(e.timestamp, timezone) === localDate(now, timezone)),
+    last7Days: rangeStats(entries, (e) => Number.isFinite(e.timestamp) && e.timestamp >= stepDay(todayStart, -6, timezone)),
+    last30Days: rangeStats(entries, (e) => Number.isFinite(e.timestamp) && e.timestamp >= stepDay(todayStart, -29, timezone)),
+    thisMonth: rangeStats(entries, (e) => Number.isFinite(e.timestamp) && localMonth(e.timestamp, timezone) === localMonth(now, timezone)),
     activeDays: activeDays.length,
     streaks: computeStreaks(
       activeDays.map((d) => d.date),
-      now,
+      now, timezone,
     ),
     peakDay,
     topSessions,

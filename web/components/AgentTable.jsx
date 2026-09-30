@@ -89,8 +89,7 @@ export function RowTip({ tip, tx }) {
 // One table for agents and their models. Each agent is a folder: its models
 // start collapsed, sit in their own <tbody> and follow the same sort. The
 // open set is keyed by agent id so it survives period and sort changes.
-// `open`/`onToggle` make the expansion controlled — the day deck uses that
-// to keep its hidden measuring copy in sync with the visible table.
+// `open` / `onToggle` optionally keep expansion controlled by the parent.
 export default function AgentTable({ clients, models, pricing, sortBy, onSort, agentLabel, tx, open: openProp, onToggle: onToggleProp }) {
   const agents = useMemo(() => agentRows(clients, sortBy), [clients, sortBy]);
   const grouped = useMemo(() => modelsByAgent(models, sortBy), [models, sortBy]);

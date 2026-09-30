@@ -4,9 +4,7 @@ import { AgentDot, PartsLegend } from '@/components/Marks';
 import { Cells, RowTip, SortHeader, commonRate } from '@/components/AgentTable';
 import { modelRows } from '@/lib/report';
 
-// Every model in the period across all agents on one flat table, ranked by
-// the shared sort. Nothing folds into "others" here — this is the detailed
-// view, and the deck hands it a scrolling page when it grows tall.
+// Flat model table shared by Today and Calendar.
 export default function ModelTable({ models, pricing, sortBy, onSort, agentLabel, tx }) {
   const { rows } = useMemo(() => modelRows(models, sortBy, Infinity), [models, sortBy]);
   const rates = useMemo(() => new Map((pricing?.modelRates ?? []).map((rate) => [`${rate.client}\0${rate.model}`, rate])), [pricing]);

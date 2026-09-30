@@ -17,12 +17,14 @@
 
 ## 页面与数据流
 
-Next App Router 应用静态导出为 `web/out/`，生产环境由 CLI 托管，不用 `next start`。页面展示一个日历月、年或自定义范围：顶栏、筛选栏、范围/Agent 摘要与 KPI、可重排的热力图、趋势图和 Agent 表三张卡片、页脚。Token 与费用同时呈现；Agent 行可展开模型；Tokens/Cost 表头只控制排序，没有指标切换。`design-spec.md` 是视觉与交互规范。
+Next App Router 静态导出为 `web/out/`，生产由 CLI 托管。页面默认打开 Today，`Sidebar` 提供今天 / 日历 / 设置；`Toolbar` 保留品牌、配色与语言。顶栏与导航为纯灰底，主内容区保留点阵。`ReportActions` 在内容顶部提供刷新、更新单价、图片导出；`Settings` 管时区、SQLite 备份 / 合并与 Cursor CSV。视觉与交互以 `design-spec.md` 为准。
 
-主报告每次请求一个本地日历范围：`period=custom&since=<首日>&until=<末日>`，选择 Agent 时附加 `client`。筛选栏提供 1D（今天）、7D、MTD（本月至今）、30D、月份直达与包含首尾日期的自定义范围；日期输入拒绝无效日期、反向范围和未来结束日。条件只保存在 React 状态，不写页面 URL 或新增服务，仍依赖现有本地 API。快捷范围包含今天并按本地日历天计算，跨午夜与刷新时跟随当天。重置为当月、全部 Agent。
+Today 请求 `period=custom&since=<今天>&until=<今天>&timezone=<IANA>`，首先展示四项 KPI，`DayBody` 直接铺开小时分布、Agent / 模型、跨 Agent 模型和会话。日历使用 `CalendarView`：月历与单日详情左右排列，窄屏上下排列，年历 / 长范围在上方；所有详情进入页面正常流，不再使用展开弹层、拖拽排序或分页卡片堆。月历下显示范围总量与 `TrendCard`。`HeatGrid` 取 `daily`，Agent 取 `clients`，模型取 `models`，导航边界取 `scopeRange`。
 
-热力图取 `daily`，Agent 列表取 `clients`，模型取按客户端/展示名归并的 `models`；导航边界取 `scopeRange`。自定义范围最多 62 天用带月/日标签的日历，更长范围按年分组周网格。`TrendCard` 从筛选后的 `daily` 补零，不使用固定最近 30 天的 API `trend`；单日用 `hourly`，超过 62 个已过日期按月汇总，首尾月份仅含所选日期。`web/lib/useReport.js` 取消/序号校验旧请求，加载时保留带原周期和 Agent 标签的旧载荷；失败明确提示仍显示旧结果，未完成筛选时禁用图片导出。刷新先 POST 数据库更新，再重载当前报告及已加载的单日数据。
+日历保留 1D / 7D / MTD / 30D、月 / 年模式、月份直达、自定义首尾日期和 Agent 筛选。拒绝反向、无效或未来结束日；重置为当月和全部 Agent。条件保存在页面内存，刷新页面回到 Today。`useDayReport` 独立请求所选日期并沿用 Agent 和时区，不覆盖范围报告。日期按钮或 ‹ / › 直接切换；月 / 年模式跨周期同步移动范围，快捷 / 自定义范围的步进限制在范围内。
 
-双击热力图卡片打开 `ExpandedHeatmap`：报告卡片原位隐藏，展开层放在 `.report` 外，避免推动下面内容；用克隆快照在卡片与弹层间过渡。`useDayReport` 独立请求 `since=until=<日>` 并沿用 Agent，读取当天的 `totals`、`hourly`、`clients`、`models`、`topSessions`，不覆盖主报告。`DayDeck` 把小时、可展开 Agent、跨 Agent 模型表与会话按高度分页；当天 KPI 在日历下。月/年模式跨周期步进会同步移动主报告；快捷/自定义范围的单日步进限制在所选范围内。
+`web/lib/useReport.js` 将日期、Agent、时区作为请求标识，取消旧请求并校验序号。加载时保留带原日期 / Agent / 时区标签的载荷，时区改变则隐藏旧时区数据；单日加载失败显示错误和重试。任一已显示数据尚未完成或请求失败时禁止图片导出。切到设置会取消范围与单日请求并清除 loading 状态。刷新先 POST 替换数据库，再重载当前范围和单日。
 
-`web/lib/period.js` 管本地日历与周一开头的周；`web/lib/report.js` 管纯聚合；`web/lib/deck.js` 管单日卡片装页；`web/lib/prefs.js` 管所有 localStorage key；`web/lib/i18n.js` 管中英文案。PNG 导出由 `web/lib/exportImage.js` 用 `modern-screenshot` 截取 `.report` 并排除 `.no-export`；选中日期的环通过 `.report.is-exporting` 隐藏。`AgentTable` 使用固定表格布局，保证导出克隆与页面宽度一致。
+`web/lib/period.js` 负责时区检测与日期标签运算，每 30 秒及窗口重新获得焦点时更新当前日期。系统模式重新检测浏览器时区；手动时区不随系统变化。切时区后未来的自定义结束日收拢到今天。日期算法详见[数据契约](data-contract.md)。`prefs.js` 管全部 localStorage key：语言、配色、日历模式、表格排序和时区；不再读取旧卡片顺序。`format.js` 按载荷的时区显示会话与页脚时间。
+
+PNG 由 `modern-screenshot` 捕获 `.report`，包含 Today 全部详情或日历范围与单日详情、筛选摘要和页脚；导航、筛选操作、设置、toast、导入对话框不在捕获范围。`.no-export` 排除内嵌控件，`.is-exporting` 关闭日期选中环过渡并取消日历吸附，Agent 表格采用固定布局，保持展开状态和列宽。

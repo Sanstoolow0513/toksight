@@ -71,8 +71,8 @@ export function buildPayload(ctx) {
       firstAt: r.firstAt,
       lastAt: r.lastAt,
     })),
-    daily: agg.byDay(entries).map((r) => ({ date: r.key, ...r.totals, cacheHitRate: agg.cacheHitRate(r.totals) })),
-    monthly: agg.byMonth(entries).map((r) => ({ month: r.key, ...r.totals, cacheHitRate: agg.cacheHitRate(r.totals) })),
+    daily: agg.byDay(entries, opts.timezone).map((r) => ({ date: r.key, ...r.totals, cacheHitRate: agg.cacheHitRate(r.totals) })),
+    monthly: agg.byMonth(entries, opts.timezone).map((r) => ({ month: r.key, ...r.totals, cacheHitRate: agg.cacheHitRate(r.totals) })),
     sessions: agg.bySession(entries, pricing.priceFor).slice(0, opts.top).map((r) => ({
       client: r.client,
       sessionId: r.sessionId,

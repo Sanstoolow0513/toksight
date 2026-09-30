@@ -19,9 +19,11 @@ Cursor 记录可额外包含 `cursorMaxMode`，保存 CSV `Max Mode` 列的布�
 
 ## 日期与范围
 
-CLI 的 `--since` / `--until`、按天聚合及 Web 服务端周期使用机器本地时区。服务端的本地日期算法集中在 `src/dates.js`：校验真实日历日期，用当地午夜推进日历天，跨 DST 不直接加 `24h`。前端 `web/lib/period.js` 独立处理本地 `YYYY-MM-DD` 的月/年与周一开头的日历；前端日期键使用 `Date` 的本地年月日，不用 `toISOString()` 生成日期键。
+CLI 的 `--since` / `--until` 与按天聚合保持机器本地时区。Web 可传 `timezone`（IANA 名称，省略时仍使用服务端本地时区）；浏览器默认检测自己的时区，手动选择保存在 `toksight-timezone`。所有服务端算法集中在 `src/dates.js`，通过可选时区参数参与日期边界、天/月分组、小时归属、热力图、趋势、连续天数和相邻周期计算，不修改全局 `process.env.TZ` 或原始时间戳。
 
-Web 查询 `period` 接受 `all`、`today`、`7d`、`30d`、`month`、`custom`，另有 `client`、`since`、`until`。`custom` 必须同时带起止日；预设周期不能带起止日。未知或重复参数为 HTTP 400。查询与启动时的客户端、时间范围取交集，不能扩大启动范围。`scopeRange` 反映启动范围内的活动边界，与当前查询周期无关。
+按所选时区的日历天运算。`Intl.DateTimeFormat` 提供该时区的年月日 / 小时；缓存的日界查找处理午夜缺失或重复，整日范围包含最后一毫秒。每一天仍使用 24 个钟面小时桶，重复小时合并、跳过小时为零，界面不区分夏令 / 冬令子视图。前端 `web/lib/period.js` 用所选时区生成真实时间的日期键，月 / 年 / 周与日步进只对民用日期标签运算；UTC 仅充当标签运算的临时日历，不能用真实时间的 UTC 日期替代当地日期。
+
+Web 查询 `period` 接受 `all`、`today`、`7d`、`30d`、`month`、`custom`，另有 `client`、`since`、`until`、`timezone`。`custom` 必须同时带起止日；预设周期不能带起止日。未知 / 重复参数、无效日期或时区均返回 HTTP 400。查询与启动时的客户端、绝对时间范围取交集，不能扩大启动范围。`scopeRange` 反映启动范围内的活动边界，与当前查询周期无关。`timezone` 返回本次报告实际使用的时区；CLI JSON 的字段语义保持不变。
 
 ## JSON 形状
 

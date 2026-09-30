@@ -52,22 +52,28 @@ function toDate(ts) {
   return Number.isNaN(d.getTime()) ? null : d;
 }
 
-export function fmtDateTime(ts) {
+export function fmtDateTime(ts, timeZone) {
   const d = toDate(ts);
   if (!d) return '—';
+  if (timeZone) {
+    const parts = new Intl.DateTimeFormat('en-US-u-ca-gregory-nu-latn', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(d);
+    const p = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+    return `${p.year}-${p.month}-${p.day} ${p.hour}:${p.minute}`;
+  }
   return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
 }
 
 // Local wall-clock "HH:MM".
-export function fmtClock(ts) {
+export function fmtClock(ts, timeZone) {
   const d = toDate(ts);
+  if (d && timeZone) return new Intl.DateTimeFormat('en-GB', { timeZone, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(d);
   return d ? `${pad2(d.getHours())}:${pad2(d.getMinutes())}` : '—';
 }
 
 // "09:12–11:40", a single time when both ends share a minute, null without times.
-export function fmtClockRange(start, end) {
+export function fmtClockRange(start, end, timeZone) {
   if (toDate(start) == null) return null;
-  const a = fmtClock(start);
-  const b = toDate(end) == null ? a : fmtClock(end);
+  const a = fmtClock(start, timeZone);
+  const b = toDate(end) == null ? a : fmtClock(end, timeZone);
   return a === b ? a : `${a}–${b}`;
 }

@@ -25,6 +25,16 @@ test('quick ranges include today and cross leap days, years and DST as local cal
   assert.deepEqual(bounds('7d', '2026-11-03'), { since: '2026-10-28', until: '2026-11-03' });
 });
 
+test('browser dates and session clocks follow the selected zone rather than the host', () => {
+  const instant = new Date('2026-09-30T01:00:00Z');
+  assert.equal(dayKey(instant, 'Asia/Shanghai'), '2026-09-30');
+  assert.equal(dayKey(instant, 'America/Los_Angeles'), '2026-09-29');
+  assert.deepEqual(currentPeriod('month', new Date('2026-10-01T01:00:00Z'), 'America/Los_Angeles'), { mode: 'month', year: 2026, month: 9 });
+  assert.equal(fmtClock(instant, 'Asia/Shanghai'), '09:00');
+  assert.equal(fmtClockRange(instant, new Date('2026-09-30T02:00:00Z'), 'America/Los_Angeles'), '18:00–19:00');
+  assert.deepEqual(eachDayKey('2011-12-29', '2011-12-31'), ['2011-12-29', '2011-12-30', '2011-12-31']);
+});
+
 test('custom dates validate calendar days and return to the containing month or year', () => {
   assert.equal(validRange('2028-02-29', '2028-03-01', '2028-03-01'), true);
   for (const [since, until] of [['', '2028-03-01'], ['2026-02-29', '2028-03-01'], ['2028-03-02', '2028-03-01'], ['2028-03-01', '2028-03-02'], ['2028-13-01', '2028-13-02']]) {
@@ -228,7 +238,7 @@ test('day stepping crosses month, year and leap-day boundaries in local time', (
   assert.equal(inPeriod('2026-10-01', { mode: 'year', year: 2026, month: 9 }), true);
 });
 
-test('an opened heatmap starts on the marked day, else the latest active day of the period', () => {
+test('the calendar starts on the selected day, else the latest active day of the period', () => {
   const days = dailyMap([
     { date: '2026-09-03', ...usage() },
     { date: '2026-09-10', ...usage({ outputTokens: 900 }) },

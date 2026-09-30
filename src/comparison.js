@@ -23,11 +23,12 @@ function contributions(current, previous, group, key) {
 }
 
 export function buildComparison(entries, opts, base, context, now = Date.now()) {
-  const until = opts.until ?? endOfDay(now);
-  const since = opts.since ?? stepDay(startOfDay(until), -6);
+  const tz = opts.timezone;
+  const until = opts.until ?? endOfDay(now, tz);
+  const since = opts.since ?? stepDay(startOfDay(until, tz), -6, tz);
   if (since > until) return { available: false, reason: 'empty-range' };
-  const days = calendarDaysBetween(since, until) + 1;
-  const previousSince = stepDay(since, -days), previousUntil = since - 1;
+  const days = calendarDaysBetween(since, until, tz) + 1;
+  const previousSince = stepDay(since, -days, tz), previousUntil = since - 1;
   if (base.since != null && previousSince < base.since) return { available: false, reason: 'startup-range' };
   const current = [], previous = [];
   let untimestampedRequests = 0;

@@ -3,16 +3,16 @@
 
 import { DEFAULT_LOCALE, LOCALES } from './i18n.js';
 import { SORT_KEYS } from './report.js';
+import { validTimezone } from './period.js';
 
-export const CARD_IDS = ['heatmap', 'trend', 'agents'];
 export const THEMES = ['light', 'dark', 'system'];
 
 const KEYS = {
   locale: 'toksight-locale',
   theme: 'toksight-theme',
-  order: 'toksight-card-order',
   mode: 'toksight-period-mode',
   agentSort: 'toksight-agent-sort',
+  timezone: 'toksight-timezone',
 };
 
 function read(key) {
@@ -28,14 +28,6 @@ function write(key, value) {
     window.localStorage.setItem(key, value);
   } catch {
     /* private mode / storage disabled: the preference just won't persist */
-  }
-}
-
-function readJson(key) {
-  try {
-    return JSON.parse(read(key));
-  } catch {
-    return null;
   }
 }
 
@@ -56,27 +48,17 @@ export function readMode() {
 }
 export const writeMode = (v) => write(KEYS.mode, v);
 
-export function readOrder() {
-  const v = readJson(KEYS.order);
-  if (!Array.isArray(v)) return CARD_IDS;
-  const seen = new Set();
-  const next = [];
-  for (const id of v) {
-    if (CARD_IDS.includes(id) && !seen.has(id)) {
-      seen.add(id);
-      next.push(id);
-    }
-  }
-  // Keep existing card order and append newly introduced cards.
-  return [...next, ...CARD_IDS.filter((id) => !seen.has(id))];
-}
-export const writeOrder = (v) => write(KEYS.order, JSON.stringify(v));
-
 export function readAgentSort() {
   const v = read(KEYS.agentSort);
   return SORT_KEYS.includes(v) ? v : 'tokens';
 }
 export const writeAgentSort = (v) => write(KEYS.agentSort, v);
+
+export function readTimezone() {
+  const value = read(KEYS.timezone);
+  return validTimezone(value) ? value : 'auto';
+}
+export const writeTimezone = (v) => write(KEYS.timezone, v);
 
 export function resolveTheme(pref) {
   if (pref !== 'system') return pref;

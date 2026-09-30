@@ -1,5 +1,4 @@
 import { useMemo } from 'react';
-import Card from '@/components/Card';
 import { periodBounds } from '@/lib/period';
 import { trendSeries } from '@/lib/report';
 import { fmtCost, fmtTokens } from '@/lib/format';
@@ -29,15 +28,16 @@ function TrendPlot({ rows, metric, label, format, unit }) {
   );
 }
 
-export default function TrendCard({ data, period, today, locale, tx, handleProps }) {
+export default function TrendCard({ data, period, today, locale, tx }) {
   const { since, until } = periodBounds(period);
   const series = useMemo(() => trendSeries(data.daily, data.hourly, { since, until, today }), [data.daily, data.hourly, since, until, today]);
   return (
-    <Card title={tx('cardTrend')} subtitle={`${periodLabel(locale, period)} · ${tx(`trend${series.unit}`)}`} handleProps={handleProps}>
+    <section className="trend-section">
+      <header className="trend-head"><h3>{tx('cardTrend')}</h3><p>{periodLabel(locale, period)} · {tx(`trend${series.unit}`)}</p></header>
       <div className="trend-charts">
         <TrendPlot rows={series.rows} metric="tokens" label={tx('trendTokens')} format={fmtTokens} unit={series.unit} />
         <TrendPlot rows={series.rows} metric="cost" label={tx('trendCost')} format={fmtCost} unit={series.unit} />
       </div>
-    </Card>
+    </section>
   );
 }

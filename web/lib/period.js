@@ -4,22 +4,44 @@
 const pad = (n) => String(n).padStart(2, '0');
 export const QUICK_RANGES = ['1d', '7d', 'mtd', '30d'];
 
-export function dayKey(date) {
+export function dayKey(date, timeZone) {
+  if (timeZone) {
+    const parts = new Intl.DateTimeFormat('en-US-u-ca-gregory-nu-latn', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(date);
+    const values = Object.fromEntries(parts.map((p) => [p.type, p.value]));
+    return `${values.year}-${values.month}-${values.day}`;
+  }
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 }
 
+export function validTimezone(zone) {
+  if (typeof zone !== 'string' || !zone || zone.length > 100 || /^[+-]/.test(zone)) return false;
+  try { new Intl.DateTimeFormat('en', { timeZone: zone }); return true; } catch { return false; }
+}
+
+export function detectedTimezone() {
+  return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+}
+
+export function timezoneOptions(current) {
+  const zones = Intl.supportedValuesOf?.('timeZone') ?? [];
+  return [...new Set(['UTC', 'Asia/Shanghai', 'Asia/Hong_Kong', 'Asia/Tokyo', 'America/Los_Angeles', 'America/New_York', 'Europe/London', ...zones, current].filter(Boolean))].sort();
+}
+
+// Date labels are civil dates in the chosen reporting zone. Use a scratch UTC
+// calendar only for arithmetic so the browser's own DST cannot skip a label.
+const calendarKey = (date) => `${date.getUTCFullYear()}-${pad(date.getUTCMonth() + 1)}-${pad(date.getUTCDate())}`;
 function parseKey(key) {
   const [y, m, d] = key.split('-').map(Number);
-  return new Date(y, m - 1, d);
+  return new Date(Date.UTC(y, m - 1, d));
 }
 
 export function daysInMonth(year, month) {
-  return new Date(year, month, 0).getDate();
+  return new Date(Date.UTC(year, month, 0)).getUTCDate();
 }
 
 // `month` (1–12) is kept in year mode too, so switching back restores it.
-export function currentPeriod(mode = 'month', now = new Date()) {
-  return { mode, year: now.getFullYear(), month: now.getMonth() + 1 };
+export function currentPeriod(mode = 'month', now = new Date(), timeZone) {
+  return periodOf(dayKey(now, timeZone), mode);
 }
 
 export function periodBounds({ mode, year, month, since, until }) {
@@ -53,7 +75,7 @@ export function shiftPeriod(p, delta) {
 // A period that starts after today is clamped back to the one containing today.
 export function withMode(p, mode, today) {
   const next = p.mode === 'custom' ? periodOf(p.until, mode) : { ...p, mode };
-  return periodBounds(next).since > today ? currentPeriod(mode, parseKey(today)) : next;
+  return periodBounds(next).since > today ? periodOf(today, mode) : next;
 }
 
 export function quickPeriod(preset, today) {
@@ -62,7 +84,7 @@ export function quickPeriod(preset, today) {
 }
 
 export function validDay(key) {
-  return typeof key === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(key) && dayKey(parseKey(key)) === key;
+  return typeof key === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(key) && calendarKey(parseKey(key)) === key;
 }
 
 // Inclusive local calendar days; a selected range cannot extend into the future.
@@ -84,8 +106,8 @@ export function periodNav(p, { firstDay, today }) {
 
 export function shiftDay(key, delta) {
   const date = parseKey(key);
-  date.setDate(date.getDate() + delta);
-  return dayKey(date);
+  date.setUTCDate(date.getUTCDate() + delta);
+  return calendarKey(date);
 }
 
 // The day panel steps back to the first active day and never past today.
@@ -98,15 +120,15 @@ export function eachDayKey(since, until) {
   const cursor = parseKey(since);
   const end = parseKey(until);
   while (cursor <= end) {
-    out.push(dayKey(cursor));
-    cursor.setDate(cursor.getDate() + 1);
+    out.push(calendarKey(cursor));
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
   }
   return out;
 }
 
 // Monday = 0 … Sunday = 6.
 export function weekdayIndex(key) {
-  return (parseKey(key).getDay() + 6) % 7;
+  return (parseKey(key).getUTCDay() + 6) % 7;
 }
 
 // Whole Monday-start weeks covering the period; slots outside it are null.

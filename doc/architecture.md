@@ -31,7 +31,7 @@ web/ 源码 -> Next 静态导出 web/out/ -> src/webserver.js 提供页面与同
 | `src/args.js` | 命令与参数解析，支持 `--flag value` 和 `--flag=value`；测试可注入 `now` |
 | `src/collect.js` | 所有客户端采集、导入记录合并、价格与筛选；`collectAll(opts, { env, home })` |
 | `src/clients/`、`src/fsutils.js` | 各 Agent 解析器、SQLite 只读打开、文件遍历和容错 |
-| `src/aggregate.js`、`src/dates.js` | 聚合与服务端本地日期运算 |
+| `src/aggregate.js`、`src/dates.js` | 聚合与服务端日期运算（CLI 本地时区，Web 可选 IANA 时区） |
 | `src/payload.js`、`src/render.js`、`src/format.js` | CLI JSON 契约、文本输出、ANSI/数字格式 |
 | `src/database.js`、`src/usageimports.js` | 项目数据库、持久导入、快照和跨进程版本检测 |
 | `src/dbtransfer.js`、`src/dbcommand.js` | SQLite 备份验证/合并与 CLI 文件操作 |

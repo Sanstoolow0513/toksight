@@ -1,23 +1,13 @@
 'use client';
 
 import { memo, useMemo, useState } from 'react';
-import { Maximize2 } from 'lucide-react';
-import Card from '@/components/Card';
+
+
 import Tooltip from '@/components/Tooltip';
 import { calendarWeeks, compactCalendar, periodBounds } from '@/lib/period';
-import { cacheHitRate, dailyMap, heatLevel, heatMax, heatSummary, metricValue, openingDay } from '@/lib/report';
+import { cacheHitRate, heatLevel, heatMax, metricValue } from '@/lib/report';
 import { fmtCost, fmtCostShort, fmtInt, fmtPct, fmtTokens } from '@/lib/format';
 import { MONTHS, WEEKDAYS, dayLabel, periodLabel, weekdayLabel } from '@/lib/i18n';
-
-function Stat({ label, value, sub }) {
-  return (
-    <div className="heat-stat">
-      <span className="stat-label">{label}</span>
-      <span className="stat-value">{value}</span>
-      {sub ? <span className="stat-sub">{sub}</span> : null}
-    </div>
-  );
-}
 
 function cellClass(base, level, date, today, selected) {
   let cls = `${base} lv-${level}`;
@@ -140,9 +130,8 @@ function DayTip({ date, row, today, locale, tx }) {
   );
 }
 
-// The calendar shared by the report card and its opened sheet: grid, hover
-// tooltip and legend. A click on a past day reaches `onPick(date, event)`;
-// the event's `detail` tells a keyboard press (0) from mouse clicks.
+// Calendar grid, hover details and legend. Click or keyboard activation
+// directly selects a day in the adjacent detail view.
 export function HeatGrid({ days, period, today, selected, onPick, hint, active = true, locale, tx }) {
   const [tip, setTip] = useState(null);
   const { since, until } = periodBounds(period);
@@ -202,66 +191,5 @@ export function HeatGrid({ days, period, today, selected, onPick, hint, active =
         </Tooltip>
       ) : null}
     </>
-  );
-}
-
-const isControl = (target) => Boolean(target.closest?.('.card-actions'));
-
-// While `sheeted` the card is open over the page: it keeps its slot but
-// hides, so the report below never moves.
-export default function HeatmapCard({ data, period, today, selected, onSelect, onExpand, sheeted, cardRef, locale, tx, handleProps }) {
-  const { since, until } = periodBounds(period);
-  const days = useMemo(() => dailyMap(data.daily), [data.daily]);
-  const summary = useMemo(() => heatSummary(days, { since, until, today }), [days, since, until, today]);
-  const label = periodLabel(locale, period);
-  const expand = (date) => onExpand(date ?? openingDay(days, { since, until, today, selected }) ?? today);
-
-  // A mouse click marks a day and a double click anywhere opens the card;
-  // Enter on a day opens it straight away.
-  const onPick = (date, e) => {
-    if (e.detail === 0) expand(date);
-    else if (e.detail === 1) onSelect(date);
-  };
-  const onDoubleClick = (e) => {
-    if (isControl(e.target)) return;
-    const date = e.target.closest?.('[data-date]')?.dataset.date;
-    expand(date && date <= today ? date : null);
-  };
-  // Keeps a double click from selecting the text under it.
-  const onMouseDown = (e) => {
-    if (e.detail > 1 && !isControl(e.target)) e.preventDefault();
-  };
-
-  return (
-    <Card
-      ref={cardRef}
-      className={sheeted ? 'is-sheeted' : undefined}
-      onDoubleClick={onDoubleClick}
-      onMouseDown={onMouseDown}
-      handleProps={handleProps}
-      title={tx('cardHeat')}
-      subtitle={tx('subHeat', { period: label })}
-      actions={
-        <button type="button" className="card-btn" onClick={() => expand(null)} aria-label={tx('sheetOpen')} title={tx('sheetOpen')}>
-          <Maximize2 size={15} strokeWidth={2} aria-hidden="true" />
-        </button>
-      }
-    >
-      <div className="heat-stats">
-        <Stat label={tx('statActive')} value={tx('statActiveValue', { n: summary.activeDays, total: summary.elapsedDays })} />
-        <Stat
-          label={tx('statAverage')}
-          value={summary.average ? fmtTokens(summary.average.tokens) : '—'}
-          sub={summary.average ? fmtCost(summary.average.cost) : null}
-        />
-        <Stat
-          label={tx('statPeak')}
-          value={summary.peak ? fmtTokens(summary.peak.tokens) : '—'}
-          sub={summary.peak ? `${dayLabel(locale, summary.peak.date)} · ${fmtCost(summary.peak.cost)}` : null}
-        />
-        <Stat label={tx('statStreak')} value={tx('statStreakValue', { n: summary.longestStreak })} />
-      </div>
-      <HeatGrid days={days} period={period} today={today} selected={selected} onPick={onPick} hint={tx('dayHint')} active={!sheeted} locale={locale} tx={tx} />
-    </Card>
   );
 }
