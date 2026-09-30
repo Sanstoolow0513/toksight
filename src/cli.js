@@ -57,9 +57,9 @@ Options
   --version        Print version
   --help           Print this help
 
-Data stays on your machine: toksight reads agent files and writes only its own SQLite database.
+Usage stays local by default: toksight reads agent files and writes its own SQLite database and price caches.
 Pricing: built-in estimates, refreshed from LiteLLM (7-day disk cache), overridable
-in ${path.join('<config>', 'toksight', 'pricing.json')} — see README.
+in ${path.join('<toksight-dir>', 'pricing.json')} — see README for the directory location.
 Inspired by tokscale.`;
 
 function openBrowser(url) {

@@ -12,19 +12,28 @@ const require = createRequire(import.meta.url);
 const pkg = require('../package.json');
 
 function modelRateRows(entries, pricing) {
-  const seen = new Set(), rows = [];
+  const groups = new Map(), rows = [];
   for (const entry of entries) {
     const key = `${entry.client}\0${entry.model}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    const rate = pricing.priceFor?.(entry.model, entry.client);
-    const validRate = rate && ['input', 'cacheRead', 'cacheWrite', 'output'].every((part) => Number.isFinite(rate[part]));
-    const identity = modelIdentity(entry.model, entry.client);
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(entry);
+  }
+  const parts = ['input', 'cacheRead', 'cacheWrite', 'output'];
+  for (const group of groups.values()) {
+    const entry = group[0];
+    const baseRate = pricing.priceFor?.(entry.model, entry.client);
+    const applied = group.map((e) => pricing.priceFor?.(e.model, e.client, e));
+    const rate = applied[0];
+    const consistent = applied.every((r) => r?.source === rate?.source && parts.every((part) => r?.[part] === rate?.[part]));
+    const validRate = consistent && rate && parts.every((part) => Number.isFinite(rate[part]));
+    const identity = modelIdentity(entry.model, entry.client, baseRate);
     rows.push({
       client: entry.client, scope: entry.client === 'cursor' ? 'cursor' : 'default',
-      model: entry.model, displayModel: reportModelName(entry.model, entry.client, rate),
-      modelId: rate?.modelId ?? identity.id,
+      model: entry.model, displayModel: reportModelName(entry.model, entry.client, baseRate),
+      modelId: baseRate?.modelId ?? identity.id,
       effort: identity.effort, source: validRate ? rate.source : null, pool: rate?.pool ?? null,
+      ...(entry.client === 'cursor' ? { maxMode: Boolean(identity.maxMode), variableRates: !consistent,
+        priceFetchedAt: rate?.cursor?.fetchedAt ?? null, retained: Boolean(rate?.cursor?.retained) } : {}),
       ...(validRate ? { input: rate.input * 1e6, cacheRead: rate.cacheRead * 1e6,
         cacheWrite: rate.cacheWrite * 1e6, output: rate.output * 1e6 } : {}),
     });

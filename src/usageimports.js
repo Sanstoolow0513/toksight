@@ -5,6 +5,7 @@ import { createHash } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
 import { existsSync } from 'node:fs';
 import { createPriceLookup } from './pricecatalog.js';
+import { decodeCursorPrice } from './cursormodels.js';
 
 export function usageRows(rows) {
   const counts = new Map();
@@ -54,12 +55,14 @@ export function readStoredPriceFor(file, warnings = []) {
     const tables = new Set(db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all().map((r) => r.name));
     const meta = tables.has('snapshot_meta') ? db.prepare('SELECT model_prices_json FROM snapshot_meta WHERE id = 1').get() : null;
     const prices = new Map(meta ? JSON.parse(meta.model_prices_json) : []);
+    const hasMetadata = tables.has('model_prices') && db.prepare('PRAGMA table_info(model_prices)').all().some((c) => c.name === 'metadata_json');
     const catalog = tables.has('model_prices') ? db.prepare(`SELECT scope, source, model_id AS modelId, name, provider, pool,
       input_usd_per_token AS input, cache_read_usd_per_token AS cacheRead,
       cache_write_usd_per_token AS cacheWrite, output_usd_per_token AS output,
-      cache_read_fallback AS cacheReadFallback, cache_write_fallback AS cacheWriteFallback FROM model_prices ORDER BY id`).all() : [];
+      cache_read_fallback AS cacheReadFallback, cache_write_fallback AS cacheWriteFallback,
+      ${hasMetadata ? 'metadata_json' : "'null'"} AS cursorJson FROM model_prices ORDER BY id`).all().map(decodeCursorPrice) : [];
     const lookup = createPriceLookup(catalog);
-    return (model, client) => lookup(model, client) ?? prices.get(client === 'cursor' ? `cursor\u0000${model}` : model) ?? null;
+    return (model, client, entry = null) => lookup(model, client, entry) ?? prices.get(client === 'cursor' ? `cursor\u0000${model}` : model) ?? null;
   } catch (err) {
     warnings.push(`toksight: cannot read saved prices (${err.message})`);
     return () => null;

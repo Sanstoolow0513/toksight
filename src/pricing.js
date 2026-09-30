@@ -138,12 +138,9 @@ function buildLitellmMap(data) {
         input: v.input_cost_per_token,
         output: v.output_cost_per_token,
         // When LiteLLM lacks cache prices, fall back to the input price. This
-        // is a deliberate conservative OVERestimate (cache reads are usually
-        // ~10% of the input price) — costs are never silently undercounted,
-        // and models with real cache prices price normally. Alternative
-        // (treat the entry as unpriced) was rejected for now; a second
-        // pricing source to fill the gap is tracked in AGENTS.md
-        // ("Researched but not implemented" — models.dev).
+        // may overestimate cache reads when their actual rate is lower;
+        // models with separate cache prices use those rates. The fallback is
+        // exposed through costCoverage so reports can explain the estimate.
         cacheRead: v.cache_read_input_token_cost ?? v.input_cost_per_token,
         cacheWrite: v.cache_creation_input_token_cost ?? v.input_cost_per_token,
         source: 'litellm',

@@ -70,11 +70,11 @@ export async function collectAll(opts, { env = process.env, home = os.homedir() 
   const filteredResult = filterEntries(all, opts);
   warnings.push(...filteredResult.warnings);
   let cursorPriceFor = () => null;
-  let cursorState = 'skipped (no Included usage)';
+  let cursorState = 'skipped (no Cursor usage)';
   let cursorRecords = [];
   let cursorSourceDetails = null;
   let savedCursorPriceFor = () => null;
-  if (filteredResult.entries.some((e) => e.client === 'cursor' && e.costUsd == null && includedCursorCosts.has(e))) {
+  if (filteredResult.entries.some((e) => e.client === 'cursor')) {
     savedCursorPriceFor = readStoredPriceFor(databasePath({ env, home }), warnings);
     try {
       const cursorPricing = await getCursorPricing({ offline: opts.offline, env, home });
@@ -91,7 +91,7 @@ export async function collectAll(opts, { env = process.env, home = os.homedir() 
   }
   const pricing = {
     ...basePricing,
-    priceFor: (model, client) => client === 'cursor' ? cursorPriceFor(model) ?? savedCursorPriceFor(model, client) : basePricing.priceFor(model) ?? importedPrices.get(model) ?? null,
+    priceFor: (model, client, entry = null) => client === 'cursor' ? cursorPriceFor(model, entry) ?? savedCursorPriceFor(model, client, entry) : basePricing.priceFor(model) ?? importedPrices.get(model) ?? null,
     records: [...basePricing.records, ...cursorRecords],
     sourceDetails: { ...basePricing.sourceDetails, ...(cursorSourceDetails ? { cursor: cursorSourceDetails } : {}) },
     sources: { ...basePricing.sources, cursor: cursorState },
@@ -101,7 +101,7 @@ export async function collectAll(opts, { env = process.env, home = os.homedir() 
     if (e.costUsd != null && !estimatedImports.has(e)) reportedCosts.add(e);
     // A CSV charge wins. An Included row uses Cursor's current public rate as
     // a reference estimate and retains its non-reported provenance.
-    const price = e.client === 'cursor' && !includedCursorCosts.has(e) ? null : pricing.priceFor(e.model, e.client);
+    const price = e.client === 'cursor' && !includedCursorCosts.has(e) ? null : pricing.priceFor(e.model, e.client, e);
     const costUsd = computeCost(e, price);
     return costUsd === e.costUsd ? e : { ...e, costUsd };
   });

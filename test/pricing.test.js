@@ -45,8 +45,14 @@ test('computeCost sums token classes; source cost wins', () => {
   assert.equal(computeCost({ inputTokens: 5, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, costUsd: null }, null), null);
 });
 
-test('user overrides file wins over builtin (suffix match)', async () => {
+test('an unambiguous user provider-suffix override wins over bare LiteLLM prices', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'toksight-cfg-'));
+  fs.mkdirSync(path.join(dir, 'cache'));
+  fs.writeFileSync(path.join(dir, 'cache', 'litellm-pricing.json'), JSON.stringify({
+    fetchedAt: Date.now(), data: { 'glm-5.3': {
+      mode: 'chat', input_cost_per_token: 2e-6, output_cost_per_token: 3e-6,
+    } },
+  }));
   fs.writeFileSync(
     path.join(dir, 'pricing.json'),
     JSON.stringify({ 'zhipuai/glm-5.3': { input: 1, output: 2, cacheRead: 0.1, cacheWrite: 1 } }),
@@ -57,6 +63,12 @@ test('user overrides file wins over builtin (suffix match)', async () => {
   assert.equal(p.source, 'user');
   assert.equal(p.input, 1e-6);
   assert.equal(p.output, 2e-6);
+  fs.writeFileSync(path.join(dir, 'pricing.json'), JSON.stringify({
+    'zhipuai/glm-5.3': { input: 1, output: 2 },
+    'other/glm-5.3': { input: 4, output: 5 },
+  }));
+  const ambiguous = await getPricing({ offline: true, env: { TOKSIGHT_CONFIG_DIR: dir } });
+  assert.equal(ambiguous.priceFor('GLM-5.3').source, 'litellm');
 });
 
 test('LiteLLM price cache lasts a week and a forced update bypasses it', async () => {
