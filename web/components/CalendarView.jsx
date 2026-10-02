@@ -1,5 +1,5 @@
-import { useMemo } from 'react';
-import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { useMemo, useRef } from 'react';
+import { ArrowDown, ChevronLeft, ChevronRight } from 'lucide-react';
 import { HeatGrid } from '@/components/HeatGrid';
 import DayDetail from '@/components/DayDetail';
 import Segmented from '@/components/Segmented';
@@ -14,8 +14,30 @@ export default function CalendarView({ data, period, today, firstDay, day, onPic
   const days = useMemo(() => dailyMap(data.daily), [data.daily]);
   const nav = periodNav(period, { firstDay, today });
   const wide = compactCalendar(period);
+  const calendarRef = useRef(null);
+  const detailRef = useRef(null);
+  const trendRef = useRef(null);
+  const scrollTo = (ref, focusTarget) => {
+    const element = ref.current;
+    if (!element) return;
+    const inset = window.matchMedia('(max-width: 600px)').matches ? document.querySelector('.sidebar').getBoundingClientRect().height + 16 : 24;
+    const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    window.scrollTo({ top: Math.max(0, element.getBoundingClientRect().top + window.scrollY - inset), behavior: reducedMotion ? 'auto' : 'smooth' });
+    if (focusTarget) element.querySelector(focusTarget)?.focus({ preventScroll: true });
+  };
+  const pickDay = (date, event) => {
+    onPick(date);
+    if (wide || window.matchMedia('(max-width: 1050px)').matches) {
+      requestAnimationFrame(() => scrollTo(detailRef, event.detail === 0 ? '.xday-title' : null));
+    }
+  };
   return <div className={`calendar-workspace${wide ? ' is-wide' : ''}`}>
-    <section className="calendar-overview">
+    <section className="calendar-summary" aria-label={tx('rangeSummary')}>
+      <div><span>{tx('rangeTokens')}</span><strong>{fmtTokens(data.totals.totalTokens)}</strong></div>
+      <div><span>{tx('rangeCost')}</span><strong>{data.totals.pricedRequests ? fmtCost(data.totals.costUsd) : data.totals.requests ? tx('rowUnpriced') : fmtCost(0)}</strong></div>
+      <button type="button" className="summary-trend-link no-export" onClick={() => scrollTo(trendRef, 'h3')}>{tx('cardTrend')}<ArrowDown size={14} aria-hidden="true" /></button>
+    </section>
+    <section ref={calendarRef} className="calendar-overview">
       <header className="calendar-head">
         <h2>{periodLabel(locale, period)}</h2>
         <div className="calendar-controls no-export">
@@ -27,11 +49,12 @@ export default function CalendarView({ data, period, today, firstDay, day, onPic
           </div> : null}
         </div>
       </header>
-      <HeatGrid days={days} period={period} today={today} selected={day} onPick={onPick} hint={tx('calendarHint')} locale={locale} tx={tx} />
-      <div className="calendar-summary"><div><span>{tx('rangeTokens')}</span><strong>{fmtTokens(data.totals.totalTokens)}</strong></div>
-        <div><span>{tx('rangeCost')}</span><strong>{data.totals.pricedRequests ? fmtCost(data.totals.costUsd) : data.totals.requests ? tx('rowUnpriced') : fmtCost(0)}</strong></div></div>
-      <TrendCard data={data} period={period} today={today} locale={locale} tx={tx} />
+      <HeatGrid days={days} period={period} today={today} selected={day} onPick={pickDay} hint={tx('calendarHint')} locale={locale} tx={tx} />
     </section>
-    {day ? <DayDetail day={day} report={dayReport} nav={dayNav} today={today} onStep={onStep} locale={locale} tx={tx} {...shared} /> : null}
+    <div ref={detailRef} className="calendar-detail">
+      {day ? <DayDetail day={day} report={dayReport} nav={dayNav} today={today} onStep={onStep} locale={locale} tx={tx}
+        onBack={() => scrollTo(calendarRef, '.is-selected')} {...shared} /> : null}
+    </div>
+    <div ref={trendRef} className="calendar-trends"><TrendCard data={data} period={period} today={today} locale={locale} tx={tx} /></div>
   </div>;
 }

@@ -1,9 +1,10 @@
 import { Fragment, useId, useMemo, useState } from 'react';
-import { ArrowDown, ChevronRight } from 'lucide-react';
+import { ArrowDown, ChevronRight, Info } from 'lucide-react';
 import Tooltip from '@/components/Tooltip';
 import { AgentDot, CacheRing, CostValue, PartsBar, PartsLegend, agentStyle } from '@/components/Marks';
 import { TOKEN_PARTS, agentRows, modelsByAgent } from '@/lib/report';
 import { fmtCost, fmtInt, fmtPct, fmtTokens } from '@/lib/format';
+import { useTableColumns } from '@/lib/useTableColumns';
 
 const RATE_PARTS = ['input', 'cacheRead', 'cacheWrite', 'output'];
 const PART_LABELS = ['compInput', 'compCacheRead', 'compCacheWrite', 'compOutput'];
@@ -66,6 +67,8 @@ export function RowTip({ tip, tx }) {
   return (
     <>
       <div className={mono ? 'tip-title is-mono' : 'tip-title'}>{name}</div>
+      <div className="tip-row"><span>{tx('tipTokens')}</span><b>{fmtTokens(row.totalTokens)}</b></div>
+      <div className="tip-row"><span>{tx('kpiCost')}</span><b><CostValue row={row} tx={tx} /></b></div>
       {TOKEN_PARTS.map((key, i) => (
         <div key={key} className="tip-row">
           <span>
@@ -81,9 +84,22 @@ export function RowTip({ tip, tx }) {
       <div className="tip-row"><span>{tx('tipCache')}</span><b>{fmtPct(row.cacheHitRate)}</b></div>
       <div className="tip-row"><span>{tx('tipRequests')}</span><b>{fmtInt(row.requests)} / {row.sessions ? fmtInt(row.sessions) : '—'}</b></div>
       {rate ? <div className="tip-note">{tx('tipRates', { source: sourceLabel(rate.source, tx) })}</div> : null}
-      {ids.length > 1 ? <div className="tip-note is-mono">{ids.join(', ')}</div> : null}
+      {ids.length && (ids.length > 1 || ids[0] !== row.model) ? <div className="tip-note is-mono">{ids.join(', ')}</div> : null}
     </>
   );
+}
+
+export function RowInfoButton({ id, expanded, onToggle, name, tx }) {
+  return <td className="col-info no-export"><button type="button" className="row-info-btn" aria-expanded={expanded} aria-controls={expanded ? id : undefined}
+    aria-label={tx('rowDetails', { name })} title={tx('rowDetails', { name })} onClick={(e) => { e.stopPropagation(); onToggle(); }}>
+    <Info size={16} aria-hidden="true" /></button></td>;
+}
+
+export function RowInfo({ id, expanded, tip, tx, columns }) {
+  if (!expanded) return null;
+  return <tr className="row-details-row no-export"><td colSpan={columns}><div id={id} className="row-details-content" role="region" aria-label={tx('rowDetails', { name: tip.name })}>
+    <RowTip tip={tip} tx={tx} />
+  </div></td></tr>;
 }
 
 // One table for agents and their models. Each agent is a folder: its models
@@ -96,7 +112,9 @@ export default function AgentTable({ clients, models, pricing, sortBy, onSort, a
   const rates = useMemo(() => new Map((pricing?.modelRates ?? []).map((rate) => [`${rate.client}\0${rate.model}`, rate])), [pricing]);
   const [openState, setOpenState] = useState(() => new Set());
   const [tip, setTip] = useState(null);
+  const [detail, setDetail] = useState(null);
   const listId = useId();
+  const { ref: tableRef, columns } = useTableColumns(agents.length > 0);
   const open = openProp ?? openState;
   const toggle =
     onToggleProp ??
@@ -109,16 +127,19 @@ export default function AgentTable({ clients, models, pricing, sortBy, onSort, a
   if (!agents.length) return null;
   const tips = new Map();
   const onMove = (e) => {
+    if (e.target.closest?.('.row-info-btn,.row-details-content')) return setTip(null);
     const key = e.target.closest?.('[data-tip]')?.dataset.tip;
     setTip(key ? { key, x: e.clientX, y: e.clientY } : null);
   };
 
-  const body = agents.map((agent) => {
+  const toggleDetail = (key) => { setTip(null); setDetail((previous) => previous === key ? null : key); };
+  const body = agents.map((agent, agentIndex) => {
     const group = grouped.get(agent.id);
     const name = agentLabel(agent.id);
     const expandable = Boolean(group?.count);
     const expanded = expandable && open.has(agent.id);
     const id = `${listId}-${agent.id}`;
+    const detailId = `${listId}-detail-${agentIndex}`;
     const style = agentStyle(agent.id);
     tips.set(`a:${agent.id}`, { name, row: agent });
     if (group?.others) tips.set(`o:${agent.id}`, { name: tx('others', { n: group.others.count }), row: group.others });
@@ -127,9 +148,9 @@ export default function AgentTable({ clients, models, pricing, sortBy, onSort, a
         <span className="agent-caret">
           {expandable ? <ChevronRight className="agent-chevron no-export" size={14} strokeWidth={2.2} aria-hidden="true" /> : null}
         </span>
-        <AgentDot id={agent.id} />
-        <span className="agent-name">{name}</span>
-        {expandable ? <span className="agent-count">{tx('rowModels', { n: fmtInt(group.count) })}</span> : null}
+        <span className="agent-label"><span className="agent-title"><AgentDot id={agent.id} /><span className="agent-name">{name}</span>
+          {group?.count > 1 ? <span className="agent-count">{tx('rowModels', { n: fmtInt(group.count) })}</span> : null}</span>
+          {group?.count === 1 ? <span className="agent-model-summary" title={group.rows[0].model}>{group.rows[0].model}</span> : null}</span>
       </>
     );
     return (
@@ -147,19 +168,23 @@ export default function AgentTable({ clients, models, pricing, sortBy, onSort, a
               )}
             </th>
             <Cells row={agent} tx={tx} />
+            <RowInfoButton id={detailId} expanded={detail === `a:${agent.id}`} onToggle={() => toggleDetail(`a:${agent.id}`)} name={name} tx={tx} />
           </tr>
+          <RowInfo id={detailId} expanded={detail === `a:${agent.id}`} tip={tips.get(`a:${agent.id}`)} tx={tx} columns={columns} />
         </tbody>
         {expandable ? (
           <tbody id={id} className="model-group" style={style} hidden={!expanded} aria-label={tx('agentModels', { agent: name })}>
-            {group.rows.map((row) => {
+            {group.rows.map((row, modelIndex) => {
               tips.set(row.id, { name: row.model, row, rate: commonRate(row, rates), mono: true });
+              const modelDetailId = `${detailId}-model-${modelIndex}`;
               return (
-                <tr key={row.id} className="model-row" data-tip={row.id}>
+                <Fragment key={row.id}><tr className="model-row" data-tip={row.id}>
                   <th scope="row" className="col-name">
                     <span className="model-name" title={row.model}>{row.model}</span>
                   </th>
                   <Cells row={row} tx={tx} />
-                </tr>
+                  <RowInfoButton id={modelDetailId} expanded={detail === row.id} onToggle={() => toggleDetail(row.id)} name={row.model} tx={tx} />
+                </tr><RowInfo id={modelDetailId} expanded={detail === row.id} tip={tips.get(row.id)} tx={tx} columns={columns} /></Fragment>
               );
             })}
             {group.others ? (
@@ -168,8 +193,10 @@ export default function AgentTable({ clients, models, pricing, sortBy, onSort, a
                   <span className="model-name">{tx('others', { n: group.others.count })}</span>
                 </th>
                 <Cells row={group.others} tx={tx} />
+                <RowInfoButton id={`${detailId}-others`} expanded={detail === `o:${agent.id}`} onToggle={() => toggleDetail(`o:${agent.id}`)} name={tx('others', { n: group.others.count })} tx={tx} />
               </tr>
             ) : null}
+            {group.others ? <RowInfo id={`${detailId}-others`} expanded={detail === `o:${agent.id}`} tip={tips.get(`o:${agent.id}`)} tx={tx} columns={columns} /> : null}
           </tbody>
         ) : null}
       </Fragment>
@@ -179,7 +206,7 @@ export default function AgentTable({ clients, models, pricing, sortBy, onSort, a
 
   return (
     <div className="agent-table-wrap">
-      <table className="agent-table" onMouseMove={onMove} onMouseLeave={() => setTip(null)}>
+      <table ref={tableRef} className="agent-table" onMouseMove={onMove} onMouseLeave={() => setTip(null)}>
         <thead>
           <tr>
             <th scope="col" className="col-name">{tx('colAgent')}</th>
@@ -188,6 +215,7 @@ export default function AgentTable({ clients, models, pricing, sortBy, onSort, a
             <th scope="col" className="col-mix">{tx('colMix')}</th>
             <th scope="col" className="col-cache">{tx('colCache')}</th>
             <th scope="col" className="col-num col-req">{tx('colRequests')}</th>
+            <th scope="col" className="col-info no-export"><span className="visually-hidden">{tx('details')}</span></th>
           </tr>
         </thead>
         {body}

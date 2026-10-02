@@ -1,17 +1,17 @@
 'use client';
 
-// Flat day details shared by Today and the calendar. All sections remain
+// Flat day details shared by Today and the calendar. Rendered sections remain
 // visible in the normal page flow and in exported images.
 
 import { useCallback, useMemo, useState } from 'react';
-import { ChevronLeft, ChevronRight, RefreshCw, TriangleAlert } from 'lucide-react';
+import { ArrowUp, ChevronLeft, ChevronRight, RefreshCw, TriangleAlert } from 'lucide-react';
 import Tooltip from '@/components/Tooltip';
 import { coded } from '@/components/Coded';
 import AgentTable from '@/components/AgentTable';
 import ModelTable from '@/components/ModelTable';
 import Kpis from '@/components/Kpis';
 import { CostValue, PartsLegend, agentStyle } from '@/components/Marks';
-import { hourlyBars, sessionRows } from '@/lib/report';
+import { hasModelComparison, hourlyBars, sessionRows } from '@/lib/report';
 import { fmtClockRange, fmtCost, fmtInt, fmtTokens } from '@/lib/format';
 import { dayLabel, durationLabel, periodLabel, weekdayLabel } from '@/lib/i18n';
 
@@ -20,7 +20,7 @@ const SESSION_LIMIT = 10;
 const AXIS_HOURS = [0, 6, 12, 18, 24];
 const hourText = (h) => `${String(h).padStart(2, '0')}:00`;
 
-function HourlyChart({ bars, peak, label, tx }) {
+function HourlyChart({ bars, peak, max, label, tx }) {
   const [tip, setTip] = useState(null);
   const onMove = (e) => {
     const hour = e.target.closest?.('[data-hour]')?.dataset.hour;
@@ -29,10 +29,14 @@ function HourlyChart({ bars, peak, label, tx }) {
   };
   const row = tip ? bars[tip.hour].row : null;
   return (
-    <div className="hourly" role="img" aria-label={label} onMouseMove={onMove} onMouseLeave={() => setTip(null)}>
-      <div className="hourly-bars">
+    <div className="hourly" role="group" aria-label={label} onMouseMove={onMove} onMouseLeave={() => setTip(null)}>
+      <div className="chart-layout">
+        <div className="chart-scale" aria-hidden="true"><span>{max > 0 ? fmtTokens(max) : ''}</span><span>{max > 0 ? fmtTokens(max / 2) : ''}</span><span>0</span></div>
+        <div className="hourly-plot"><div className="hourly-bars">
         {bars.map((bar) => (
-          <div key={bar.hour} data-hour={bar.hour} className={bar.hour === peak?.hour ? 'hour-col is-peak' : 'hour-col'}>
+          <div key={bar.hour} data-hour={bar.hour} className={bar.hour === peak?.hour ? 'hour-col is-peak' : 'hour-col'}
+            tabIndex={bar.value > 0 ? 0 : undefined} role="img" aria-label={`${hourText(bar.hour)} · ${fmtTokens(bar.value)} Tokens`}
+            onFocus={(e) => { const box = e.currentTarget.getBoundingClientRect(); setTip({ hour: bar.hour, x: box.left, y: box.top }); }} onBlur={() => setTip(null)}>
             <div className="hour-bar" style={{ height: bar.value > 0 ? `max(3px, ${bar.height * 100}%)` : 0 }}>
               {bar.parts.map((part, i) => (part > 0 ? <i key={i} className={`part-${i}`} style={{ flexGrow: part }} /> : null))}
             </div>
@@ -45,7 +49,7 @@ function HourlyChart({ bars, peak, label, tx }) {
             {hourText(h)}
           </span>
         ))}
-      </div>
+      </div></div></div>
       {tip ? (
         <Tooltip x={tip.x} y={tip.y}>
           <div className="tip-title">
@@ -106,11 +110,11 @@ export function DayBody({ data, day, sortBy, onSort, locale, tx, agentLabel, ope
       {
         id: 'hourly',
         title: tx('secHourly'),
-        note: hours.peak ? tx('hourlyPeak', { hour: hourText(hours.peak.hour) }) : null,
+        note: hours.peak ? tx('hourlyPeak', { hour: hourText(hours.peak.hour), tokens: fmtTokens(hours.max) }) : null,
         node: (
           <>
-            <HourlyChart bars={hours.bars} peak={hours.peak} label={tx('hourlyAria', { day: dayLabel(locale, day, true) })} tx={tx} />
-            <PartsLegend tx={tx} />
+            <HourlyChart bars={hours.bars} peak={hours.peak} max={hours.max} label={tx('hourlyAria', { day: dayLabel(locale, day, true) })} tx={tx} />
+            <PartsLegend tx={tx}><span className="legend-note">{tx('hourlyScale')}</span></PartsLegend>
           </>
         ),
       },
@@ -135,7 +139,7 @@ export function DayBody({ data, day, sortBy, onSort, locale, tx, agentLabel, ope
         ),
       });
     }
-    if (data.models?.length) {
+    if (hasModelComparison(data.models)) {
       list.push({
         id: 'models',
         title: tx('cardModels'),
@@ -183,7 +187,7 @@ function DaySkeleton() {
   );
 }
 
-export default function DayDetail({ day, report, nav, today, sortBy, onSort, onStep, locale, tx, agentLabel }) {
+export default function DayDetail({ day, report, nav, today, sortBy, onSort, onStep, onBack, locale, tx, agentLabel }) {
   const shown = report.data && report.day ? report : null;
   const stale = Boolean(shown) && (report.loading || shown.day !== day);
   const displayDay = shown?.day ?? day;
@@ -204,12 +208,13 @@ export default function DayDetail({ day, report, nav, today, sortBy, onSort, onS
     <section className="xday" aria-label={dayLabel(locale, displayDay, true)}>
       <header className="xday-head">
         <div>
-          <h3 className="xday-title" aria-live="polite">
+          <h3 className="xday-title" aria-live="polite" tabIndex={-1}>
             {dayLabel(locale, displayDay)}
           </h3>
           <p className="xday-sub">{sub.filter(Boolean).join(' · ')}</p>
         </div>
         <div className="xday-nav no-export">
+          {onBack ? <button type="button" className="calendar-back" onClick={onBack}><ArrowUp {...icon} />{tx('backToCalendar')}</button> : null}
           <button type="button" className="icon-btn" onClick={() => onStep(-1)} disabled={!nav.canPrev} aria-label={tx('dayPrev')} title={tx('dayPrev')}>
             <ChevronLeft {...icon} />
           </button>

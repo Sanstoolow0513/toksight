@@ -261,19 +261,22 @@ The dashboard opens on **Today**, with **Calendar** and **Settings** in the side
 The full-height sidebar sits beside the report, with the logo at the top, vertically centered
 navigation, and theme and 中文 / EN controls at the bottom. Navigation and preference buttons
 have generous click targets. On small screens, the sidebar becomes a compact area above the report
-with all navigation and preference controls available. The sidebar uses a solid gray background;
-the report keeps its sparse dot grid and warm light/dark palette (visual spec: `design-spec.md`).
+with navigation and an **Appearance** menu for theme and language. The sidebar uses a solid gray background;
+the report keeps a faint dot grid, clear chart/table backgrounds and a warm light/dark palette (visual spec: `design-spec.md`).
 **Refresh**, **Update prices**, and **Export image** are above the report.
 
-- **Today** shows tokens, reference cost, cache hit rate and requests first, followed by hourly
-  activity, expandable agents and models, a cross-agent model table and up to ten sessions.
+- **Today** emphasizes tokens and reference cost, with cache hit rate and requests alongside, followed by hourly
+  activity, expandable agents and models, and up to ten sessions. Single-model agents show the model name directly;
+  a separate model ranking appears when an agent uses multiple models. Charts show quantity scales and the hourly peak.
   Pick all agents or a single agent. Session details include title, usage, cost, time span,
   active time, directory and models.
 - **Calendar** shows the heatmap and day details directly, side by side on wide screens and
   stacked on narrow screens. Click or keyboard-activate a date to switch details; ‹ / › moves
   one day at a time. There is no overlay, card dragging or paged detail deck. Month/year navigation,
   month jump, **1D / 7D / MTD / 30D**, inclusive custom dates and Agent filters remain available.
-  Range totals and token/cost trends sit beside the selected day's stats. Short ranges use a
+  Range totals appear above the calendar. On narrow screens, selecting a day scrolls to its details,
+  which follow the calendar before the trends; **Back to calendar** returns to the selected cell.
+  A range-trend shortcut remains available. Short ranges use a
   calendar; long ranges use week grids grouped by year. Trends use hours for a single day,
   days up to 62 elapsed dates, and months for longer ranges, with missing dates filled as zero.
 - **Settings** contains the reporting time zone, database import/export and Cursor CSV import.
@@ -286,14 +289,16 @@ Today and rolling ranges advance at midnight; returning to the browser or refres
 updates the date. Changing the reporting zone never changes agent records or the CLI's dates.
 
 Tokens and cost always appear together. Click the Tokens or Cost table header to sort; click
-an agent to expand its models. Hover rows for token classes, requests and sessions; model rows
-also show matching unit rates. Models beyond the first seven fold into an eighth summary row.
+an agent to expand its models. Each row's **ⓘ** button opens inline details by click, Enter or Space,
+including token classes, requests and sessions, even when a narrow table hides those columns;
+model details also show matching unit rates. Hover hints remain available.
+Models beyond the first seven fold into an eighth summary row.
 Theme, language, time zone, calendar mode and table sorting are remembered in `localStorage`.
 Date and Agent filters stay in page memory; reloading opens Today. Reset in Calendar returns
 to the current month and all agents.
 
 **Export image** saves the visible Today report, or the Calendar range and selected day details,
-as one PNG with date, Agent, time zone and footer. Controls are excluded; expanded models stay
+as one PNG with date, Agent, time zone and footer. Controls and temporary row details are excluded; expanded models stay
 expanded in the image. Export waits until all displayed data has loaded. Cost totals combine
 reported amounts and estimates; they are not a subscription bill. Unpriced models remain listed
 in the footer. The frontend remains a static export using the local API.

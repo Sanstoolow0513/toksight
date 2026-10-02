@@ -4,8 +4,8 @@ import { fmtCost, fmtInt, fmtPct, fmtTokens } from '@/lib/format';
 
 const ICONS = { tokens: Layers, cost: Coins, cache: Zap, requests: MessagesSquare };
 
-// The four headline numbers, shared by the report (one strip) and the day
-// card (2×2 grid). Tokens and cost always appear together.
+// The four headline numbers, shared by Today and calendar day details.
+// Tokens and cost carry the primary visual weight and stay together.
 export default function Kpis({ data, tx, grid = false }) {
   const totals = data.totals ?? {};
   const unpriced = data.pricing?.unpricedModels ?? [];

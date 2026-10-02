@@ -6,7 +6,7 @@ import { memo, useMemo, useState } from 'react';
 import Tooltip from '@/components/Tooltip';
 import { calendarWeeks, compactCalendar, periodBounds } from '@/lib/period';
 import { cacheHitRate, heatLevel, heatMax, metricValue } from '@/lib/report';
-import { fmtCost, fmtCostShort, fmtInt, fmtPct, fmtTokens } from '@/lib/format';
+import { fmtCost, fmtCostShort, fmtInt, fmtPct, fmtTokens, fmtTokensShort } from '@/lib/format';
 import { MONTHS, WEEKDAYS, dayLabel, periodLabel, weekdayLabel } from '@/lib/i18n';
 
 function cellClass(base, level, date, today, selected) {
@@ -35,7 +35,7 @@ const MonthGrid = memo(function MonthGrid({ weeks, days, max, today, selected, l
             <span className="mcell-day">{showMonth ? `${Number(date.slice(5, 7))}/${Number(date.slice(8))}` : Number(date.slice(8))}</span>
             {value > 0 ? (
               <span className="mcell-vals">
-                <span className="mcell-val">{fmtTokens(value)}</span>
+                <span className="mcell-val" aria-hidden="true"><span className="mcell-val-full">{fmtTokens(value)}</span><span className="mcell-val-short">{fmtTokensShort(value)}</span><span className="mcell-val-tiny">{fmtTokensShort(value, 2)}</span></span>
                 <span className="mcell-cost">{fmtCostShort(row.costUsd)}</span>
               </span>
             ) : null}
@@ -155,7 +155,7 @@ export function HeatGrid({ days, period, today, selected, onPick, hint, active =
   };
   const onClick = (e) => {
     const date = e.target.closest?.('[data-date]')?.dataset.date;
-    if (date && date <= today) onPick(date, e);
+    if (date && date <= today) { setTip(null); onPick(date, e); }
   };
 
   return (

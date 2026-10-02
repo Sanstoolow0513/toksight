@@ -10,7 +10,7 @@ export default function ReportActions({ tx, loading, refreshing, onRefresh, pric
     <button type="button" className="report-action" onClick={onUpdatePrices} disabled={loading}>
       {priceUpdating ? <LoaderCircle {...icon} className="spin" /> : <DollarSign {...icon} />}<span>{tx(priceUpdating ? 'updatingPrices' : 'updatePrices')}</span>
     </button>
-    {!settings ? <button type="button" className="report-action is-primary" onClick={onExport} disabled={!canExport || exporting}>
+    {!settings ? <button type="button" className="report-action" onClick={onExport} disabled={!canExport || exporting}>
       {exporting ? <LoaderCircle {...icon} className="spin" /> : <ImageDown {...icon} />}<span>{tx(exporting ? 'exporting' : 'exportImage')}</span>
     </button> : null}
   </div>;
