@@ -170,6 +170,12 @@ export function modelRows(models = [], sortBy = 'tokens', limit = 8) {
   return foldRanked(rankedModels(models, sortBy), sortBy, limit);
 }
 
+// One model per agent is already explained by the agent rows. A separate
+// ranking becomes useful when an agent has more than one model to compare.
+export function hasModelComparison(models = []) {
+  return new Set(models.map((row) => row.client)).size < models.length;
+}
+
 // Same rows as `modelRows`, split under each agent. Shares stay against every
 // model in the period, so a nested row is comparable with its agent. Past
 // `limit` models the tail folds inside that agent.

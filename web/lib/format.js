@@ -11,6 +11,14 @@ export function fmtTokens(n) {
   return `${(v / 1e9).toFixed(2)}B`;
 }
 
+const shortTokens = new Intl.NumberFormat('en-US', { notation: 'compact', maximumSignificantDigits: 3 });
+const tinyTokens = new Intl.NumberFormat('en-US', { notation: 'compact', maximumSignificantDigits: 2 });
+
+// Small calendar cells use fewer digits; labels and details retain precision.
+export function fmtTokensShort(n, digits = 3) {
+  return (digits === 2 ? tinyTokens : shortTokens).format(Number(n) || 0);
+}
+
 export function fmtCost(v) {
   if (v == null) return '—';
   const num = Number(v);

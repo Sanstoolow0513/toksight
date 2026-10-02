@@ -4,9 +4,9 @@ import {
   calendarWeeks, compactCalendar, currentPeriod, dayKey, dayNav, eachDayKey, inPeriod, periodBounds, periodKey, periodNav, periodOf, quickPeriod, shiftDay, shiftPeriod, validRange, weekdayIndex, withMode,
 } from '../web/lib/period.js';
 import {
-  agentRows, costPerMillion, dailyMap, heatLevel, heatMax, heatSummary, hourlyBars, modelRows, modelsByAgent, openingDay, sessionName, sessionRows, trendSeries,
+  agentRows, costPerMillion, dailyMap, hasModelComparison, heatLevel, heatMax, heatSummary, hourlyBars, modelRows, modelsByAgent, openingDay, sessionName, sessionRows, trendSeries,
 } from '../web/lib/report.js';
-import { fmtClock, fmtClockRange, fmtCostShort, fmtTokens } from '../web/lib/format.js';
+import { fmtClock, fmtClockRange, fmtCostShort, fmtTokens, fmtTokensShort } from '../web/lib/format.js';
 
 const usage = (over = {}) => {
   const row = { requests: 1, sessions: 1, inputTokens: 100, cacheReadTokens: 300, cacheWriteTokens: 0, outputTokens: 100, reasoningTokens: 0, costUsd: 1, pricedRequests: 1, ...over };
@@ -306,4 +306,20 @@ test('compact formatting fits calendar cells', () => {
   assert.equal(fmtCostShort(1234), '$1.2K');
   assert.equal(fmtTokens(123_456_789), '123.5M');
   assert.equal(fmtTokens(12_345_678), '12.35M');
+  assert.equal(fmtTokensShort(123_456_789), '123M');
+  assert.equal(fmtTokensShort(12_345_678), '12.3M');
+  assert.equal(fmtTokensShort(999_999), '1M');
+  assert.equal(fmtTokensShort(0), '0');
+  assert.equal(fmtTokensShort(79_234_567, 2), '79M');
+  assert.equal(fmtTokensShort(123_456_789, 2), '120M');
+});
+
+test('model ranking stays available for multi-model agents without repeating one-model agent rows', () => {
+  const model = (client, name) => ({ client, model: name, ...usage() });
+  assert.equal(hasModelComparison(), false);
+  assert.equal(hasModelComparison([model('claude', 'a')]), false);
+  assert.equal(hasModelComparison([model('claude', 'a'), model('codex', 'b')]), false);
+  assert.equal(hasModelComparison([model('claude', 'a'), model('codex', 'a')]), false);
+  assert.equal(hasModelComparison([model('claude', 'a'), model('claude', 'b')]), true);
+  assert.equal(hasModelComparison([model('claude', 'a'), model('claude', 'b'), model('codex', 'c')]), true);
 });

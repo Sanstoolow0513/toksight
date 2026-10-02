@@ -1,6 +1,6 @@
 {
   "name": "toksight",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Track token usage, cost and cache hit rate of AI coding agents (ZCode, Claude Code, Codex, OpenCode, Kimi Code, Cursor) from your terminal.",
   "type": "module",
   "license": "MIT",

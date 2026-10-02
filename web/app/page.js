@@ -1,8 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Globe2, RefreshCw, TriangleAlert } from 'lucide-react';
-import Toolbar from '@/components/Toolbar';
+import { RefreshCw, TriangleAlert } from 'lucide-react';
 import Sidebar from '@/components/Sidebar';
 import Settings from '@/components/Settings';
 import ReportActions from '@/components/ReportActions';
@@ -273,21 +272,19 @@ export default function Page() {
   </div>;
 
   return <div className="page">
-    <Toolbar locale={locale} tx={tx} theme={theme} onTheme={onTheme} onLocale={onLocale} />
     <div className="app-shell">
-      <Sidebar view={view} onView={setView} timezone={timezone} tx={tx} />
+      <Sidebar view={view} onView={setView} timezone={timezone} locale={locale} theme={theme} onTheme={onTheme} onLocale={onLocale} tx={tx} />
       <main className="main" id="main-content">
         <div className="workspace-content">
-          <header className="workspace-head"><div><div className="workspace-eyebrow">{tx('usageWorkspace')}</div><h1>{tx('nav' + view)}</h1><p>{tx(view + 'Description')}</p></div>
+          <header className="workspace-head"><div><h1>{tx('nav' + view)}</h1>{view === 'settings' ? <p>{tx('settingsDescription')}</p> : null}</div>
             <ReportActions tx={tx} loading={busy || reportBusy} refreshing={refreshing} onRefresh={onRefresh} priceUpdating={priceUpdating} onUpdatePrices={onUpdatePrices}
               exporting={exporting} onExport={onExport} canExport={canExport} settings={view === 'settings'} />
           </header>
           {view === 'today' ? <div className="today-filters no-export"><label className="agent-filter"><span>Agent</span><select aria-label="Agent" value={agent} onChange={(e) => onAgent(e.target.value)}>
-            <option value="">{tx('filterAllAgents')}</option>{(report.data?.view?.availableClients ?? []).map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}</select></label>
-            <button type="button" className="timezone-chip" onClick={() => setView('settings')}><Globe2 size={14} />{timezone?.replaceAll('_', ' ') ?? '…'}</button></div> : null}
+            <option value="">{tx('filterAllAgents')}</option>{(report.data?.view?.availableClients ?? []).map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}</select></label></div> : null}
           {view === 'calendar' && activePeriod && today ? <ReportFilters period={activePeriod} today={today} agent={agent} clients={report.data?.view?.availableClients ?? []}
             onAgent={onAgent} onPeriod={onPeriod} onReset={() => { onAgent(''); onPeriod(periodOf(today, 'month')); }} tx={tx} /> : null}
-          {view !== 'settings' ? <div className="filter-status no-export" role="status">
+          {view !== 'settings' && (reportBusy || (report.error && hasData)) ? <div className="filter-status no-export" role="status">
             {reportBusy ? tx('filterLoading') : report.error && hasData ? <>{tx('filterFailed')} <button type="button" className="filter-reset" onClick={() => void report.reload()}>{tx('retry')}</button></> : ''}
           </div> : null}
           {content}
