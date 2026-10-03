@@ -86,7 +86,7 @@ zcode   GLM-5.3             41   116K    1.99M        0   43.3K  94.5%   $0.870
 --open           open the printed URL in a browser (web only)
 --no-open        leave the browser closed (web only; default)
 --api-only       web: serve only the JSON API, no static dashboard
---offline        skip LiteLLM and Cursor pricing fetches
+--offline        skip network pricing fetches; use saved local prices
 --no-color       disable ANSI colors
 ```
 
@@ -96,8 +96,20 @@ CLI day grouping and date filters use your **local** timezone. The web report ha
 
 ## Pricing
 
-For agents other than Cursor, token-based costs use three price layers (later wins), unless
-the agent reports a usable cost for that request:
+The first Web launch guides you through creating a **local price database** in toksight's
+own `usage.sqlite`. This computer downloads public prices directly from OpenAI, Anthropic,
+Google, OpenRouter and Cursor. There is no remote toksight catalog to install or maintain.
+You can fetch prices now or continue with saved/offline estimates. Setup and the automatic
+update preference are saved in this database, independently of the browser.
+
+Changed public rates are recorded with the local observation time. Requests use the latest
+rate observed on or before their timestamp; requests before the first observation use the
+earliest known rate as a reference. Unchanged prices do not create revisions. Updates keep
+older rates and reported amounts, and history travels with SQLite backups. These observations
+do not reconstruct price changes that occurred while this computer was not updating.
+
+User overrides remain highest priority, followed by locally saved public prices. Before a
+local public catalog exists, CLI reports use the following fallback layers (later wins):
 
 1. **Built-in table** — best-effort USD-per-MTok estimates for explicitly listed models,
    available offline. New versions and variants do not inherit a family's older price.
@@ -119,6 +131,27 @@ Within each price source, the original catalog ID is matched before normalized a
 Dated snapshots retain their exact prices; date-free aliases are accepted only when they
 resolve to a catalog name or equivalent rates for the same model and provider. Provider
 prefixes are resolved from catalog metadata, and fine-tuned model prefixes remain distinct.
+
+Codex session provider IDs, OpenCode message providers, Kimi request providers (when safely
+associated with usage) and ZCode rollout providers are retained. OpenRouter prices are used
+only for OpenRouter usage or an explicit `openrouter/` model prefix; a platform model quote
+is a reference when its actual supplying endpoint is unknown. For detected router models,
+the local updater also downloads endpoint prices, including discounts and explicit context
+or UTC time-window rules. OpenAI long-context prices with an unresolved threshold remain
+base-rate reference estimates. Google text prices exclude audio, cache storage and tool fees.
+
+To map a custom agent provider to a known billing channel, create `<toksight-dir>/providers.json`:
+
+```json
+[
+  { "client": "codex", "providerId": "myproxy", "provider": "openrouter", "endpoint": "openai", "since": "2026-10-01T00:00:00Z" }
+]
+```
+
+Bindings optionally filter `model` and use inclusive `since` / exclusive `until` instants
+with an explicit timezone. Overlapping equally specific bindings stay unresolved. Refresh
+usage or update prices after editing. Unknown custom providers need a binding or
+`pricing.json` override; today's agent configuration is never assigned to all past sessions.
 
 Kimi Code's versioned IDs `kimi-code/k3` and `kimi-code/k3-256k` resolve to the
 `moonshot/kimi-k3` reference price, following the official
@@ -167,7 +200,7 @@ regional uplift, plan-specific fees and other billing terms can make the referen
 differ from actual usage value.
 Older imports did not save the CSV Cost label, so their unknown costs are treated as `Included`
 when the database is upgraded.
-The web snapshot stores normalized rates from both sources in `model_prices` in toksight's own
+The web snapshot stores normalized rates from all available sources in `model_prices` in toksight's own
 `usage.sqlite`, retaining source, billing scope, original catalog names, USD-per-token rates
 and context-price metadata. `price_updates` records each source's
 last successful fetch and check. Cursor's billing scope uses only Cursor rates. CSV IDs such as
@@ -186,7 +219,7 @@ without duplicating events or erasing reported charges. Older records lack the c
 re-imported. A Max mode suffix is kept separately from reasoning effort internally; it does
 not imply a known historical plan or automatically add a legacy-plan surcharge.
 Other agents use the generic source priority
-above. A published price applied to older usage is a current-rate reference estimate, not a
+above. A locally observed price applied to older usage is a reference estimate, not a
 historical bill. Requests are priced using their original model ID, then grouped for display by
 agent and normalized model name. A model row's hover tooltip shows the rates used when every
 ID in that row has the same rate; JSON `pricing.modelRates` retains raw IDs, effort and rates.
@@ -239,12 +272,15 @@ The web endpoints are `GET /api/export/db` (SQLite download) and `POST /api/impo
 bytes, merge statistics as JSON); both retain the local Host check and import requires a permitted
 origin. Transfers work offline and never write agent files.
 
-The **Update prices** button above the report calls `POST /api/prices/update` to check LiteLLM and Cursor together,
-even within the 7-day interval. Startup and report requests check automatically only when a
-source is at least 7 days old; failed checks are retried after an hour. Last successful source
-fetch times appear in the report footer and `pricing.updates`. Price updates revalue existing
-estimates without rescanning usage or replacing reported charges. `--offline` disables the
-manual network update.
+The **Update prices** button calls `POST /api/prices/update` to download the public sources
+directly on this machine, bypassing the 7-day interval. **Settings → Local price database**
+shows price/revision counts and lets you disable automatic updates. When enabled, the server
+checks hourly as well as on startup/report requests; expired sources refresh and failed checks
+retry after an hour. Checks stop when the server closes. Price changes revalue the applicable
+requests without rescanning usage or replacing reported amounts. `--offline` prevents network
+updates. Continuing with local prices during setup defers the first automatic check for an hour.
+`GET /api/prices/status` returns setup/update status; `POST /api/setup` completes setup or updates
+the automatic-update preference. Both use the existing Host/Origin checks.
 
 To add Cursor history, export **Usage Events** as CSV in Cursor, open `toksight web`, and choose
 **Import Cursor CSV** in **Settings**. The file is sent only to the local toksight server and its
@@ -314,7 +350,7 @@ an IANA reporting zone for filters and all calendar/hour aggregates; omission pr
 server-local default. Unknown, duplicate or invalid parameters
 return HTTP 400. `POST /api/refresh` updates the database and returns its refresh time and entry
 count and collection warnings. The web API's additive `snapshot` field exposes the refresh time
-and count. `POST /api/prices/update` refreshes both public price sources without rescanning
+and count. `POST /api/prices/update` refreshes the public price sources locally without rescanning
 usage. `POST /api/import/cursor` accepts a UTF-8 Cursor usage CSV (up to 20 MB) and returns
 imported, updated-charge, duplicate and skipped row counts. Cross-origin write requests are rejected.
 
@@ -349,8 +385,9 @@ writes toksight's own SQLite database under its config directory; price fetches 
 cache files. toksight does not upload usage or write back to agent files. Cursor CSV imports are
 stored in that database. If you change `--host`, other clients on that network may read the
 report/API. The only external requests
-fetch public LiteLLM prices and Cursor's official pricing overview, model index and model pages. Run `--offline` to
-disable both network requests. Report images are
+fetch official OpenAI, Anthropic and Google prices, OpenRouter models/endpoints, Cursor's official pricing
+overview/index/model pages, and legacy CLI LiteLLM prices when no local public catalog exists. Run `--offline`
+to disable network price requests. Report images are
 rendered in your browser and saved only where you download them.
 
 ## JSON output

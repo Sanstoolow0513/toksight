@@ -19,6 +19,9 @@ Cursor 记录可额外包含 `cursorMaxMode`，保存 CSV `Max Mode` 列的布�
 
 ## 日期与范围
 
+记录可增加 `providerId`、派生的 `pricingProvider` / `providerEndpoint` 和作为 cacheWriteTokens 子集的
+`cacheWrite1hTokens`；旧记录可缺失，备份校验这些字段，不参与身份去重。详情见[本机价格库](local-pricing.md)。
+
 CLI 的 `--since` / `--until` 与按天聚合保持机器本地时区。Web 可传 `timezone`（IANA 名称，省略时仍使用服务端本地时区）；浏览器默认检测自己的时区，手动选择保存在 `toksight-timezone`。所有服务端算法集中在 `src/dates.js`，通过可选时区参数参与日期边界、天/月分组、小时归属、热力图、趋势、连续天数和相邻周期计算，不修改全局 `process.env.TZ` 或原始时间戳。
 
 按所选时区的日历天运算。`Intl.DateTimeFormat` 提供该时区的年月日 / 小时；缓存的日界查找处理午夜缺失或重复，整日范围包含最后一毫秒。每一天仍使用 24 个钟面小时桶，重复小时合并、跳过小时为零，界面不区分夏令 / 冬令子视图。前端 `web/lib/period.js` 用所选时区生成真实时间的日期键，月 / 年 / 周与日步进只对民用日期标签运算；UTC 仅充当标签运算的临时日历，不能用真实时间的 UTC 日期替代当地日期。
@@ -37,6 +40,7 @@ Cursor 的 `pricing.modelRates` 额外包含 `maxMode`（目录匹配后多出�
 
 - 基础 Web 聚合：`heatmap`、`trend`、`trend7`、`trend90`、`trendByAgent`、`hourly`、`today`、`last7Days`、`last30Days`、`thisMonth`、`activeDays`、`streaks`、`peakDay`、`topSessions`、`longestSession`、`activityRange`、`timezone`。
 - 快照/选择：`snapshot`、`view`、`scopeRange`、`selection`。`selection` 的趋势/热力图最多呈现最后 366 天，`totals` 与 `comparison` 仍用完整请求范围。
+- 本机价格：`priceDatabase` 给出引导、自动更新、价格/历史版本数与离线状态；`costCoverage.sources` 新增 openai、anthropic、google、openrouter。
 - 费用说明：`costCoverage` 按 `reported`、`cursor`、`user`、`litellm`、`builtin`、`unknown` 分来源统计请求和金额，并给出未定价与使用缓存价格回退的请求数。
 - 相邻周期：`comparison` 用等日历天数的前一段作为基准，给出贡献和覆盖情况；没有起始日期时默认比较截至选定终点/今天的七天。前段越过启动范围时返回不可比较状态。
 

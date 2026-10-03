@@ -21,6 +21,9 @@ OpenCode 和 ZCode 的“数据库存在但表不可查询”会给 warning；�
 
 ## 容错与过滤
 
+可选提供商信息和 Claude 1h 缓存写入子集见[本机价格库](local-pricing.md#提供商映射)。
+这些元数据不参与去重身份，也不改变五类 token 数的原有含义。
+
 坏文件/坏行应跳过或给 warning，解析器不因单个来源损坏而抛出；空用量行跳过。`collectAll` 用 `Promise.allSettled` 隔离各客户端异常。根目录不存在时 `walkFiles` 静默，其他读取失败（如 `EACCES`、`ENOTDIR`）报警；存在但不可读或不可解析的 Kimi `state.json` 也报警。
 
 时间戳统一为毫秒 epoch 或 `null`，非法 `Date.parse` 结果不可保留为 `NaN`。`--since` / `--until` 排除无可用时间戳的记录时要在 `warnings` 说明；warning 在 CLI stderr 与 JSON `warnings` 中可见。Windows 路径也要用 fixture 验证，`pathExists` 将文件路径中的 `ENOTDIR` 当作不存在处理。

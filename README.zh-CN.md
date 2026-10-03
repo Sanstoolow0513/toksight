@@ -84,7 +84,7 @@ zcode   GLM-5.3             41   116K    1.99M        0   43.3K  94.5%   $0.870
 --open           用浏览器打开打印出的地址（仅 web）
 --no-open        不打开浏览器（仅 web；默认）
 --api-only       web：只提供 JSON API，不托管静态页面
---offline        跳过 LiteLLM 与 Cursor 价格拉取
+--offline        跳过联网价格拉取，使用已保存的本地价格
 --no-color       关闭 ANSI 颜色
 ```
 
@@ -94,7 +94,16 @@ CLI 按天分组和日期过滤使用**本地时区**。网页可在设置里单
 
 ## 定价
 
-除 Cursor 外，未使用 Agent 自报费用的请求按 token 数和三层价格计算（后者覆盖前者）：
+首次启动 Web 会引导建立**本地价格库**，保存在 toksight 自己的 `usage.sqlite`。
+这台电脑直接获取 OpenAI、Anthropic、Google、OpenRouter 和 Cursor 的公开价格，
+不需要安装或维护远程 toksight 目录。可立即获取价格，也可用本地/离线估算继续；
+引导完成状态和自动更新偏好保存在数据库中，不依赖浏览器。
+
+公开价格变化按本机获取时间保存。每条请求使用时间戳之前最后一次观察到的价格；
+早于首次获取的记录使用最早已知价格作为参考。单价相同不会新增历史版本。
+更新保留旧价格和自报金额，历史随 SQLite 备份保存；无法还原本机未更新期间错过的调价。
+
+用户覆盖优先，其次使用本地保存的公开价格。尚未建立公开目录时，CLI 使用以下回退层（后者覆盖前者）：
 
 1. **内置价格表** — 明确列出的模型的最佳努力估算（美元 / 百万 token），离线可用；新版本和变体不会沿用同系列旧型号的价格。
 2. **LiteLLM** — 从社区[模型价格库](https://github.com/BerriAI/litellm/blob/main/model_prices_and_context_window.json)拉取，
@@ -112,6 +121,24 @@ CLI 按天分组和日期过滤使用**本地时区**。网页可在设置里单
 每个价格来源内，先按原始目录 ID 精确匹配，再尝试归一化别名。带日期的版本保留各自单价；
 去掉日期后的别名只有能对应目录原名，或同模型、同提供商的候选价格完全一致时才接受。
 提供商前缀依据目录元数据匹配，微调模型前缀保持独立。
+
+采集保留 Codex 会话、OpenCode 消息、可可靠关联的 Kimi 请求及 ZCode rollout 的提供商 ID。
+OpenRouter 单价只用于明确的 OpenRouter 用量或带 `openrouter/` 前缀的模型；
+未知实际供应端点时，平台模型报价仍是参考估算。对检测到的路由模型，更新器还获取
+端点价格，处理折扣及明确的上下文/UTC 时段条件。OpenAI 未明确阈值的长上下文价格
+保留为基础价参考；Google 仅取文本价格，不包含音频、缓存存储和工具费用。
+
+可在 `<toksight-dir>/providers.json` 将自定义 Agent 提供商绑定到计费渠道：
+
+```json
+[
+  { "client": "codex", "providerId": "myproxy", "provider": "openrouter", "endpoint": "openai", "since": "2026-10-01T00:00:00Z" }
+]
+```
+
+可选 `model` 限定模型；`since` 包含起点、`until` 不包含终点，均为带时区的准确时刻。
+同等具体程度的绑定重叠时不猜测。编辑后刷新用量或更新单价。
+未知自定义提供商需要绑定或 `pricing.json` 覆盖；不会用今天的 Agent 配置倒推全部历史会话。
 
 Kimi Code 的版本化 ID `kimi-code/k3`、`kimi-code/k3-256k` 按官方
 [模型对应关系](https://www.kimi.com/code/docs/kimi-code/models.html)匹配 `moonshot/kimi-k3` 的参考价格，
@@ -146,7 +173,7 @@ CSV 中的数字费用及 `Free` 始终按原值使用。`Included` 行如果查
 历史记录按获取到的公开价格折算；过往套餐价格、未公布的上下文规则、地区加价及套餐专属费用
 等条件仍可能让参考费用与实际用量价值不同。
 旧版本导入时没有保存 CSV 的 Cost 标签，数据库升级后会将旧记录中的未知费用按 `Included` 处理。
-网页快照会把两个来源的单价归一化保存到 toksight 自己的 `usage.sqlite` 的 `model_prices` 表，
+网页快照会把各可用来源的单价归一化保存到 toksight 自己的 `usage.sqlite` 的 `model_prices` 表，
 保留价格来源、计费范围、原始目录名称、美元 / token 单价和上下文价格元数据。`price_updates` 记录各来源上次成功拉取
 及检查时间。Cursor 只使用 Cursor 计费范围内的价格；例如 CSV 中的
 `cursor-grok-4.6-xhigh-fast` 会匹配 `grok-4.6-fast`，`xhigh` 单独记录为 effort；
@@ -159,7 +186,7 @@ CSV 的 `Max Mode` 列保存为记录中的可选 `cursorMaxMode` 元数据
 （true/false，未知为 null）；重导可补齐或更正，不重复计数，也不覆盖已知的自报费用。
 旧记录需要重导才能补齐该列。模型名中的 Max 模式在内部与推理 effort 分开保留；它不能确定
 当时的套餐，因此参考估算不会自动叠加旧套餐的 Max 附加费。
-其他 Agent 依上述通用来源优先级取价。用现在的公开单价折算历史记录仍只是参考估算，
+其他 Agent 依上述通用来源优先级取价。用本地已观察的公开单价折算历史记录仍只是参考估算，
 不是历史账单。每条请求按原始模型 ID 计价后，才按 Agent 和统一模型名汇总展示。
 同一行的各原始 ID 单价相同时，模型行的悬停提示显示实际采用的美元 / 百万 token 单价；JSON 的
 `pricing.modelRates` 保留原始 ID、effort 和单价。
@@ -203,11 +230,13 @@ CLI 提供 `toksight export-db <文件>` 与 `toksight import-db <文件>`，加
 返回 JSON 合并统计）；两者均保留本机 Host 检查，导入还需通过来源检查。
 导入导出支持离线操作，不会写入 Agent 文件。
 
-报告上方的**更新单价**按钮调用 `POST /api/prices/update`，同时检查 LiteLLM 和 Cursor，
-不受 7 天自动更新间隔限制。启动及报表请求只会在某个来源距上次成功拉取至少 7 天时
-自动检查；失败后隔一小时再试。页脚和 `pricing.updates` 显示各来源上次成功更新时间。
-单价更新会重算已有估算，无需重新扫描用量，也不会覆盖 Agent 或 CSV 上报的金额。
-`--offline` 禁止手动联网更新。
+报告上方的**更新单价**按钮调用 `POST /api/prices/update`，由本机直接下载公开价格，
+不受 7 天更新间隔限制。**设置 → 本地价格库**显示价格/历史版本数，并可关闭自动更新。
+开启后，服务每小时及启动/报表读取时检查，来源过期才更新，失败隔一小时重试；服务关闭即停止。
+新价格按适用请求时间重算费用，不重扫用量，也不覆盖自报金额。`--offline` 禁止网络更新。
+首次引导选择本地继续时，首次自动检查推迟一小时。
+`GET /api/prices/status` 返回引导和更新状态；`POST /api/setup` 完成引导或修改自动更新偏好，
+两者遵守已有 Host/Origin 检查。
 
 要加入 Cursor 历史，在 Cursor 导出 **Usage Events** CSV，打开 `toksight web`，点击设置中的
 **导入 Cursor CSV**。文件只发送到本机 toksight 服务，用量记录保存在 `usage.sqlite`；
@@ -260,7 +289,7 @@ API 可以这样调用：`GET /api/data?period=custom&since=2026-09-01&until=202
 预设周期不能与显式日期混用。可选的 `timezone=Asia%2FShanghai` 按 IANA 时区解释日期筛选和所有日历 / 小时统计，
 不传时保持服务端本地时区。未知、重复或无效参数返回 HTTP 400。`POST /api/refresh`
 会更新数据库，并返回刷新时间、记录数和采集警告；网页 API 新增的 `snapshot` 字段包含刷新时间和记录数。
-`POST /api/prices/update` 不扫描用量，只更新两种公开价格来源。
+`POST /api/prices/update` 不扫描用量，由本机更新公开价格来源。
 `POST /api/import/cursor` 接受最大 20 MB 的 UTF-8 Cursor 用量 CSV，并返回新增、费用更新、重复及跳过条数。
 跨来源写入请求会被拒绝。
 
@@ -292,8 +321,8 @@ toksight 本地优先：CLI 与网页报告只**读取**各 Agent 的会话文�
 SQLite 数据库，价格抓取可能更新本地缓存；toksight 不会上传用量数据，也不会写回 Agent 文件。
 Cursor CSV 导入数据同样存于这个数据库。
 如果修改 `--host`，同一网络中的其他客户端可能读取报告和 API。
-外部请求仅用于拉取 LiteLLM 公开价格，以及 Cursor 官方价格总表、模型索引和详情页；`--offline`
-可关闭两种网络请求。
+外部请求仅用于获取 OpenAI、Anthropic、Google 官方价格、OpenRouter 模型/端点及 Cursor
+官方价格总表、索引和详情页；尚无本地公开目录的 CLI 可获取旧 LiteLLM 来源。`--offline` 可关闭联网价格请求。
 报告图片在浏览器里生成，只保存到你下载的位置。
 
 ## JSON 输出

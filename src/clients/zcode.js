@@ -118,6 +118,7 @@ async function collectFromRollout(base, warnings) {
         client: id,
         sessionId: o.sessionId || path.basename(file, '.jsonl'),
         model: o.model?.modelId || 'unknown',
+        ...(typeof o.model?.providerId === 'string' ? { providerId: o.model.providerId } : {}),
         timestamp: Number.isFinite(ts) ? ts : null,
         inputTokens: Math.max(0, input - cacheRead),
         outputTokens: output,

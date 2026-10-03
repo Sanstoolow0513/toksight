@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, writeFile, rm, cp } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { createWebDataService } from '../src/webservice.js';
+import { createWebDataService as createService } from '../src/webservice.js';
+import { PUBLIC_PRICE_SOURCES } from '../src/publicpricing.js';
 import { resolveWebQuery } from '../src/webquery.js';
 import { buildCostCoverage } from '../src/costcoverage.js';
 import { getPricing } from '../src/pricing.js';
@@ -19,7 +20,9 @@ const now = () => new Date(2026, 8, 8, 12).getTime();
 const at = (day) => new Date(2026, 8, day, 12).getTime();
 const entry = (over = {}) => ({ client: 'claude', model: 'model-a', sessionId: 's1', timestamp: at(8), inputTokens: 100, outputTokens: 10, reasoningTokens: 0, cacheReadTokens: 50, cacheWriteTokens: 0, costUsd: 1, directory: null, title: null, ...over });
 const raw = (entries) => ({ entries, warnings: [], perClient: [], reportedCosts: new WeakSet(), pricing: { priceFor: () => ({ source: 'builtin' }), sources: { builtin: true }, configDir: '/fixture' } });
-const memoryDatabase = () => createUsageDatabase({ file: ':memory:' });
+const memoryDatabase = () => { const database = createUsageDatabase({ file: ':memory:' }); database.completeSetup(); return database; };
+const createWebDataService = (base, options) => createService(base, { publicPricing: async ({ now }) => ({ records: [], sources: [], warnings: [],
+  sourceDetails: Object.fromEntries(Object.entries(PUBLIC_PRICE_SOURCES).map(([source,url]) => [source, { fetchedAt: new Date(now()).toISOString(), state: 'fresh', url }])) }), ...options });
 const service = (entries, opts = base) => createWebDataService(opts, { collect: async () => raw(entries), database: memoryDatabase(), now });
 const query = (text) => new URLSearchParams(text);
 

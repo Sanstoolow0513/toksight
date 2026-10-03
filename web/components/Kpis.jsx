@@ -23,7 +23,7 @@ export default function Kpis({ data, tx, grid = false }) {
     {
       kind: 'cost',
       label: tx('kpiCost'),
-      value: fmtCost(totals.costUsd),
+      value: totals.requests > 0 && !totals.pricedRequests ? tx('rowUnpriced') : fmtCost(totals.costUsd),
       sub: unpriced.length ? tx('kpiCostUnpriced', { n: unpriced.length }) : rate != null ? tx('kpiCostRate', { rate: fmtCost(rate) }) : null,
     },
     { kind: 'cache', label: tx('kpiCache'), value: fmtPct(data.cacheHitRate), sub: tx('kpiCacheSub', { tokens: fmtTokens(totals.cacheReadTokens) }) },

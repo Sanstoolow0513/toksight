@@ -13,6 +13,8 @@ export default function ReportFooter({ data, tx }) {
           <span>{tx('footRefreshed', { time: fmtDateTime(data.snapshot?.refreshedAt ?? data.generatedAt, data.timezone) })}</span>
           {data.pricing?.updates?.litellm?.fetchedAt ? <span>{tx('footPriceUpdated', { source: 'LiteLLM', time: fmtDateTime(data.pricing.updates.litellm.fetchedAt, data.timezone) })}</span> : null}
           {data.pricing?.updates?.cursor?.fetchedAt ? <span>{tx('footPriceUpdated', { source: 'Cursor', time: fmtDateTime(data.pricing.updates.cursor.fetchedAt, data.timezone) })}</span> : null}
+          {Object.entries({openai:'OpenAI',anthropic:'Anthropic',google:'Google',openrouter:'OpenRouter'}).map(([id,source]) => data.pricing?.updates?.[id]?.fetchedAt
+            ? <span key={id}>{tx('footPriceUpdated', { source, time: fmtDateTime(data.pricing.updates[id].fetchedAt, data.timezone) })}</span> : null)}
           {data.timezone ? <span>{tx('footTimezone', { tz: data.timezone })}</span> : null}
           <span>{tx(data.costCoverage?.sources?.cursor?.requests ? 'footEstimateCursor' : cursorUnpriced ? 'footEstimateCursorUnpriced' : 'footEstimate')}</span>
           {data.costCoverage?.sources?.cursor?.requests ? <a href="https://cursor.com/docs/models-and-pricing" target="_blank" rel="noreferrer">{tx('footCursorSource')}</a> : null}

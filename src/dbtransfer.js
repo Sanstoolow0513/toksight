@@ -9,6 +9,7 @@ import { mergeUsageRows, usageRows } from './usageimports.js';
 import { validCursorMetadata } from './cursormodels.js';
 import { decodePriceRecord } from './pricecatalog.js';
 import { validContextTiers } from './contextpricing.js';
+import { historyPriceKey, priceSignature, validOfficialPrice } from './pricehistory.js';
 
 export const MAX_DATABASE_BYTES = 256 * 1024 * 1024;
 const HEADER = Buffer.from('SQLite format 3\0');
@@ -25,11 +26,14 @@ function price(value) {
   check(value === null || (object(value) && rateFields.every((key) => nonnegative(value[key]))), 'invalid model price');
   if (value) check(validCursorMetadata(value.cursor), 'invalid Cursor price metadata');
   if (value) check(validContextTiers(value.contextTiers), 'invalid context price metadata');
+  if (value) check(validOfficialPrice(value.official), 'invalid official price metadata');
   return value;
 }
 function record(row, cursor = false) {
   const entry = JSON.parse(row.data_json);
-  const allowedFields = cursor ? [...fields, 'cursorMaxMode'] : fields;
+  const allowedFields = [...fields, 'providerId', 'pricingProvider', 'providerEndpoint', 'cacheWrite1hTokens', ...(cursor ? ['cursorMaxMode'] : [])];
+  for (const key of ['providerId', 'pricingProvider', 'providerEndpoint']) if (Object.hasOwn(entry, key)) check(nullableText(entry[key]), 'invalid provider');
+  if (Object.hasOwn(entry, 'cacheWrite1hTokens')) check(Number.isSafeInteger(entry.cacheWrite1hTokens) && entry.cacheWrite1hTokens >= 0 && entry.cacheWrite1hTokens <= entry.cacheWriteTokens, 'invalid cache duration token count');
   check(object(entry) && fields.every((field) => Object.hasOwn(entry, field)) &&
     Object.keys(entry).every((field) => allowedFields.includes(field)), 'invalid usage record');
   if (Object.hasOwn(entry, 'cursorMaxMode')) check(entry.cursorMaxMode === null || typeof entry.cursorMaxMode === 'boolean', 'invalid Cursor Max Mode');
@@ -114,7 +118,7 @@ export function readDatabaseBackup(bytes) {
           ${hasMetadata ? 'metadata_json' : "'null'"} AS metadataJson FROM model_prices ORDER BY id`).all().map(decodePriceRecord);
         for (const row of catalog) {
           price(row);
-          check(['default', 'cursor'].includes(row.scope) && ['builtin', 'litellm', 'cursor', 'user'].includes(row.source) &&
+          check(['default', 'cursor'].includes(row.scope) && ['builtin', 'litellm', 'cursor', 'user', 'openai', 'anthropic', 'google', 'openrouter'].includes(row.source) &&
             typeof row.modelId === 'string' && typeof row.name === 'string' && nullableText(row.provider) && nullableText(row.pool) &&
             bit(row.cacheReadFallback) && bit(row.cacheWriteFallback), 'invalid price catalog');
         }
@@ -122,7 +126,17 @@ export function readDatabaseBackup(bytes) {
         for (const row of updates) check(typeof row.source === 'string' && typeof row.state === 'string' &&
           nullableText(row.url) && (row.fetched_at === null || Number.isFinite(Date.parse(row.fetched_at))) &&
           Number.isFinite(Date.parse(row.checked_at)), 'invalid price update');
-        return { meta, prices, catalog, updates, rows: mergeUsageRows(rows, canonical), cursor: selectCursorImports(cursor) };
+        const history = tables.has('price_history') ? db.prepare('SELECT * FROM price_history').all() : [];
+        for (const row of history) {
+          const record = JSON.parse(row.record_json);
+          price(record);
+          check(['default', 'cursor'].includes(record.scope) && ['builtin', 'litellm', 'cursor', 'user', 'openai', 'anthropic', 'google', 'openrouter'].includes(record.source) &&
+            typeof record.name === 'string' && typeof record.modelId === 'string' && nullableText(record.provider) && nullableText(record.pool) &&
+            typeof record.cacheReadFallback === 'boolean' && typeof record.cacheWriteFallback === 'boolean' &&
+            Number.isFinite(Date.parse(row.observed_at)) && row.observed_at === new Date(row.observed_at).toISOString() &&
+            row.price_key === historyPriceKey(record) && row.signature === priceSignature(record), 'invalid price history');
+        }
+        return { meta, prices, catalog, updates, history, rows: mergeUsageRows(rows, canonical), cursor: selectCursorImports(cursor) };
       } finally { db.close(); }
     });
   } catch (err) {

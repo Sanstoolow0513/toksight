@@ -12,6 +12,9 @@ import { cursorModelSignature } from './cursormodels.js';
 import { selectCursorImports } from './cursorcsv.js';
 import { mergeUsageRows } from './usageimports.js';
 import { exportDatabaseBytes, readDatabaseBackup } from './dbtransfer.js';
+import { installLocalPriceDatabase } from './localpricedb.js';
+import { createHistoricalPriceLookup, historyPriceKey } from './pricehistory.js';
+import { bindProvider, readProviderBindings } from './providerbindings.js';
 
 const SCHEMA_VERSION = 1;
 const cursorPriceKey = (model) => `cursor\u0000${model}`;
@@ -102,6 +105,7 @@ export function createUsageDatabase({ file, env, home } = {}) {
     throw err;
   }
 
+  const localPrices = installLocalPriceDatabase(db);
   const getMeta = db.prepare('SELECT * FROM snapshot_meta WHERE id = 1');
   const getEntries = db.prepare('SELECT data_json, reported_cost FROM entries ORDER BY seq');
   const getUsageImports = db.prepare('SELECT * FROM usage_imports ORDER BY rowid');
@@ -167,7 +171,15 @@ export function createUsageDatabase({ file, env, home } = {}) {
         skip.add(source); // A concurrent refresh must not replace newer fetched rates.
         continue;
       }
+      if (['openai', 'anthropic', 'google', 'openrouter'].includes(source)) {
+        const keys = new Set(rows.map(historyPriceKey));
+        for (const old of getPrices.all().filter((row) => row.source === source).map(decodePriceRecord)) {
+          if (!keys.has(historyPriceKey(old))) rows.push({ ...old, cacheReadFallback: Boolean(old.cacheReadFallback), cacheWriteFallback: Boolean(old.cacheWriteFallback),
+            official: { ...old.official, retained: true } });
+        }
+      }
       deletePriceSource.run(source);
+      localPrices.observe(rows, details[source]?.fetchedAt ?? checkedAt);
       for (const record of rows) insertPrice.run(record.scope, source, record.modelId, record.name,
         record.provider ?? null, record.pool ?? null, record.input, record.cacheRead,
         record.cacheWrite, record.output, record.cacheReadFallback ? 1 : 0, record.cacheWriteFallback ? 1 : 0, encodePriceMetadata(record));
@@ -185,7 +197,7 @@ export function createUsageDatabase({ file, env, home } = {}) {
     // Metadata and rows must come from the same committed version if another
     // toksight process refreshes while this one is loading the snapshot.
     db.exec('BEGIN');
-    let meta, rows, imports, usageImports, catalogRows, updateRows;
+    let meta, rows, imports, usageImports, catalogRows, updateRows, history;
     try {
       meta = getMeta.get();
       rows = meta ? getEntries.all() : null;
@@ -193,6 +205,7 @@ export function createUsageDatabase({ file, env, home } = {}) {
       usageImports = meta ? getUsageImports.all() : null;
       catalogRows = meta ? getPrices.all() : null;
       updateRows = meta ? getPriceUpdates.all() : null;
+      history = meta ? localPrices.read() : [];
       db.exec('COMMIT');
     } catch (err) {
       db.exec('ROLLBACK');
@@ -210,7 +223,7 @@ export function createUsageDatabase({ file, env, home } = {}) {
     }
     const catalog = catalogRows.map(decodePriceRecord).map((row) => ({ ...row,
       cacheReadFallback: Boolean(row.cacheReadFallback), cacheWriteFallback: Boolean(row.cacheWriteFallback) }));
-    const lookup = createPriceLookup(catalog);
+    const lookup = createHistoricalPriceLookup(history, catalog);
     const priceFor = (model, client, entry = null) => {
       const scope = client === 'cursor' ? 'cursor' : 'default';
       // Imported and legacy models retain a fallback when the destination
@@ -220,16 +233,18 @@ export function createUsageDatabase({ file, env, home } = {}) {
     const entries = [];
     const reportedCosts = new WeakSet();
     const importWarnings = [];
+    const bindings = readProviderBindings({ env, home }, importWarnings);
     for (const row of [...mergeUsageRows(rows, usageImports), ...selectCursorImports(imports, importWarnings)]) {
       let entry = row.entry ?? JSON.parse(row.data_json);
-      if (entry.client === 'cursor' && row.included && entry.costUsd == null) {
-        const costUsd = computeCost(entry, priceFor(entry.model, 'cursor', entry));
-        if (costUsd != null) entry = { ...entry, costUsd };
+      entry = bindProvider(entry, bindings);
+      if (entry.client === 'cursor' && row.included && !row.reported_cost) {
+        const costUsd = computeCost({ ...entry, costUsd: null }, priceFor(entry.model, 'cursor', entry));
+        entry = { ...entry, costUsd };
       } else if (entry.client !== 'cursor' && !row.reported_cost) {
         const rate = priceFor(entry.model, entry.client, entry);
         if (rate && ['input', 'cacheRead', 'cacheWrite', 'output'].every((part) => Number.isFinite(rate[part]))) {
           entry = { ...entry, costUsd: computeCost({ ...entry, costUsd: null }, rate) };
-        } else if (!rate && prices.get(entry.model)?.source === 'builtin') {
+        } else if (!rate && (prices.get(entry.model)?.source === 'builtin' || entry.providerId || entry.pricingProvider)) {
           entry = { ...entry, costUsd: null };
         }
       }
@@ -293,9 +308,7 @@ export function createUsageDatabase({ file, env, home } = {}) {
         insertEntry.run(i, entry.client, entry.timestamp, JSON.stringify(entry), raw.reportedCosts?.has(entry) ? 1 : 0);
       });
       if (raw.pricing.records) {
-        const availableSources = ['builtin', 'user'];
-        if (raw.pricing.records.some((record) => record.source === 'litellm')) availableSources.push('litellm');
-        if (raw.pricing.records.some((record) => record.source === 'cursor')) availableSources.push('cursor');
+        const availableSources = [...new Set(['builtin', 'user', ...raw.pricing.records.map((record) => record.source)])];
         writeCatalog(raw.pricing.records, raw.pricing.sourceDetails, refreshedAt, availableSources);
       }
       putMeta.run(
@@ -390,6 +403,7 @@ export function createUsageDatabase({ file, env, home } = {}) {
     const backupLookup = createPriceLookup(backup.catalog);
     db.exec('BEGIN IMMEDIATE');
     try {
+      localPrices.import(backup.history ?? []);
       const current = new Map(mergeUsageRows(getEntries.all(), getUsageImports.all()).map((r) => [r.fingerprint, r]));
       for (const row of backup.rows) {
         const previous = current.get(row.fingerprint);
@@ -462,6 +476,8 @@ export function createUsageDatabase({ file, env, home } = {}) {
     file: filename,
     read,
     replace,
+    priceStatus: () => localPrices.status(),
+    completeSetup: (options, at) => localPrices.complete(options, at),
     exportDatabase: () => {
       if (!read()) throw new Error('No usage snapshot; run toksight refresh first');
       return exportDatabaseBytes(db);

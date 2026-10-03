@@ -1,5 +1,8 @@
 # 存储、导入与定价
 
+Web 首次引导、本地公开价格采集、定时更新、观察历史和提供商绑定见[本机价格库](local-pricing.md)。
+以下 LiteLLM 机制用于尚无本地公开历史的 CLI 或已存缓存回退。
+
 ## 已提交快照
 
 `src/database.js` 维护 toksight 自己的 SQLite：`snapshot_meta`、`entries`、`usage_imports`、`cursor_imports`、`model_prices`、`price_updates`。Web 启动先预载已提交快照；没有快照才扫描 Agent。`GET /api/data` 只筛选快照。CLI `refresh` 和 `POST /api/refresh` 全量重扫并在事务内替换；失败不替换旧数据，并发刷新共享同一采集/写入任务。SQLite `data_version` 用于发现其他进程的提交。
@@ -31,7 +34,7 @@ Cursor 没有事件 ID，导入身份以时间、模型和四类 token 数为基
 - Cursor 的 `Included` 没有实收金额。`src/cursorpricing.js` 抓官方 Markdown 总表及 `docs/llms.txt`；`src/cursorpricepages.js` 从索引发现同站 `/docs/models/` 详情页，以最多四个并发请求解析 HTML 中的 Model ID 和价格表，不执行页面脚本，不依赖 CSS 类名。总表与详情按模型词项及上下文档位合并，详情补全 Fast 等价格。缓存版本 2 仍保留七天 TTL，在线读取版本 1 会升级；详情失败使用总表及缓存并报警，缺失的旧条目保留原抓取时间并标记 `retained`。CSV 数字费用或 `Free` 始终优先；历史估价不代表历史账单。
 - `src/cursormodels.js` 用下载目录匹配 Cursor 模型，不含模型家族白名单、版本列表或 Max 型号例外。统一标点、版本写法、数字粘连及词序后，优先匹配最长完整名称/官方别名；其次接受无歧义的省略首词简写，只允许多出的通用模式词 low/medium/high/xhigh/thinking/max。官方名称本身的 Max 会优先匹配，因此无需型号特判；未知后缀或歧义不猜价格。Cursor 展示名使用目录名称，未匹配时保留原名。其他 Agent 的匹配和显示规则保持独立。
 - `model_prices.metadata_json` 保存可选 Cursor 元数据（aliases、contextOver、url、fetchedAt、retained），旧库自动补列；备份和 CLI 只读路径兼容无该列的旧库。`priceFor(model, client, entry)` 可按请求的新鲜输入 + cache read + cache write 选择表中明确标注 `Long Context (>N)` 的档位，不从任意备注猜倍率。没有请求信息时返回基础档位，用于模型归并。同一原始 ID 跨多个实际单价时，JSON 标记 variableRates 并省略单一单价，避免悬停提示误导。缺少路由信息的 Auto、未公开价格、无法识别的计费条件仍不自动推断；没有套餐信息时不加旧套餐 Max 附加费。
-- 同一 `metadata_json` 列在 `default` 作用域保存 `{ contextTiers }`，不改变 Cursor 元数据格式；统一由 `encodePriceMetadata` / `decodePriceRecord` 按作用域编码、验证及解码。旧库无该列或值为 null 时按基础价读取，后续价格更新或用量刷新从 LiteLLM 原始缓存补齐档位。备份导入在写入前校验阈值递增、非负单价和回退标志。
+- 同一 `metadata_json` 列在 `default` 作用域保存可选 `{ contextTiers, official }`，不改变 Cursor 元数据格式；统一由 `encodePriceMetadata` / `decodePriceRecord` 按作用域编码、验证及解码。旧库无该列或值为 null 时按基础价读取。备份导入在写入前校验阈值、非负单价、回退标志及公开价格条件。
 - `src/pricecatalog.js` 按 `scope` 隔离 Cursor 与其他来源；`price_updates` 存拉取状态，`src/costcoverage.js` 单独披露自报金额、Cursor 参考估算和其他估算的来源。普通 CLI 有 Cursor 记录时也加载目录，以便自报费用的记录使用同一套展示归并。
 
-Web 启动和报告读取会检查两种公开价格是否到期；手动 `POST /api/prices/update` 强制检查两者。`--offline` 禁止网络价格请求，但可使用已有缓存；离线 Web 会话不能手动强制更新。价格更新不扫描 Agent 文件。定价逻辑入口是 `src/pricing.js`、`src/contextpricing.js`、`src/cursorpricing.js`、`src/pricecatalog.js`。
+完成引导且开启自动更新后，Web 按小时、启动及报告读取检查厂商、OpenRouter、Cursor 公开价格是否到期；手动 `POST /api/prices/update` 强制检查。`--offline` 禁止网络请求，已有缓存和历史仍可用。价格更新不扫描 Agent 文件；入口包括 `src/publicpricing.js`、`src/pricehistory.js` 与现有定价模块。

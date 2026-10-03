@@ -10,19 +10,31 @@ import { createUsageDatabase } from './database.js';
 import { getPricing, PRICE_REFRESH_MS } from './pricing.js';
 import { parseCursorCsv } from './cursorcsv.js';
 import { createCursorPriceLookup, cursorPriceRecords, getCursorPricing } from './cursorpricing.js';
+import { getPublicPricing, PUBLIC_PRICE_SOURCES } from './publicpricing.js';
 
 // The database is loaded before serving. Requests reuse its in-memory snapshot;
 // refreshes share a single collection/write and swap only after commit.
-export function createWebDataService(base, { collect = collectAll, env, home, database = createUsageDatabase({ env, home }), now = Date.now, cursorPricing = getCursorPricing, genericPricing = getPricing } = {}) {
+export function createWebDataService(base, { collect = collectAll, env, home, database = createUsageDatabase({ env, home }), now = Date.now, cursorPricing = getCursorPricing, genericPricing = getPricing, publicPricing = getPublicPricing,
+  setIntervalImpl = setInterval, clearIntervalImpl = clearInterval } = {}) {
   let inflightRefresh = null;
   let inflightPrices = null;
   let initialized = false;
   let startupPricingWarnings = [];
+  let timer = null, closed = false, inflightSetup = null;
+  const assertOpen = () => { if (closed) throw new Error('web service is closed'); };
+  function schedule() {
+    if (timer) clearIntervalImpl(timer);
+    timer = null;
+    if (!base.offline && database.priceStatus().completed && database.priceStatus().autoUpdate) {
+      timer = setIntervalImpl(() => { void updatePrices().catch((err) => { if (!closed) startupPricingWarnings = [err.message]; }); }, 60 * 60 * 1000);
+      timer?.unref?.();
+    }
+  }
   async function refresh() {
     if (!inflightRefresh) {
       const run = Promise.resolve()
-        .then(() => collect({ ...base, clients: null, since: null, until: null }, { env, home }))
-        .then((raw) => database.replace(raw))
+        .then(() => collect({ ...base, offline: true, clients: null, since: null, until: null }, { env, home }))
+        .then((raw) => { assertOpen(); return database.replace(raw); })
         .then((current) => {
           if (current.pricing.sources.cursor !== 'unavailable') startupPricingWarnings = [];
           return current;
@@ -34,6 +46,7 @@ export function createWebDataService(base, { collect = collectAll, env, home, da
     return { refreshedAt: raw.refreshedAt, entries: raw.entries.length, database: database.file, warnings: raw.warnings };
   }
   async function updatePrices(force = false) {
+    assertOpen();
     if (force && base.offline) {
       const err = new Error('price updates require an online web session');
       err.status = 400; err.code = 'PRICE_OFFLINE'; throw err;
@@ -50,10 +63,12 @@ export function createWebDataService(base, { collect = collectAll, env, home, da
         if (Number.isFinite(checked) && time - checked < 60 * 60 * 1000 && !force) return false;
         return !Number.isFinite(fetched) || time - fetched >= PRICE_REFRESH_MS;
       };
-      if (!force && !due('litellm') && !due('cursor')) return { updated: false, updates, warnings: [] };
-      const [generic, cursor] = await Promise.allSettled([
-        genericPricing({ offline: base.offline, force, env, home, now }),
+      if (!force && !['cursor', ...Object.keys(PUBLIC_PRICE_SOURCES)].some(due)) return { updated: false, updates, warnings: [] };
+      const [generic, cursor, publicRates] = await Promise.allSettled([
+        genericPricing({ offline: true, force: false, env, home, now }),
         cursorPricing({ offline: base.offline, force, env, home, now }),
+        publicPricing({ offline: base.offline, now, routerModels: current.entries.filter((e) => e.providerId === 'openrouter' || e.pricingProvider === 'openrouter' || e.model.startsWith('openrouter/'))
+          .map((e) => e.model.replace(/^openrouter\//, '')) }),
       ]);
       const records = [], sources = [], details = {}, warnings = [];
       if (generic.status === 'fulfilled') {
@@ -76,6 +91,15 @@ export function createWebDataService(base, { collect = collectAll, env, home, da
         if (!base.offline) warnings.push(`Cursor pricing unavailable (${cursor.reason?.message || cursor.reason})`);
         details.cursor = { fetchedAt: null, url: null, state: base.offline ? 'skipped (offline)' : 'unavailable' };
       }
+      if (publicRates.status === 'fulfilled') {
+        records.push(...publicRates.value.records); sources.push(...publicRates.value.sources);
+        Object.assign(details, publicRates.value.sourceDetails);
+        warnings.push(...publicRates.value.warnings);
+      } else {
+        warnings.push(`Public pricing unavailable; keeping saved prices (${publicRates.reason?.message || publicRates.reason})`);
+        for (const [source, url] of Object.entries(PUBLIC_PRICE_SOURCES)) details[source] = { fetchedAt: null, state: 'unavailable', url };
+      }
+      assertOpen();
       const latest = database.updatePriceCatalog({ records, sourceDetails: details, sources }, new Date(time).toISOString());
       startupPricingWarnings = warnings;
       return { updated: true, updates: latest.pricing.updates, warnings };
@@ -86,8 +110,9 @@ export function createWebDataService(base, { collect = collectAll, env, home, da
   }
   async function initialize() {
     if (!database.read()) await refresh();
-    await updatePrices();
+    if (database.priceStatus().completed && database.priceStatus().autoUpdate) await updatePrices();
     initialized = true;
+    schedule();
   }
   async function snapshot() {
     const current = database.read();
@@ -100,7 +125,7 @@ export function createWebDataService(base, { collect = collectAll, env, home, da
     let opts;
     try { opts = resolveWebQuery(params, base, time); }
     catch (err) { err.status = 400; err.code = 'BAD_QUERY'; throw err; }
-    if (initialized) await updatePrices();
+    if (initialized && database.priceStatus().completed && database.priceStatus().autoUpdate) await updatePrices();
     const raw = await snapshot();
     const timezone = opts.timezone;
     const filtered = filterEntries(raw.entries, opts);
@@ -126,6 +151,7 @@ export function createWebDataService(base, { collect = collectAll, env, home, da
     }
     return {
       ...payload,
+      priceDatabase: { ...database.priceStatus(), offline: Boolean(base.offline), updating: Boolean(inflightPrices) },
       snapshot: { refreshedAt: raw.refreshedAt, entries: raw.entries.length },
       scopeRange: activityRange(scope),
       selection,
@@ -141,6 +167,34 @@ export function createWebDataService(base, { collect = collectAll, env, home, da
   getData.initialize = initialize;
   getData.refresh = refresh;
   getData.updatePrices = () => updatePrices(true);
+  getData.priceStatus = () => ({ ...database.priceStatus(), offline: Boolean(base.offline), updating: Boolean(inflightPrices), warnings: startupPricingWarnings });
+  getData.setup = (options = {}) => {
+    if (inflightSetup) return inflightSetup;
+    if (typeof options !== 'object' || options == null || Array.isArray(options) ||
+      Object.keys(options).some((key) => !['offline', 'autoUpdate'].includes(key)) ||
+      ['offline', 'autoUpdate'].some((key) => Object.hasOwn(options, key) && typeof options[key] !== 'boolean')) {
+      const err = new Error('invalid setup options'); err.status = 400; err.code = 'BAD_SETUP'; return Promise.reject(err);
+    }
+    const run = (async () => {
+      await snapshot();
+      let result = { warnings: [] };
+      if (!options.offline && !base.offline) result = await updatePrices(true);
+      else if (!database.priceStatus().completed && !base.offline) {
+        // Continuing locally must not trigger an immediate download on the
+        // very next report GET. Automatic checks can start after one hour.
+        database.updatePriceCatalog({ records: [], sources: [], sourceDetails: Object.fromEntries([
+          ...Object.entries(PUBLIC_PRICE_SOURCES), ['cursor', 'https://cursor.com/docs/models-and-pricing.md'],
+        ].map(([source,url]) => [source,{fetchedAt:null,state:'deferred',url}])) }, new Date(now()).toISOString());
+      }
+      assertOpen();
+      database.completeSetup({ autoUpdate: options.autoUpdate ?? true }, new Date(now()).toISOString());
+      schedule();
+      return { ...getData.priceStatus(), warnings: result.warnings };
+    })();
+    inflightSetup = run;
+    run.then(() => { if (inflightSetup === run) inflightSetup = null; }, () => { if (inflightSetup === run) inflightSetup = null; });
+    return run;
+  };
   getData.exportDatabase = async () => {
     await snapshot();
     return database.exportDatabase();
@@ -177,6 +231,6 @@ export function createWebDataService(base, { collect = collectAll, env, home, da
       rows: parsed.rows, latestAt, entries: current.entries.length, warnings,
     };
   };
-  getData.close = () => database.close();
+  getData.close = () => { closed = true; if (timer) clearIntervalImpl(timer); timer = null; database.close(); };
   return getData;
 }

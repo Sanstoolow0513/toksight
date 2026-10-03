@@ -8,7 +8,9 @@
 | --- | --- | --- |
 | `/api/data` | GET/HEAD | 从已提交快照生成筛选后的报告；参数见[数据契约](data-contract.md) |
 | `/api/refresh` | POST | 重扫 Agent 并事务替换快照 |
-| `/api/prices/update` | POST | 强制检查 LiteLLM 与 Cursor 公共价格 |
+| `/api/prices/update` | POST | 本机强制获取厂商、OpenRouter 与 Cursor 公开价格 |
+| `/api/prices/status` | GET/HEAD | 本地价格/历史版本数、引导完成与自动更新状态 |
+| `/api/setup` | POST | 首次建库或保存自动更新偏好；参数为布尔 offline / autoUpdate |
 | `/api/import/cursor` | POST | 导入 Cursor Usage Events CSV |
 | `/api/export/db` | GET/HEAD | 下载独立 SQLite 备份 |
 | `/api/import/db` | POST | 验证并合并 SQLite 备份 |
@@ -16,6 +18,10 @@
 默认回环绑定时，所有已定义 API 路由都拒绝非 localhost 的 Host 头，防止 DNS rebinding；写路由还拒绝跨站 Origin / Fetch 请求。Next 开发代理允许本机不同端口。显式 `--host 0.0.0.0` 意味着主动对局域网开放，不适用回环 Host 限制。新增 API 必须纳入相同检查；不提供修改 Agent 配置的写路由。
 
 ## 页面与数据流
+
+首次未完成引导时，主内容区显示 `PriceSetup`，可立即下载价格或本地继续，状态保存在数据库。
+设置页提供价格/历史版本数、最近记录变化的时间和自动更新开关；`usePriceDatabase` 独立加载状态。
+离线时禁用联网更新；本地继续不能在下一次 GET 自动下载。具体来源和历史语义见[本机价格库](local-pricing.md)。
 
 Next App Router 静态导出为 `web/out/`，生产由 CLI 托管。页面默认打开 Today，采用全高侧栏与主内容左右分区，不设独立顶栏。`Sidebar` 顶部展示品牌，今天 / 日历 / 设置导航组垂直居中，底部提供配色、语言与时区入口；导航项至少 48px 高，偏好按钮至少 44×44px。侧栏从视口顶部吸附，矮窗口内可独立滚动；≤600px 收为品牌、显示偏好菜单与横向导航，菜单支持 Escape 关闭和焦点返回。侧栏为纯灰底，主内容保留减弱的点阵，图表与表格阅读区用页面底色。`ReportActions` 在紧凑页首提供同等描边权重的刷新、更新单价、图片导出；`Settings` 管时区、SQLite 备份 / 合并与 Cursor CSV。视觉与交互以 `design-spec.md` 为准。
 

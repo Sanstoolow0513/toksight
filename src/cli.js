@@ -52,13 +52,13 @@ Options
   --open           Open the printed URL in a browser (web only)
   --no-open        Leave the browser closed (web only; default)
   --api-only       Web: serve only the JSON API, no static dashboard
-  --offline        Skip LiteLLM and Cursor pricing fetches
+  --offline        Skip all network pricing fetches; use saved local prices
   --no-color       Disable ANSI colors
   --version        Print version
   --help           Print this help
 
 Usage stays local by default: toksight reads agent files and writes its own SQLite database and price caches.
-Pricing: built-in estimates, refreshed from LiteLLM (7-day disk cache), overridable
+Pricing: local public-price history established in Web, with cached/built-in CLI estimates, overridable
 in ${path.join('<toksight-dir>', 'pricing.json')} — see README for the directory location.
 Inspired by tokscale.`;
 

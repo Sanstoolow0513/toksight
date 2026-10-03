@@ -110,7 +110,8 @@ test('price catalog updates reprice estimates without changing reported charges 
       litellm: { fetchedAt: '2026-09-24T00:00:00.000Z', state: 'refreshed', url: 'https://github.com' },
     } });
     const rows = db.read().entries;
-    assert.equal(rows.find((entry) => entry.client === 'cursor').costUsd, 3);
+    assert.equal(rows.find((entry) => entry.client === 'cursor').costUsd, 2, 'historic usage retains its first locally observed price');
+    assert.equal(db.read().pricing.priceFor(cursor.model, 'cursor').input, 3e-6, 'latest rate remains available');
     assert.equal(rows.find((entry) => entry.client === 'codex').costUsd, 9);
     assert.equal(rows.find((entry) => entry.client === 'opencode').costUsd, 7);
     assert.equal(db.read().pricing.catalog.length, 2);
@@ -121,7 +122,7 @@ test('price catalog updates reprice estimates without changing reported charges 
       cursor: { fetchedAt: '2026-09-23T00:00:00.000Z', state: 'stale', url: null },
       litellm: { fetchedAt: '2026-09-23T00:00:00.000Z', state: 'stale', url: null },
     } });
-    assert.equal(db.read().entries.find((entry) => entry.client === 'cursor').costUsd, 3);
+    assert.equal(db.read().entries.find((entry) => entry.client === 'cursor').costUsd, 2);
     assert.equal(db.read().entries.find((entry) => entry.client === 'codex').costUsd, 9);
   } finally { db.close(); }
 });

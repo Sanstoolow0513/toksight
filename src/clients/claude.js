@@ -52,6 +52,8 @@ export async function collect({ env, home, roots } = {}) {
         reasoningTokens: 0,
         cacheReadTokens: cacheRead,
         cacheWriteTokens: cacheWrite,
+        ...(Number.isSafeInteger(usage.cache_creation?.ephemeral_1h_input_tokens) && usage.cache_creation.ephemeral_1h_input_tokens >= 0 && usage.cache_creation.ephemeral_1h_input_tokens <= cacheWrite
+          ? { cacheWrite1hTokens: usage.cache_creation.ephemeral_1h_input_tokens } : {}),
         costUsd: null,
         directory: path.basename(path.dirname(file)),
         title: null,

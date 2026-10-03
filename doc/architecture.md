@@ -38,6 +38,7 @@ web/ 源码 -> Next 静态导出 web/out/ -> src/webserver.js 提供页面与同
 | `src/cursorcsv.js`、`src/cursorpricing.js` | Cursor Usage Events 解析及官方价格目录缓存 |
 | `src/cursorpricepages.js`、`src/cursormodels.js` | 自动发现官方模型详情及价格档位，以目录驱动的名称/别名匹配解析 Cursor 模式 |
 | `src/pricing.js`、`src/pricecatalog.js`、`src/costcoverage.js` | 价格来源、模型身份/作用域、费用来源统计 |
+| `src/publicpricing.js`、`src/localpricedb.js`、`src/pricehistory.js`、`src/providerbindings.js` | 本机公开价格下载、观察历史、逐请求历史查价及用户提供商绑定 |
 | `src/contextpricing.js` | LiteLLM 标准长上下文档位解析、验证和逐请求选价 |
 | `src/webservice.js`、`src/webquery.js` | Web 快照服务、查询范围交集、共享刷新任务 |
 | `src/webdata.js`、`src/comparison.js` | Web 补充聚合、等日历天数的相邻周期比较 |

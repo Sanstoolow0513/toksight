@@ -8,7 +8,7 @@ import { useTableColumns } from '@/lib/useTableColumns';
 
 const RATE_PARTS = ['input', 'cacheRead', 'cacheWrite', 'output'];
 const PART_LABELS = ['compInput', 'compCacheRead', 'compCacheWrite', 'compOutput'];
-const SOURCE_NAMES = { litellm: 'LiteLLM', cursor: 'Cursor' };
+const SOURCE_NAMES = { litellm: 'LiteLLM', cursor: 'Cursor', openai: 'OpenAI', anthropic: 'Anthropic', google: 'Google', openrouter: 'OpenRouter' };
 
 function sourceLabel(source, tx) {
   if (source === 'builtin') return tx('sourceBuiltin');

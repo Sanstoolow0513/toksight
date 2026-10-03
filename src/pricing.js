@@ -65,7 +65,9 @@ export function computeCost(entry, price) {
     entry.inputTokens * price.input +
     entry.cacheReadTokens * price.cacheRead +
     entry.cacheWriteTokens * price.cacheWrite +
-    entry.outputTokens * price.output
+    entry.outputTokens * price.output +
+    (price.official?.cacheWrite1h != null && entry.cacheWrite1hTokens > 0
+      ? entry.cacheWrite1hTokens * (price.official.cacheWrite1h - price.cacheWrite) : 0)
   );
 }
 
@@ -77,6 +79,7 @@ async function loadUserPricing(dir) {
   } catch {
     return null;
   }
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
   const entries = Object.entries(raw)
     .filter(([, v]) => v && typeof v === 'object' && typeof v.input === 'number' && typeof v.output === 'number')
     .map(([key, v]) => [

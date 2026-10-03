@@ -20,12 +20,15 @@ import { DEFAULT_LOCALE, dayLabel, periodLabel, t, weekdayLabel } from '@/lib/i1
 import { exportReportImage } from '@/lib/exportImage';
 import * as prefs from '@/lib/prefs';
 import { coded } from '@/components/Coded';
+import PriceSetup from '@/components/PriceSetup';
+import { usePriceDatabase } from '@/lib/usePriceDatabase';
 
 function Skeleton() {
   return <div className="report" aria-busy="true"><div className="skel skel-kpis" /><div className="skel" style={{ height: 220 }} /><div className="skel" style={{ height: 300 }} /></div>;
 }
 
 export default function Page() {
+  const prices = usePriceDatabase();
   const [view, setView] = useState('today');
   const [locale, setLocale] = useState(DEFAULT_LOCALE);
   const [theme, setTheme] = useState(null);
@@ -51,7 +54,7 @@ export default function Page() {
   const toasts = useToasts();
   const { push: pushToast } = toasts;
   const tx = useCallback((key, vars) => t(locale, key, vars), [locale]);
-  const activePeriod = view === 'settings' || !today ? null : view === 'today' ? quickPeriod('1d', today)
+  const activePeriod = !prices.status?.completed || view === 'settings' || !today ? null : view === 'today' ? quickPeriod('1d', today)
     : period?.preset ? quickPeriod(period.preset, today) : period;
   const report = useReport(activePeriod, refreshRevision, agent, timezone);
   const data = report.timezone === timezone ? report.data : null;
@@ -67,7 +70,7 @@ export default function Page() {
   const firstDay = firstAt != null ? dayKey(new Date(firstAt), timezone) : null;
   const bounds = shown?.mode === 'custom' ? periodBounds(shown) : null;
   const selectedNav = calendarDay ? dayNav(calendarDay, { firstDay: bounds?.since ?? firstDay, today: bounds && bounds.until < today ? bounds.until : today }) : {};
-  const busy = refreshing || priceUpdating || importing || Boolean(databaseBusy) || exporting;
+  const busy = prices.busy || refreshing || priceUpdating || importing || Boolean(databaseBusy) || exporting;
   const hasData = Boolean(data && shown && (view !== 'today' || shown.preset === '1d'));
 
   useEffect(() => {
@@ -138,6 +141,7 @@ export default function Page() {
       if (!res.ok) throw new Error(body.error || `HTTP ${res.status}`);
       setNow(Date.now());
       setRefreshRevision((n) => n + 1);
+      await prices.reload();
     } catch (err) {
       pushToast({ key: 'refresh', tone: 'error', message: ['refreshFailed', { error: String(err?.message || err) }] });
     } finally {
@@ -154,6 +158,7 @@ export default function Page() {
       pushToast(warnings.length
         ? { key: 'prices', tone: 'warn', message: ['priceUpdateWarnings', { count: warnings.length }], details: { items: warnings } }
         : { key: 'prices', tone: 'success', message: ['priceUpdateSuccess'] });
+      await prices.reload();
       setRefreshRevision((n) => n + 1);
     } catch (err) {
       pushToast({ key: 'prices', tone: 'error', message: ['priceUpdateFailed', { error: String(err?.message || err) }] });
@@ -189,6 +194,13 @@ export default function Page() {
     } finally {
       setImporting(false);
     }
+  };
+  const onSetup = async (options) => {
+    try {
+      const body = await prices.setup(options);
+      if (body.warnings?.length) pushToast({ key: 'prices', tone: 'warn', message: ['priceUpdateWarnings', { count: body.warnings.length }], details: { items: body.warnings } });
+      setRefreshRevision((n) => n + 1);
+    } catch { /* The setup panel retains the error and allows retry. */ }
   };
   const onSelectDatabase = (file) => {
     setDatabaseError(null);
@@ -255,8 +267,14 @@ export default function Page() {
   };
   const shared = { locale, tx, agentLabel, sortBy: agentSort, onSort: onAgentSort };
   let content;
-  if (view === 'settings') {
+  if (prices.status && !prices.status.completed) {
+    content = <PriceSetup tx={tx} status={prices.status} busy={prices.busy} error={prices.error} onSetup={onSetup} />;
+  } else if (!prices.status && prices.error) {
+    content = <section className="state-card"><TriangleAlert size={24} /><h2>{tx('errorTitle')}</h2><p>{prices.error}</p><button type="button" className="btn-secondary" onClick={() => void prices.reload()}>{tx('retry')}</button></section>;
+  } else if (!prices.status) content = <Skeleton />;
+  else if (view === 'settings') {
     content = <Settings tx={tx} timezone={timezone} timezonePref={timezonePref} systemZone={systemZone} onTimezone={onTimezone} now={now}
+      prices={prices.status} priceBusy={priceUpdating || prices.busy} onUpdatePrices={onUpdatePrices} onAutoUpdate={(autoUpdate) => void onSetup({ offline: true, autoUpdate })}
       loading={busy} databaseBusy={databaseBusy} onImportDatabase={onSelectDatabase} onExportDatabase={onExportDatabase} importing={importing} onImportCursor={onImportCursor} />;
   } else if (!hasData && report.error) {
     content = <section className="state-card"><TriangleAlert size={24} /><h2>{tx('errorTitle')}</h2><p>{coded(tx('errorBody', { error: report.error }))}</p>
@@ -277,10 +295,10 @@ export default function Page() {
       <main className="main" id="main-content">
         <div className="workspace-content">
           <header className="workspace-head"><div><h1>{tx('nav' + view)}</h1>{view === 'settings' ? <p>{tx('settingsDescription')}</p> : null}</div>
-            <ReportActions tx={tx} loading={busy || reportBusy} refreshing={refreshing} onRefresh={onRefresh} priceUpdating={priceUpdating} onUpdatePrices={onUpdatePrices}
-              exporting={exporting} onExport={onExport} canExport={canExport} settings={view === 'settings'} />
+            {prices.status?.completed ? <ReportActions tx={tx} loading={busy || reportBusy} offline={prices.status.offline} refreshing={refreshing} onRefresh={onRefresh} priceUpdating={priceUpdating} onUpdatePrices={onUpdatePrices}
+              exporting={exporting} onExport={onExport} canExport={canExport} settings={view === 'settings'} /> : null}
           </header>
-          {view === 'today' ? <div className="today-filters no-export"><label className="agent-filter"><span>Agent</span><select aria-label="Agent" value={agent} onChange={(e) => onAgent(e.target.value)}>
+          {prices.status?.completed && view === 'today' ? <div className="today-filters no-export"><label className="agent-filter"><span>Agent</span><select aria-label="Agent" value={agent} onChange={(e) => onAgent(e.target.value)}>
             <option value="">{tx('filterAllAgents')}</option>{(report.data?.view?.availableClients ?? []).map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}</select></label></div> : null}
           {view === 'calendar' && activePeriod && today ? <ReportFilters period={activePeriod} today={today} agent={agent} clients={report.data?.view?.availableClients ?? []}
             onAgent={onAgent} onPeriod={onPeriod} onReset={() => { onAgent(''); onPeriod(periodOf(today, 'month')); }} tx={tx} /> : null}
