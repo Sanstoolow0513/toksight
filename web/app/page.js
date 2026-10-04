@@ -278,7 +278,7 @@ export default function Page() {
   } else if (!prices.status) content = <Skeleton />;
   else if (view === 'prices') {
     content = <PriceCatalog tx={tx} locale={locale} timezone={timezone} status={prices.status} busy={busy} error={prices.error}
-      revision={`${refreshRevision}:${prices.status.observedAt}`} onAutoUpdate={(autoUpdate) => void onSetup({ offline: true, autoUpdate })} />;
+      revision={`${refreshRevision}:${prices.status.observedAt}`} onSources={(selectedSources) => void onSetup({ selectedSources, offline: prices.status.offline })} onAutoUpdate={(autoUpdate) => void onSetup({ offline: true, autoUpdate })} />;
   } else if (view === 'settings') {
     content = <Settings tx={tx} timezone={timezone} timezonePref={timezonePref} systemZone={systemZone} onTimezone={onTimezone} now={now}
       loading={busy} databaseBusy={databaseBusy} onImportDatabase={onSelectDatabase} onExportDatabase={onExportDatabase} importing={importing} onImportCursor={onImportCursor} />;

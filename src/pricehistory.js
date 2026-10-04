@@ -1,3 +1,4 @@
+import { NATIVE_CHANNELS } from './nativeproviders.js';
 import { createPriceLookup, priceModelKey } from './pricecatalog.js';
 
 const parts = ['input', 'output', 'cacheRead', 'cacheWrite'];
@@ -5,7 +6,10 @@ const weekdays = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'frida
 const clock = (n) => Number.isInteger(n) && n >= 0 && n <= 2359 && n % 100 < 60;
 export function validOfficialPrice(value) {
   return value == null || (value && typeof value === 'object' && !Array.isArray(value) &&
-    ['openai', 'anthropic', 'google', 'openrouter'].includes(value.channel) &&
+    [...NATIVE_CHANNELS, 'openrouter'].includes(value.channel) &&
+    (value.routerModel == null || typeof value.routerModel === 'string') &&
+    (value.providerName == null || typeof value.providerName === 'string') &&
+    (value.routerEndpoints == null || Array.isArray(value.routerEndpoints) && value.routerEndpoints.every((s) => typeof s === 'string')) &&
     (value.url == null || typeof value.url === 'string') &&
     (value.endpoint == null || typeof value.endpoint === 'string') &&
     (value.aliases == null || Array.isArray(value.aliases) && value.aliases.every((a) => typeof a === 'string')) &&

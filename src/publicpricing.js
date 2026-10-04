@@ -1,5 +1,7 @@
 // Public prices are downloaded by this machine and committed to its SQLite.
 // No shared catalog service, credentials, or agent configuration is required.
+import { DEFAULT_PRICE_SOURCES } from './priceselection.js';
+import { NATIVE_PROVIDERS, nativeEndpoint } from './nativeproviders.js';
 import { priceRecord } from './pricecatalog.js';
 
 export const PUBLIC_PRICE_SOURCES = {
@@ -194,7 +196,28 @@ export function parseOpenRouterPrices(body, model = null) {
   return records;
 }
 
-export async function getPublicPricing({ offline = false, now = Date.now, fetchImpl = fetch, routerModels = [] } = {}) {
+// Only identical prices/conditions across native endpoints produce a generic
+// reference. Regional, quantized or high-speed price differences stay ambiguous.
+export function parseNativeRouterPrices(body, model) {
+  const endpoints = body?.data?.endpoints;
+  if (!Array.isArray(endpoints)) throw new Error('invalid OpenRouter endpoints');
+  const native = endpoints.filter((endpoint) => nativeEndpoint(model, endpoint)).sort((a, b) => a.tag.localeCompare(b.tag));
+  if (!native.length) return [];
+  const rows = parseOpenRouterPrices({ data: { endpoints: native } }, model);
+  if (rows.length !== native.length) throw new Error(`incomplete native endpoint prices for ${model}`);
+  const signature = (row) => JSON.stringify([row.input, row.output, row.cacheRead, row.cacheWrite,
+    row.cacheReadFallback, row.cacheWriteFallback, row.official.rules, row.official.cacheWrite1h]);
+  if (new Set(rows.map(signature)).size !== 1) throw new Error(`ambiguous native endpoint prices for ${model}`);
+  const owner = nativeEndpoint(model, native[0]);
+  const row = rows[0], { endpoint, aliases, ...official } = row.official;
+  const slug = model.slice(model.indexOf('/') + 1);
+  return [priceRecord({ ...row, source: 'openrouter-native', provider: owner.channel, name: model,
+    official: { ...official, channel: owner.channel, reference: true,
+      aliases: [`${owner.channel}/${slug}`], routerModel: model,
+      routerEndpoints: native.map((item) => item.tag).sort(), providerName: native[0].provider_name } })];
+}
+
+export async function getPublicPricing({ offline = false, now = Date.now, fetchImpl = fetch, routerModels = [], selectedSources = DEFAULT_PRICE_SOURCES } = {}) {
   if (offline) return { records: [], sourceDetails: Object.fromEntries(Object.entries(PUBLIC_PRICE_SOURCES).map(([source,url]) => [source, { fetchedAt: null, state: 'skipped (offline)', url }])), warnings: [], sources: [] };
   const time = new Date(now()).toISOString();
   const fetchBody = async (url, json = false) => {
@@ -206,31 +229,52 @@ export async function getPublicPricing({ offline = false, now = Date.now, fetchI
   };
   const parsers = { openai: parseOpenAIPrices, anthropic: parseAnthropicPrices, google: parseGooglePrices, openrouter: parseOpenRouterPrices };
   const result = { records: [], sourceDetails: {}, sources: [], warnings: [] };
-  const fetched = await Promise.allSettled(Object.entries(PUBLIC_PRICE_SOURCES).map(async ([source, url]) => {
+  const selected = Object.entries(PUBLIC_PRICE_SOURCES).filter(([source]) => selectedSources.includes(source) || source === 'openrouter' && selectedSources.includes('openrouter-native'));
+  const fetched = await Promise.allSettled(selected.map(async ([source, url]) => {
     const body = await fetchBody(url, source === 'openrouter');
-    const records = source === 'google' ? parseGooglePrices(body, now()) : parsers[source](body);
-    return { source, url, records };
+    if (source === 'openrouter' && (!Array.isArray(body?.data) || !body.data.length || body.data.length > 10000)) throw new Error('invalid OpenRouter model catalog');
+    const records = source === 'openrouter' && !selectedSources.includes('openrouter') ? []
+      : source === 'google' ? parseGooglePrices(body, now()) : parsers[source](body);
+    return { source, url, records, models: source === 'openrouter' ? body.data.map((row) => row.id).filter((id) => typeof id === 'string') : [] };
   }));
   for (let i = 0; i < fetched.length; i++) {
-    const source = Object.keys(PUBLIC_PRICE_SOURCES)[i], value = fetched[i];
+    const source = selected[i][0], value = fetched[i];
     if (value.status === 'fulfilled') {
-      result.records.push(...value.value.records); result.sources.push(source);
+      if (selectedSources.includes(source)) { result.records.push(...value.value.records); result.sources.push(source); }
       result.sourceDetails[source] = { fetchedAt: time, state: 'refreshed', url: value.value.url };
     } else {
       result.warnings.push(`${source} pricing unavailable; keeping saved prices (${value.reason?.message || value.reason})`);
       result.sourceDetails[source] = { fetchedAt: null, state: 'unavailable', url: PUBLIC_PRICE_SOURCES[source] };
     }
   }
-  // Fetch details only for models actually used through this router, with a
-  // bounded worker pool; never make hundreds of requests at first setup.
-  const ids = [...new Set(routerModels)].filter((id) => /^[a-z0-9_.-]+\/[a-z0-9_.:/-]+$/i.test(id)).slice(0,100);
-  let next = 0;
+  const routerCatalog = fetched.find((row) => row.status === 'fulfilled' && row.value.source === 'openrouter')?.value.models ?? [];
+  const nativeModels = selectedSources.includes('openrouter-native')
+    ? routerCatalog.filter((id) => Object.hasOwn(NATIVE_PROVIDERS, id.split('/')[0])) : [];
+  // Full native-author discovery, bounded concurrency; no arbitrary first-100
+  // cutoff that would silently omit later vendors. Third-party-only models skip.
+  const ids = [...new Set([...(selectedSources.includes('openrouter') ? routerModels : []), ...nativeModels])]
+    .filter((id) => /^[a-z0-9_.-]+\/[a-z0-9_.:/-]+$/i.test(id));
+  let next = 0, nativeSucceeded = false, nativeFailed = false;
   await Promise.all(Array.from({ length: Math.min(4, ids.length) }, async () => {
     while (next < ids.length) {
       const id = ids[next++];
-      try { result.records.push(...parseOpenRouterPrices(await fetchBody(`${PUBLIC_PRICE_SOURCES.openrouter}/${id}/endpoints`, true), id)); }
-      catch (err) { result.warnings.push(`OpenRouter endpoint prices unavailable for ${id} (${err.message})`); }
+      try {
+        const body = await fetchBody(`${PUBLIC_PRICE_SOURCES.openrouter}/${id}/endpoints`, true);
+        if (selectedSources.includes('openrouter') && routerModels.includes(id) && body?.data?.endpoints?.length) {
+          result.records.push(...parseOpenRouterPrices(body, id));
+        }
+        if (selectedSources.includes('openrouter-native')) {
+          result.records.push(...parseNativeRouterPrices(body, id));
+          nativeSucceeded = true;
+        }
+      } catch (err) { nativeFailed = true; result.warnings.push(`OpenRouter endpoint prices unavailable for ${id} (${err.message})`); }
     }
   }));
+  if (selectedSources.includes('openrouter-native')) {
+    result.sourceDetails['openrouter-native'] = { fetchedAt: nativeSucceeded ? time : null,
+      state: nativeFailed ? 'partial' : nativeSucceeded ? 'refreshed' : 'unavailable', url: PUBLIC_PRICE_SOURCES.openrouter };
+    if (nativeSucceeded) result.sources.push('openrouter-native');
+    if (!selectedSources.includes('openrouter')) delete result.sourceDetails.openrouter;
+  }
   return result;
 }

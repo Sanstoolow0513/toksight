@@ -134,7 +134,11 @@ async function main() {
     const data = await dataResponse.json();
     assert.equal(data.version, pkg.version);
     assert.equal(data.totals.totalTokens, 120);
-    assert.equal(data.pricing.sources.litellm, 'skipped (offline)');
+    assert.equal(data.pricing.sources.litellm, 'disabled');
+    const priceStatus = await (await fetch(url + '/api/prices/status')).json();
+    assert.ok(priceStatus.selectedSources.includes('openrouter-native'));
+    assert.equal(priceStatus.selectedSources.includes('litellm'), false);
+    assert.equal(priceStatus.selectedSources.includes('openrouter'), false);
     const filteredResponse = await fetch(url + '/api/data?client=claude&since=2026-08-29&until=2026-08-29');
     assert.equal(filteredResponse.status, 200);
     const filteredData = await filteredResponse.json();

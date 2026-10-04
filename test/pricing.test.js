@@ -18,7 +18,7 @@ test('normalizeModelName strips provider prefixes and snapshots', () => {
 
 test('builtin pricing accepts known models and snapshots without guessing family variants', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'toksight-builtin-'));
-  const { priceFor } = await getPricing({ offline: true, env: { TOKSIGHT_CONFIG_DIR: dir } });
+  const { priceFor } = await getPricing({ selectedSources: ['litellm'], offline: true, env: { TOKSIGHT_CONFIG_DIR: dir } });
   const p = priceFor('GLM-5');
   assert.equal(p.source, 'builtin');
   assert.equal(p.input, 0.6e-6);
@@ -61,7 +61,7 @@ test('an unambiguous user provider-suffix override wins over bare LiteLLM prices
     path.join(dir, 'pricing.json'),
     JSON.stringify({ 'zhipuai/glm-5.3': { input: 1, output: 2, cacheRead: 0.1, cacheWrite: 1 } }),
   );
-  const { priceFor, sources } = await getPricing({ offline: true, env: { TOKSIGHT_CONFIG_DIR: dir } });
+  const { priceFor, sources } = await getPricing({ selectedSources: ['litellm'], offline: true, env: { TOKSIGHT_CONFIG_DIR: dir } });
   assert.equal(sources.user, true);
   const p = priceFor('GLM-5.3');
   assert.equal(p.source, 'user');
@@ -71,7 +71,7 @@ test('an unambiguous user provider-suffix override wins over bare LiteLLM prices
     'zhipuai/glm-5.3': { input: 1, output: 2 },
     'other/glm-5.3': { input: 4, output: 5 },
   }));
-  const ambiguous = await getPricing({ offline: true, env: { TOKSIGHT_CONFIG_DIR: dir } });
+  const ambiguous = await getPricing({ selectedSources: ['litellm'], offline: true, env: { TOKSIGHT_CONFIG_DIR: dir } });
   assert.equal(ambiguous.priceFor('GLM-5.3').source, 'litellm');
 });
 
@@ -83,11 +83,11 @@ test('LiteLLM price cache lasts a week and a forced update bypasses it', async (
       'unit-test-model': { mode: 'chat', input_cost_per_token: calls / 1e6, output_cost_per_token: 2e-6 },
     }) }; };
     const env = { TOKSIGHT_CONFIG_DIR: dir };
-    const first = await getPricing({ env, now: () => 1_000_000, fetchImpl });
+    const first = await getPricing({ selectedSources: ['litellm'], env, now: () => 1_000_000, fetchImpl });
     assert.equal(first.priceFor('unit-test-model').input, 1e-6);
-    await getPricing({ env, now: () => 1_000_000 + PRICE_REFRESH_MS - 1, fetchImpl });
+    await getPricing({ selectedSources: ['litellm'], env, now: () => 1_000_000 + PRICE_REFRESH_MS - 1, fetchImpl });
     assert.equal(calls, 1);
-    const forced = await getPricing({ env, force: true, now: () => 1_000_001, fetchImpl });
+    const forced = await getPricing({ selectedSources: ['litellm'], env, force: true, now: () => 1_000_001, fetchImpl });
     assert.equal(forced.priceFor('unit-test-model').input, 2e-6);
     assert.equal(calls, 2);
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }

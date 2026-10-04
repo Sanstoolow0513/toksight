@@ -1966,3 +1966,7 @@ body { background-image: none; }
 .report.is-exporting .mcell, .report.is-exporting .ycell { transition: none; box-shadow: none; }
 .report.is-exporting .col-info, .report.is-exporting .row-details-row { display: none; }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; } }
+
+.price-source-options { border: 0; padding: 0; margin: 0 0 20px; min-width: 0; }
+.price-source-options legend { font-weight: 600; margin-bottom: 8px; }
+.price-source-options .setup-auto { margin: 8px 0; }

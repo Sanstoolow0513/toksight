@@ -10,6 +10,7 @@ import { createUsageDatabase } from './database.js';
 import { getPricing, PRICE_REFRESH_MS } from './pricing.js';
 import { parseCursorCsv } from './cursorcsv.js';
 import { createCursorPriceLookup, cursorPriceRecords, getCursorPricing } from './cursorpricing.js';
+import { PRICE_SOURCES, validPriceSources } from './priceselection.js';
 import { getPublicPricing, PUBLIC_PRICE_SOURCES } from './publicpricing.js';
 
 // The database is loaded before serving. Requests reuse its in-memory snapshot;
@@ -57,17 +58,18 @@ export function createWebDataService(base, { collect = collectAll, env, home, da
       if (!current) { await refresh(); current = database.read(); }
       const time = now();
       const updates = current.pricing.updates ?? {};
+      const selectedSources = database.priceStatus().selectedSources;
       const due = (source) => {
         const fetched = Date.parse(updates[source]?.fetchedAt ?? '');
         const checked = Date.parse(updates[source]?.checkedAt ?? '');
         if (Number.isFinite(checked) && time - checked < 60 * 60 * 1000 && !force) return false;
         return !Number.isFinite(fetched) || time - fetched >= PRICE_REFRESH_MS;
       };
-      if (!force && !['cursor', ...Object.keys(PUBLIC_PRICE_SOURCES)].some(due)) return { updated: false, updates, warnings: [] };
+      if (!force && !selectedSources.some(due)) return { updated: false, updates, warnings: [] };
       const [generic, cursor, publicRates] = await Promise.allSettled([
-        genericPricing({ offline: true, force: false, env, home, now }),
-        cursorPricing({ offline: base.offline, force, env, home, now }),
-        publicPricing({ offline: base.offline, now, routerModels: current.entries.filter((e) => e.providerId === 'openrouter' || e.pricingProvider === 'openrouter' || e.model.startsWith('openrouter/'))
+        genericPricing({ offline: base.offline, force, env, home, now, selectedSources }),
+        selectedSources.includes('cursor') ? cursorPricing({ offline: base.offline, force, env, home, now }) : Promise.resolve({ models: [], warnings: [], state: 'disabled' }),
+        publicPricing({ offline: base.offline, now, selectedSources, routerModels: current.entries.filter((e) => e.providerId === 'openrouter' || e.pricingProvider === 'openrouter' || e.model.startsWith('openrouter/'))
           .map((e) => e.model.replace(/^openrouter\//, '')) }),
       ]);
       const records = [], sources = [], details = {}, warnings = [];
@@ -78,7 +80,7 @@ export function createWebDataService(base, { collect = collectAll, env, home, da
         Object.assign(details, generic.value.sourceDetails);
         warnings.push(...(generic.value.warnings ?? []));
       } else {
-        warnings.push(`LiteLLM pricing unavailable (${generic.reason?.message || generic.reason})`);
+        warnings.push(`Fallback pricing unavailable (${generic.reason?.message || generic.reason})`);
         details.litellm = { fetchedAt: null, url: null, state: 'unavailable' };
       }
       if (cursor.status === 'fulfilled') {
@@ -97,7 +99,7 @@ export function createWebDataService(base, { collect = collectAll, env, home, da
         warnings.push(...publicRates.value.warnings);
       } else {
         warnings.push(`Public pricing unavailable; keeping saved prices (${publicRates.reason?.message || publicRates.reason})`);
-        for (const [source, url] of Object.entries(PUBLIC_PRICE_SOURCES)) details[source] = { fetchedAt: null, state: 'unavailable', url };
+        for (const [source, url] of [...Object.entries(PUBLIC_PRICE_SOURCES), ['openrouter-native', PUBLIC_PRICE_SOURCES.openrouter]].filter(([source]) => selectedSources.includes(source))) details[source] = { fetchedAt: null, state: 'unavailable', url };
       }
       assertOpen();
       const latest = database.updatePriceCatalog({ records, sourceDetails: details, sources }, new Date(time).toISOString());
@@ -167,7 +169,7 @@ export function createWebDataService(base, { collect = collectAll, env, home, da
   getData.initialize = initialize;
   getData.refresh = refresh;
   getData.updatePrices = () => updatePrices(true);
-  getData.priceStatus = () => ({ ...database.priceStatus(), offline: Boolean(base.offline), updating: Boolean(inflightPrices), warnings: startupPricingWarnings });
+  getData.priceStatus = () => ({ ...database.priceStatus(), availableSources: PRICE_SOURCES, offline: Boolean(base.offline), updating: Boolean(inflightPrices), warnings: startupPricingWarnings });
   getData.prices = (params = new URLSearchParams()) => {
     assertOpen();
     const keys = [...params.keys()], key = params.get('key');
@@ -179,23 +181,26 @@ export function createWebDataService(base, { collect = collectAll, env, home, da
   getData.setup = (options = {}) => {
     if (inflightSetup) return inflightSetup;
     if (typeof options !== 'object' || options == null || Array.isArray(options) ||
-      Object.keys(options).some((key) => !['offline', 'autoUpdate'].includes(key)) ||
-      ['offline', 'autoUpdate'].some((key) => Object.hasOwn(options, key) && typeof options[key] !== 'boolean')) {
+      Object.keys(options).some((key) => !['offline', 'autoUpdate', 'selectedSources'].includes(key)) ||
+      ['offline', 'autoUpdate'].some((key) => Object.hasOwn(options, key) && typeof options[key] !== 'boolean') ||
+      (Object.hasOwn(options, 'selectedSources') && !validPriceSources(options.selectedSources))) {
       const err = new Error('invalid setup options'); err.status = 400; err.code = 'BAD_SETUP'; return Promise.reject(err);
     }
     const run = (async () => {
       await snapshot();
+      if (inflightPrices) await inflightPrices;
+      if (options.selectedSources) database.selectPriceSources(options.selectedSources);
       let result = { warnings: [] };
       if (!options.offline && !base.offline) result = await updatePrices(true);
       else if (!database.priceStatus().completed && !base.offline) {
         // Continuing locally must not trigger an immediate download on the
         // very next report GET. Automatic checks can start after one hour.
         database.updatePriceCatalog({ records: [], sources: [], sourceDetails: Object.fromEntries([
-          ...Object.entries(PUBLIC_PRICE_SOURCES), ['cursor', 'https://cursor.com/docs/models-and-pricing.md'],
+          ...Object.entries(PUBLIC_PRICE_SOURCES), ['openrouter-native', PUBLIC_PRICE_SOURCES.openrouter], ['litellm', null], ['cursor', 'https://cursor.com/docs/models-and-pricing.md'],
         ].map(([source,url]) => [source,{fetchedAt:null,state:'deferred',url}])) }, new Date(now()).toISOString());
       }
       assertOpen();
-      database.completeSetup({ autoUpdate: options.autoUpdate ?? true }, new Date(now()).toISOString());
+      database.completeSetup({ autoUpdate: options.autoUpdate ?? database.priceStatus().autoUpdate }, new Date(now()).toISOString());
       schedule();
       return { ...getData.priceStatus(), warnings: result.warnings };
     })();
@@ -218,7 +223,7 @@ export function createWebDataService(base, { collect = collectAll, env, home, da
     await snapshot();
     let cursorRates = null;
     const warnings = [...parsed.warnings];
-    if (parsed.records.some((record) => record.included)) {
+    if (database.priceStatus().selectedSources.includes('cursor') && parsed.records.some((record) => record.included)) {
       try {
         const result = await cursorPricing({ offline: base.offline, env, home });
         cursorRates = { priceFor: createCursorPriceLookup(result.models), records: cursorPriceRecords(result.models),

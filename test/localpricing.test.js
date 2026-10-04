@@ -41,6 +41,7 @@ test('price catalog and history API read saved channels and revisions without sc
   const { url } = await server.start();
   assert.deepEqual((await (await fetch(url + '/api/prices')).json()).records, []);
   database.replace(raw([]), '2026-10-01T00:00:00Z');
+  database.selectPriceSources(['openai', 'openrouter', 'cursor']);
   const native = rate(), routerRate = parseOpenRouterPrices(router)[0];
   const cursor = priceRecord({ scope: 'cursor', source: 'cursor', name: 'gpt-example', provider: 'OpenAI', input: 3e-6, output: 12e-6, cacheRead: 0, cacheWrite: 0,
     cursor: { contextOver: 200000, aliases: ['gpt-example-max'], url: 'https://cursor.com/docs/models/example' } });
@@ -124,7 +125,7 @@ test('public downloads are isolated, offline does not fetch and one failed sourc
   const fetchImpl=async(url)=>{calls.push(url);const source=Object.entries(PUBLIC_PRICE_SOURCES).find(([,u])=>url===u)?.[0];
     if(source==='anthropic')return {ok:false,status:503};
     return {ok:true,text:async()=>bodies[source]};};
-  const result=await getPublicPricing({fetchImpl,now:()=>Date.parse('2026-10-01T00:00:00Z')});
+  const result=await getPublicPricing({selectedSources:['openai','anthropic','google','openrouter'],fetchImpl,now:()=>Date.parse('2026-10-01T00:00:00Z')});
   assert.equal(calls.length,4); assert.deepEqual(result.sources,['openai','google','openrouter']);
   assert.match(result.warnings[0],/anthropic.*503/); assert.equal(result.sourceDetails.anthropic.fetchedAt,null);
   await getPublicPricing({offline:true,fetchImpl}); assert.equal(calls.length,4);

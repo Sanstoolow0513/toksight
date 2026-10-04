@@ -1,3 +1,4 @@
+import { PriceSourceSettings } from './PriceSources';
 import { Fragment, useId, useMemo, useState } from 'react';
 import { ChevronLeft, ChevronRight, ExternalLink, LoaderCircle, Search } from 'lucide-react';
 import { fmtDateTime, fmtInt } from '@/lib/format';
@@ -57,29 +58,32 @@ function Details({ record, update, revision, tx, timezone, locale }) {
       <div><dt>{tx('priceCatalogId')}</dt><dd><code>{record.name}</code></dd></div>
       <div><dt>{tx('priceChannel')}</dt><dd>{record.scope === 'cursor' ? 'Cursor' : record.official?.channel ? priceSourceLabel(record.official.channel, tx) : tx('priceGeneral')}</dd></div>
       {record.provider ? <div><dt>{tx('priceProvider')}</dt><dd>{record.provider}</dd></div> : null}
+      {record.official?.routerEndpoints ? <div><dt>{tx('priceEndpoint')}</dt><dd>{record.official.providerName} · {record.official.routerEndpoints.join(', ')}</dd></div> : null}
       {record.official?.endpoint ? <div><dt>{tx('priceEndpoint')}</dt><dd>{record.official.endpoint}</dd></div> : null}
       {aliases.length ? <div><dt>{tx('priceAliases')}</dt><dd>{aliases.join(', ')}</dd></div> : null}
       {url ? <div><dt>{tx('priceSource')}</dt><dd><a href={url} target="_blank" rel="noreferrer">{tx('priceViewSource')} <ExternalLink size={12} aria-hidden="true" /></a></dd></div> : null}
     </dl>
     {record.official?.retained || record.cursor?.retained ? <p className="price-note">{tx('priceRetainedNote')}</p> : null}
+    {record.source === 'openrouter-native' ? <p className="price-note">{tx('priceNativeReferenceNote')}</p> : null}
     {record.official?.reference ? <p className="price-note">{tx('priceReferenceNote')}</p> : null}
     <Conditions record={record} tx={tx} locale={locale} />
     {record.revisions ? <History record={record} revision={revision} tx={tx} timezone={timezone} locale={locale} /> : <p className="price-note">{tx('priceNoHistory')}</p>}
   </div>;
 }
 
-export default function PriceCatalog({ tx, timezone, locale, status, busy, error, onAutoUpdate, revision }) {
+export default function PriceCatalog({ tx, timezone, locale, status, busy, error, onAutoUpdate, onSources, revision }) {
   const catalog = usePriceCatalog(null, revision);
+  const [provider, setProvider] = useState('');
   const [query, setQuery] = useState(''), [source, setSource] = useState(''), [page, setPage] = useState(0), [expanded, setExpanded] = useState(null);
   const prefix = useId();
   const records = catalog.data?.records;
   const sources = useMemo(() => [...new Set([...(records ?? []).map((row) => row.source), ...Object.keys(catalog.data?.updates ?? {})])].sort(), [records, catalog.data?.updates]);
   const filtered = useMemo(() => {
     const words = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
-    return (records ?? []).filter((row) => (!source || row.source === source) && words.every((word) =>
-      [row.name, row.modelId, row.provider, row.official?.endpoint, ...(row.official?.aliases ?? row.cursor?.aliases ?? [])].join(' ').toLowerCase().includes(word)))
+    return (records ?? []).filter((row) => (!source || row.source === source) && (!provider || row.provider === provider) && words.every((word) =>
+      [row.name, row.modelId, row.provider, row.official?.endpoint, row.official?.providerName, ...(row.official?.routerEndpoints ?? []), ...(row.official?.aliases ?? row.cursor?.aliases ?? [])].join(' ').toLowerCase().includes(word)))
       .sort((a, b) => a.name.localeCompare(b.name) || a.source.localeCompare(b.source));
-  }, [records, query, source]);
+  }, [records, query, source, provider]);
   const pages = Math.max(1, Math.ceil(filtered.length / pageSize)), current = Math.min(page, pages - 1);
   const rows = filtered.slice(current * pageSize, (current + 1) * pageSize);
   return <div className="prices-content">
@@ -89,6 +93,7 @@ export default function PriceCatalog({ tx, timezone, locale, status, busy, error
       <div><span>{tx('priceLastChange')}</span><strong className="price-summary-time">{fmtDateTime(catalog.data?.status.observedAt ?? status.observedAt, timezone)}</strong></div>
     </div>
     <div className="price-update-settings">
+      <PriceSourceSettings key={JSON.stringify(status.selectedSources)} tx={tx} status={status} busy={busy} onSave={onSources} />
       <label className="setup-auto"><input type="checkbox" checked={status.autoUpdate} disabled={busy} onChange={(e) => onAutoUpdate(e.target.checked)} />{tx('priceAutoUpdate')}</label>
       <p>{tx(status.offline ? 'setupOffline' : 'priceAutoNote')}</p>
       {error ? <p className="setup-error" role="alert">{error}</p> : null}
@@ -102,6 +107,7 @@ export default function PriceCatalog({ tx, timezone, locale, status, busy, error
     <section className="price-list" aria-busy={catalog.loading}>
       <div className="price-list-heading"><h2>{tx('priceDatabaseTitle')}</h2><p>{tx('priceUnits')}</p></div>
       <div className="price-filters">
+        <label className="price-source-filter"><span>{tx('priceProvider')}</span><select value={provider} onChange={(e) => { setProvider(e.target.value); setPage(0); setExpanded(null); }}><option value="">{tx('priceAllProviders')}</option>{[...new Set((records ?? []).map((row) => row.provider).filter(Boolean))].sort().map((id) => <option key={id} value={id}>{id}</option>)}</select></label>
         <label className="price-search"><Search size={17} aria-hidden="true" /><span className="visually-hidden">{tx('priceSearch')}</span><input type="search" value={query} placeholder={tx('priceSearch')} onChange={(e) => { setQuery(e.target.value); setPage(0); setExpanded(null); }} /></label>
         <label className="price-source-filter"><span>{tx('priceSource')}</span><select value={source} onChange={(e) => { setSource(e.target.value); setPage(0); setExpanded(null); }}><option value="">{tx('priceAllSources')}</option>{sources.map((id) => <option key={id} value={id}>{priceSourceLabel(id, tx)}</option>)}</select></label>
       </div>

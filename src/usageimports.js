@@ -5,6 +5,7 @@ import { createHash } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
 import { existsSync } from 'node:fs';
 import { decodePriceRecord, storedPriceFor } from './pricecatalog.js';
+import { readPriceSources, priceEnabled } from './priceselection.js';
 import { createHistoricalPriceLookup } from './pricehistory.js';
 
 export function usageRows(rows) {
@@ -52,6 +53,7 @@ export function readStoredPriceFor(file, warnings = []) {
   let db;
   try {
     db = new DatabaseSync(file, { readOnly: true });
+    const selectedSources = readPriceSources(db);
     const tables = new Set(db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all().map((r) => r.name));
     const meta = tables.has('snapshot_meta') ? db.prepare('SELECT model_prices_json FROM snapshot_meta WHERE id = 1').get() : null;
     const prices = new Map(meta ? JSON.parse(meta.model_prices_json) : []);
@@ -60,14 +62,17 @@ export function readStoredPriceFor(file, warnings = []) {
       input_usd_per_token AS input, cache_read_usd_per_token AS cacheRead,
       cache_write_usd_per_token AS cacheWrite, output_usd_per_token AS output,
       cache_read_fallback AS cacheReadFallback, cache_write_fallback AS cacheWriteFallback,
-      ${hasMetadata ? 'metadata_json' : "'null'"} AS metadataJson FROM model_prices ORDER BY id`).all().map(decodePriceRecord) : [];
-    const history = tables.has('price_history') ? db.prepare('SELECT * FROM price_history').all() : [];
+      ${hasMetadata ? 'metadata_json' : "'null'"} AS metadataJson FROM model_prices ORDER BY id`).all().map(decodePriceRecord).filter((row) => priceEnabled(row, selectedSources)) : [];
+    const history = tables.has('price_history') ? db.prepare('SELECT * FROM price_history').all().filter((row) => priceEnabled(JSON.parse(row.record_json), selectedSources)) : [];
     const lookup = createHistoricalPriceLookup(history, catalog);
-    const priceFor = (model, client, entry = null) => lookup(model, client, entry)
-      ?? storedPriceFor(model, prices.get(client === 'cursor' ? `cursor\u0000${model}` : model), entry);
+    const priceFor = (model, client, entry = null) => {
+      const fallback = prices.get(client === 'cursor' ? `cursor\u0000${model}` : model);
+      return lookup(model, client, entry) ?? (priceEnabled(fallback, selectedSources) ? storedPriceFor(model, fallback, entry) : null);
+    };
+    priceFor.selectedSources = selectedSources;
     priceFor.hasLocalPrices = history.length > 0;
     priceFor.sourceDetails = tables.has('price_updates') ? Object.fromEntries(db.prepare('SELECT * FROM price_updates').all()
-      .filter((r) => ['openai','anthropic','google','openrouter'].includes(r.source)).map((r)=>[r.source,{fetchedAt:r.fetched_at,checkedAt:r.checked_at,state:r.state,url:r.url}])) : {};
+      .filter((r) => selectedSources.includes(r.source)).map((r)=>[r.source,{fetchedAt:r.fetched_at,checkedAt:r.checked_at,state:r.state,url:r.url}])) : {};
     return priceFor;
   } catch (err) {
     warnings.push(`toksight: cannot read saved prices (${err.message})`);

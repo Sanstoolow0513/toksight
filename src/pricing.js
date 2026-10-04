@@ -1,6 +1,7 @@
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { savedPriceSources } from './priceselection.js';
 import { createPriceLookup, modelIdentity, priceRecord } from './pricecatalog.js';
 import { litellmContextTiers } from './contextpricing.js';
 
@@ -158,12 +159,15 @@ function buildLitellmMap(data) {
   return { records: recordsFromEntries(entries) };
 }
 
-export async function getPricing({ offline = false, force = false, env, home, now = Date.now, fetchImpl = fetch } = {}) {
+export async function getPricing({ offline = false, force = false, env, home, selectedSources, now = Date.now, fetchImpl = fetch } = {}) {
   const dir = configDir({ env, home });
   const warnings = [];
 
   const userMap = await loadUserPricing(dir);
-  const lite = await loadLitellmPricing(path.join(dir, 'cache', 'litellm-pricing.json'), { offline, force, now, fetchImpl });
+  const enabled = selectedSources ?? savedPriceSources(path.join(dir, 'usage.sqlite'), warnings);
+  const lite = enabled.includes('litellm')
+    ? await loadLitellmPricing(path.join(dir, 'cache', 'litellm-pricing.json'), { offline, force, now, fetchImpl })
+    : { map: null, state: 'disabled', fetchedAt: null };
   if (lite.warning) warnings.push(`LiteLLM pricing unavailable, using cached/built-in estimates: ${lite.warning}`);
   const records = [
     ...BUILTIN_RULES.map((rule) => priceRecord({ name: rule.match, ...perToken({ ...rule, source: 'builtin' }) })),

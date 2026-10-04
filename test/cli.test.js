@@ -100,7 +100,7 @@ test('collectAll collects fixtures, prices entries without mutating them', async
     assert.ok(raw.every((e) => e.costUsd == null));
 
     // Offline pricing state is surfaced.
-    assert.equal(ctx.pricing.sources.litellm, 'skipped (offline)');
+    assert.equal(ctx.pricing.sources.litellm, 'disabled');
     assert.equal(ctx.pricing.sources.user, false);
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true });

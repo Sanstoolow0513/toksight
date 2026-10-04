@@ -7,12 +7,18 @@ import { fileURLToPath } from 'node:url';
 import { DatabaseSync } from 'node:sqlite';
 import { computeCost, getPricing } from '../src/pricing.js';
 import { createPriceLookup, priceRecord } from '../src/pricecatalog.js';
-import { createUsageDatabase } from '../src/database.js';
+import { createUsageDatabase as createDatabase } from '../src/database.js';
 import { readDatabaseBackup } from '../src/dbtransfer.js';
 import { readStoredPriceFor } from '../src/usageimports.js';
 import { collectAll } from '../src/collect.js';
 import { buildPayload } from '../src/payload.js';
 import { createWebDataService } from '../src/webservice.js';
+
+const createUsageDatabase = (options) => {
+  const db = createDatabase(options);
+  db.selectPriceSources(['litellm']);
+  return db;
+};
 
 const catalog = JSON.parse(await readFile(new URL('./fixtures/pricing/litellm.json', import.meta.url), 'utf8'));
 const opts = { offline: true, clients: null, since: null, until: null, top: 20 };
@@ -31,6 +37,8 @@ async function fixture(t, data = catalog) {
   const cache = path.join(env.TOKSIGHT_CONFIG_DIR, 'cache');
   await mkdir(cache, { recursive: true });
   await writeFile(path.join(cache, 'litellm-pricing.json'), JSON.stringify({ fetchedAt: Date.now(), data }));
+  const preferences = createUsageDatabase({ env });
+  preferences.close();
   const pricing = await getPricing({ offline: true, env, home: dir });
   return { dir, env, home: dir, pricing, cleanup };
 }

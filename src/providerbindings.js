@@ -1,3 +1,4 @@
+import { NATIVE_CHANNELS } from './nativeproviders.js';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { configDir } from './pricing.js';
@@ -11,7 +12,7 @@ export function readProviderBindings({ env, home } = {}, warnings = []) {
   const fields = ['client','providerId','provider','endpoint','model','since','until'];
   if (!Array.isArray(rows) || rows.some((row) => !row || typeof row !== 'object' || Array.isArray(row) ||
     Object.keys(row).some((key) => !fields.includes(key)) || typeof row.client !== 'string' || typeof row.providerId !== 'string' ||
-    !['openai','anthropic','google','openrouter'].includes(row.provider) ||
+    ![...NATIVE_CHANNELS, 'openrouter'].includes(row.provider) ||
     ['endpoint','model'].some((key) => row[key] != null && typeof row[key] !== 'string') ||
     ['since','until'].some((key) => row[key] != null && (typeof row[key] !== 'string' || !/(?:Z|[+-]\d\d:\d\d)$/.test(row[key]) || !Number.isFinite(Date.parse(row[key])))) ||
     (row.since && row.until && Date.parse(row.since) >= Date.parse(row.until)))) {

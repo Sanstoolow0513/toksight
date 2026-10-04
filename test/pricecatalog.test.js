@@ -97,6 +97,7 @@ test('price catalog updates reprice estimates without changing reported charges 
       reasoningTokens: 0, costUsd: null, directory: null, title: null };
     const generic = { ...cursor, client: 'codex', model: 'grok-4.6', costUsd: 8 };
     const reported = { ...cursor, client: 'opencode', model: 'grok-4.6', costUsd: 7 };
+    db.selectPriceSources(['cursor', 'litellm']);
     const old = [rate('Grok 4.6', 2), rate('grok-4.6', 8, 'default', 'litellm')];
     const oldLookup = createPriceLookup(old);
     db.replace({ entries: [generic, reported], warnings: [], reportedCosts: new WeakSet([reported]),

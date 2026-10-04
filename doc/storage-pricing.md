@@ -1,7 +1,7 @@
 # 存储、导入与定价
 
 Web 首次引导、本地公开价格采集、定时更新、观察历史和提供商绑定见[本机价格库](local-pricing.md)。
-以下 LiteLLM 机制用于尚无本地公开历史的 CLI 或已存缓存回退。
+LiteLLM 默认关闭，只有明确启用后才可下载或使用已有缓存；来源偏好同时约束 CLI、Web、历史与备份回退。
 
 ## 已提交快照
 
@@ -27,7 +27,7 @@ Cursor 没有事件 ID，导入身份以时间、模型和四类 token 数为基
 
 ## 价格目录与费用归属
 
-- 非 Cursor 来源：内置估价 → LiteLLM 公共价格（7 天磁盘缓存）→ 用户 `pricing.json` 覆盖。覆盖可用模型精确名或无歧义的 `provider/` 后缀。四种 USD/token 价格是 input、output、cache read、cache write；缺少缓存价格时退回 input 单价并在费用覆盖信息中标记。
+- 非 Cursor 来源（后者优先）：内置估价 → 可选 LiteLLM（7 天磁盘缓存，默认关闭）→ `openrouter-native` 原厂端点参考价 → 官网价格 → 用户 `pricing.json` 覆盖。覆盖可用模型精确名或无歧义的 `provider/` 后缀。四种 USD/token 价格是 input、output、cache read、cache write；缺少缓存价格时退回 input 单价并在费用覆盖信息中标记。
 - `src/pricecatalog.js` 将计价键与展示 `modelId` 分离：同来源内先匹配原始名称，再匹配目录提供商前缀/唯一后缀，最后尝试日期（紧凑或带连字符）、`builtin:` 和 `:latest` 的别名。不剥离 `ft:` 等计费前缀。同模型、同提供商的日期别名只有完整价格（含上下文档位）一致才合并；有明确目录原名时优先该原名。内置价只匹配已列出的模型及日期别名，不再用家族前缀猜新版本或变体；旧快照/备份中的此类错误内置回退也不会恢复估价。
 - Kimi Code 按官方[模型对应关系](https://www.kimi.com/code/docs/kimi-code/models.html)，为 `kimi-code/k3`、`kimi-code/k3-256k` 增加指向 `moonshot/kimi-k3` 的参考价格别名。别名在同来源的原名及通用别名匹配后使用，保留用户覆盖优先级和逐请求上下文选档；只使用明确的 Moonshot 目录键，不能套用其他提供商或旧 `kimi` 内置价。原始用量模型 ID 不变，共用查价器让已有 SQLite 快照、价格更新与离线导入也能正确估算；无需改写 Agent 文件。费用是 API 参考值，不代表订阅实付或套餐额度。`kimi-for-coding` 等滚动端点不推断历史模型，需端点原名的目录价格或用户覆盖。
 - `src/contextpricing.js` 从 LiteLLM 的标准 `input_cost_per_token_above_N_tokens` / `above_Nk_tokens` 字段建立 `contextTiers`，保留同阈值的四类单价及缓存回退标志。每次请求按 input + cache read + cache write 选择越过的最高阈值，整次请求使用该档价格，输出和会话累计量不参与选档；与 LiteLLM 一致，`litellm_provider: xai` 使用包含边界的阈值。缺少档位输出/缓存价格时使用已公布的基础价；基础缓存价也缺失时使用该档输入价。只处理标准上下文价格，不解析缓存时长、Priority/Flex/Batch 等条件。用户覆盖仍优先，自报费用不重算。

@@ -12,6 +12,7 @@ import { cursorModelSignature } from './cursormodels.js';
 import { selectCursorImports } from './cursorcsv.js';
 import { mergeUsageRows } from './usageimports.js';
 import { exportDatabaseBytes, readDatabaseBackup } from './dbtransfer.js';
+import { PRICE_SOURCES, priceEnabled } from './priceselection.js';
 import { installLocalPriceDatabase } from './localpricedb.js';
 import { createHistoricalPriceLookup, historyPriceKey } from './pricehistory.js';
 import { bindProvider, readProviderBindings } from './providerbindings.js';
@@ -171,7 +172,7 @@ export function createUsageDatabase({ file, env, home } = {}) {
         skip.add(source); // A concurrent refresh must not replace newer fetched rates.
         continue;
       }
-      if (['openai', 'anthropic', 'google', 'openrouter'].includes(source)) {
+      if (['openai', 'anthropic', 'google', 'openrouter', 'openrouter-native'].includes(source)) {
         const keys = new Set(rows.map(historyPriceKey));
         for (const old of getPrices.all().filter((row) => row.source === source).map(decodePriceRecord)) {
           if (!keys.has(historyPriceKey(old))) rows.push({ ...old, cacheReadFallback: Boolean(old.cacheReadFallback), cacheWriteFallback: Boolean(old.cacheWriteFallback),
@@ -197,7 +198,7 @@ export function createUsageDatabase({ file, env, home } = {}) {
     // Metadata and rows must come from the same committed version if another
     // toksight process refreshes while this one is loading the snapshot.
     db.exec('BEGIN');
-    let meta, rows, imports, usageImports, catalogRows, updateRows, history;
+    let meta, rows, imports, usageImports, catalogRows, updateRows, history, selectedSources;
     try {
       meta = getMeta.get();
       rows = meta ? getEntries.all() : null;
@@ -205,7 +206,8 @@ export function createUsageDatabase({ file, env, home } = {}) {
       usageImports = meta ? getUsageImports.all() : null;
       catalogRows = meta ? getPrices.all() : null;
       updateRows = meta ? getPriceUpdates.all() : null;
-      history = meta ? localPrices.read() : [];
+      selectedSources = localPrices.status().selectedSources;
+      history = meta ? localPrices.read().filter((row) => priceEnabled(JSON.parse(row.record_json), selectedSources)) : [];
       db.exec('COMMIT');
     } catch (err) {
       db.exec('ROLLBACK');
@@ -221,14 +223,15 @@ export function createUsageDatabase({ file, env, home } = {}) {
       const entry = JSON.parse(row.data_json);
       if (!prices.get(entry.model)) prices.set(entry.model, JSON.parse(row.price_json));
     }
-    const catalog = catalogRows.map(decodePriceRecord).map((row) => ({ ...row,
+    const catalog = catalogRows.map(decodePriceRecord).filter((row) => priceEnabled(row, selectedSources)).map((row) => ({ ...row,
       cacheReadFallback: Boolean(row.cacheReadFallback), cacheWriteFallback: Boolean(row.cacheWriteFallback) }));
     const lookup = createHistoricalPriceLookup(history, catalog);
     const priceFor = (model, client, entry = null) => {
       const scope = client === 'cursor' ? 'cursor' : 'default';
       // Imported and legacy models retain a fallback when the destination
       // has no current catalog rate for that model.
-      return lookup(model, client, entry) ?? storedPriceFor(model, prices.get(scope === 'cursor' ? cursorPriceKey(model) : model), entry);
+      const fallback = prices.get(scope === 'cursor' ? cursorPriceKey(model) : model);
+      return lookup(model, client, entry) ?? (priceEnabled(fallback, selectedSources) ? storedPriceFor(model, fallback, entry) : null);
     };
     const entries = [];
     const reportedCosts = new WeakSet();
@@ -244,7 +247,7 @@ export function createUsageDatabase({ file, env, home } = {}) {
         const rate = priceFor(entry.model, entry.client, entry);
         if (rate && ['input', 'cacheRead', 'cacheWrite', 'output'].every((part) => Number.isFinite(rate[part]))) {
           entry = { ...entry, costUsd: computeCost({ ...entry, costUsd: null }, rate) };
-        } else if (!rate && (prices.get(entry.model)?.source === 'builtin' || entry.providerId || entry.pricingProvider)) {
+        } else if (!rate) {
           entry = { ...entry, costUsd: null };
         }
       }
@@ -256,11 +259,12 @@ export function createUsageDatabase({ file, env, home } = {}) {
       reportedCosts,
       warnings: [...JSON.parse(meta.warnings_json), ...importWarnings],
       pricing: {
-        sources: { ...JSON.parse(meta.pricing_sources_json), ...Object.fromEntries(updateRows.map((row) => [row.source, row.state])) },
+        sources: { ...JSON.parse(meta.pricing_sources_json), ...Object.fromEntries(updateRows.map((row) => [row.source, row.state])),
+          ...Object.fromEntries(PRICE_SOURCES.filter((source) => !selectedSources.includes(source)).map((source) => [source, 'disabled'])) },
         configDir: meta.pricing_config_dir,
         priceFor,
         catalog,
-        updates: Object.fromEntries(updateRows.map((row) => [row.source, { fetchedAt: row.fetched_at, checkedAt: row.checked_at, state: row.state, url: row.url }])),
+        updates: Object.fromEntries(updateRows.filter((row) => priceEnabled(row, selectedSources)).map((row) => [row.source, { fetchedAt: row.fetched_at, checkedAt: row.checked_at, state: row.state, url: row.url }])),
       },
       refreshedAt: meta.refreshed_at,
     };
@@ -486,12 +490,12 @@ export function createUsageDatabase({ file, env, home } = {}) {
         if (key != null) result = { key, history: localPrices.history(key), status };
         else {
           const history = new Map(localPrices.summary().map((row) => [row.price_key, row]));
-          const records = getPrices.all().map(decodePriceRecord).map((record) => {
+          const records = getPrices.all().map(decodePriceRecord).filter((record) => priceEnabled(record, status.selectedSources)).map((record) => {
             const id = historyPriceKey(record), summary = history.get(id);
             return { ...record, cacheReadFallback: Boolean(record.cacheReadFallback), cacheWriteFallback: Boolean(record.cacheWriteFallback),
               id, revisions: summary?.revisions ?? 0, observedAt: summary?.observedAt ?? null };
           });
-          const updates = Object.fromEntries(getPriceUpdates.all().map((row) => [row.source,
+          const updates = Object.fromEntries(getPriceUpdates.all().filter((row) => priceEnabled(row, status.selectedSources)).map((row) => [row.source,
             { fetchedAt: row.fetched_at, checkedAt: row.checked_at, state: row.state, url: row.url }]));
           result = { records, updates, status };
         }
@@ -502,6 +506,7 @@ export function createUsageDatabase({ file, env, home } = {}) {
         throw err;
       }
     },
+    selectPriceSources(sources) { localPrices.selectSources(sources); cached = null; },
     completeSetup: (options, at) => localPrices.complete(options, at),
     exportDatabase: () => {
       if (!read()) throw new Error('No usage snapshot; run toksight refresh first');

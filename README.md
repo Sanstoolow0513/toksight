@@ -98,7 +98,21 @@ CLI day grouping and date filters use your **local** timezone. The web report ha
 
 The first Web launch guides you through creating a **local price database** in toksight's
 own `usage.sqlite`. This computer downloads public prices directly from OpenAI, Anthropic,
-Google, OpenRouter and Cursor. There is no remote toksight catalog to install or maintain.
+Google and Cursor, with optional sources selected during setup or on the Prices page.
+LiteLLM and the full OpenRouter catalog are **off by default**. You can select only Google,
+for example. Disabling a source also excludes its cached, historical and imported prices
+from estimates in both Web and CLI; saved records remain available if re-enabled.
+Built-in fallback estimates and user overrides remain available. There is no remote toksight catalog to maintain.
+
+The default **Native endpoint references (via OpenRouter)** source discovers models from
+OpenAI, Anthropic, Google, xAI, DeepSeek, Moonshot, Alibaba/Qwen, Z.AI, MiniMax, Mistral,
+Cohere and AI21. It checks both model authorship and the actual endpoint operator; a model's
+prefix alone is not enough. Only available original-provider endpoints contribute prices.
+Third-party-only models are skipped, as are models whose native endpoints have conflicting
+rates or conditions. These are token-price references from OpenRouter, not direct-provider
+bills. Original model IDs, endpoint names and source URLs stay visible. Official website
+prices take priority, followed by native endpoint references, optional LiteLLM and built-ins;
+user overrides always win. The directory supports separate source and provider filters.
 You can fetch prices now or continue with saved/offline estimates. Setup and the automatic
 update preference are saved in this database, independently of the browser.
 
@@ -113,7 +127,7 @@ local public catalog exists, CLI reports use the following fallback layers (late
 
 1. **Built-in table** — best-effort USD-per-MTok estimates for explicitly listed models,
    available offline. New versions and variants do not inherit a family's older price.
-2. **LiteLLM** — fetched from the community
+2. **LiteLLM (optional, not recommended)** — only loaded after explicitly enabling it on the Prices page; fetched from the community
    [model prices](https://github.com/BerriAI/litellm/blob/main/model_prices_and_context_window.json)
    list with a 7-day disk cache at `<toksight-dir>/cache/litellm-pricing.json`. `--offline`
    uses an existing cache without a network request.
@@ -133,8 +147,8 @@ resolve to a catalog name or equivalent rates for the same model and provider. P
 prefixes are resolved from catalog metadata, and fine-tuned model prefixes remain distinct.
 
 Codex session provider IDs, OpenCode message providers, Kimi request providers (when safely
-associated with usage) and ZCode rollout providers are retained. OpenRouter prices are used
-only for OpenRouter usage or an explicit `openrouter/` model prefix; a platform model quote
+associated with usage) and ZCode rollout providers are retained. Full-catalog OpenRouter prices are used
+only for OpenRouter usage or an explicit `openrouter/` model prefix when the full catalog is enabled; a platform model quote
 is a reference when its actual supplying endpoint is unknown. For detected router models,
 the local updater also downloads endpoint prices, including discounts and explicit context
 or UTC time-window rules. OpenAI long-context prices with an unresolved threshold remain
@@ -391,7 +405,7 @@ cache files. toksight does not upload usage or write back to agent files. Cursor
 stored in that database. If you change `--host`, other clients on that network may read the
 report/API. The only external requests
 fetch official OpenAI, Anthropic and Google prices, OpenRouter models/endpoints, Cursor's official pricing
-overview/index/model pages, and legacy CLI LiteLLM prices when no local public catalog exists. Run `--offline`
+overview/index/model pages, OpenRouter native endpoint references, and LiteLLM only when explicitly enabled. Run `--offline`
 to disable network price requests. Report images are
 rendered in your browser and saved only where you download them.
 

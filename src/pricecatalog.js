@@ -6,8 +6,10 @@ import { createCursorModelResolver, cursorIdentityFor, cursorModelId, decodeCurs
 import { priceForContext, validContextTiers } from './contextpricing.js';
 import { applyOfficialRules, validOfficialPrice } from './pricehistory.js';
 
+import { NATIVE_CHANNELS, nativeChannel } from './nativeproviders.js';
+
 const EFFORT = new Set(['low', 'medium', 'high', 'xhigh']);
-const PRIORITY = { user: 5, openai: 4, anthropic: 4, google: 4, openrouter: 4, litellm: 2, builtin: 1, cursor: 1 };
+const PRIORITY = { user: 5, openai: 4, anthropic: 4, google: 4, openrouter: 4, 'openrouter-native': 3, litellm: 2, builtin: 1, cursor: 1 };
 
 export function modelIdentity(name, client = null, rate = null) {
   if (client === 'cursor') return cursorIdentityFor(name, rate);
@@ -100,9 +102,9 @@ function findPrice({ exact, aliases, normalized }, key, alias = priceAlias(key))
 export function storedPriceFor(model, record, entry = null) {
   const provider = entry?.pricingProvider ?? entry?.providerId;
   if (record?.source !== 'user' && provider) {
-    if (record?.official && record.official.channel !== (provider === 'gemini' ? 'google' : provider)) return null;
+    if (record?.official && record.official.channel !== nativeChannel(provider)) return null;
     if (record?.official?.channel === 'openrouter' && (record.official.endpoint ?? null) !== (entry.providerEndpoint ?? null)) return null;
-    if (!record?.official && !['openai','anthropic','google','gemini','kimi-code'].includes(provider)) return null;
+    if (!record?.official && ![...NATIVE_CHANNELS, 'kimi-code'].includes(nativeChannel(provider))) return null;
   }
   // Old snapshots may contain a family-prefix estimate for a newer variant.
   // Reusing that estimate would bypass the stricter catalog matching below.
@@ -141,7 +143,7 @@ export function createPriceLookup(records) {
   const sources = new Map();
   for (const record of records ?? []) {
     if (!record?.name || record.scope !== 'default') continue;
-    const sourceKey = `${record.source}\0${record.official?.endpoint ?? ''}`;
+    const sourceKey = `${record.source}\0${record.official?.channel ?? ''}\0${record.official?.endpoint ?? ''}`;
     if (!sources.has(sourceKey)) sources.set(sourceKey, { source: record.source, official: record.official, exact: new Map(), aliases: new Map(), normalized: new Map() });
     const { exact, aliases, normalized } = sources.get(sourceKey);
     const key = priceModelKey(record.name);
@@ -169,14 +171,19 @@ export function createPriceLookup(records) {
     // normalized aliases. Ambiguous aliases never displace an exact entry.
     for (const index of ordered) {
       const rawProvider = entry?.pricingProvider ?? entry?.providerId;
-      const provider = rawProvider === 'gemini' ? 'google' : rawProvider;
+      const provider = nativeChannel(rawProvider === 'kimi-code' && reference ? 'moonshot' : rawProvider);
       if (index.official && provider && index.official.channel !== provider) continue;
       if (index.source === 'openrouter') {
         if (provider !== 'openrouter' && !routerPrefix) continue;
         if ((index.official?.endpoint ?? null) !== (entry?.providerEndpoint ?? null)) continue;
       } else if ((provider === 'openrouter' || routerPrefix) && index.source !== 'user') continue;
       // Known custom providers do not silently inherit native API prices.
-      if (provider && !['openai', 'anthropic', 'google', 'gemini', 'kimi-code'].includes(provider) && index.source !== 'user' && index.source !== 'openrouter') continue;
+      if (provider && ![...NATIVE_CHANNELS, 'kimi-code'].includes(provider) && index.source !== 'user' && index.source !== 'openrouter') continue;
+      if (index.source === 'openrouter-native' && !provider) {
+        const matches = ordered.filter((other) => other.source === index.source)
+          .map((other) => findPrice(other, key, alias) ?? (reference ? findPrice(other, reference) : null)).filter(Boolean);
+        if (matches.length > 1) continue;
+      }
       const record = findPrice(index, key, alias) ?? (reference ? findPrice(index, reference) : null);
       if (record) return applyOfficialRules(priceForContext(record, entry), entry);
     }

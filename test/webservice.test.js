@@ -193,6 +193,7 @@ test('both price sources update at most weekly automatically, and manual update 
   let time = Date.parse('2026-09-24T12:00:00Z');
   let genericCalls = 0, cursorCalls = 0, failCursor = false;
   const database = memoryDatabase();
+  database.selectPriceSources(['litellm', 'cursor']);
   const get = createWebDataService(parseArgs([]), {
     now: () => time, database, collect: async () => raw([]),
     genericPricing: async () => {
@@ -381,7 +382,7 @@ test('cost coverage separates reports, estimates, unpriced requests and actual c
   await writeFile(path.join(home, 'pricing.json'), JSON.stringify({ custom: { input: 2, output: 4 }, explicit: { input: 2, output: 4, cacheRead: 2, cacheWrite: 2 } }));
   await mkdir(path.join(home, 'cache'));
   await writeFile(path.join(home, 'cache', 'litellm-pricing.json'), JSON.stringify({ fetchedAt: Date.now(), data: { remote: { input_cost_per_token: 0.000002, output_cost_per_token: 0.000004 } } }));
-  const pricing = await getPricing({ home, env }); // Fresh local fixture: no fetch.
+  const pricing = await getPricing({ home, env, selectedSources: ['litellm'] }); // Fresh local fixture: no fetch.
   const reported = entry({ client: 'opencode', model: 'custom', costUsd: 7 });
   const coverage = buildCostCoverage([
     reported, entry({ model: 'custom' }), entry({ model: 'explicit' }), entry({ model: 'remote' }), entry({ model: 'claude-sonnet-4', cacheReadTokens: 0 }), entry({ costUsd: null }),

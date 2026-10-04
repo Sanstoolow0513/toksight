@@ -1,3 +1,4 @@
+import { readPriceSources, validPriceSources } from './priceselection.js';
 import { historyPriceKey, priceSignature } from './pricehistory.js';
 
 // These tables live in toksight's existing database and share its transactions.
@@ -9,6 +10,9 @@ export function installLocalPriceDatabase(db) {
       signature TEXT NOT NULL,
       record_json TEXT NOT NULL,
       PRIMARY KEY (price_key, observed_at)
+    );
+    CREATE TABLE IF NOT EXISTS price_preferences (
+      id INTEGER PRIMARY KEY CHECK (id = 1), sources_json TEXT NOT NULL
     );
     CREATE TABLE IF NOT EXISTS web_setup (
       id INTEGER PRIMARY KEY CHECK (id = 1),
@@ -27,7 +31,7 @@ export function installLocalPriceDatabase(db) {
   return {
     observe(records, at) {
       for (const record of records) {
-        if (!['openai', 'anthropic', 'google', 'openrouter', 'cursor'].includes(record.source)) continue;
+        if (!['openai', 'anthropic', 'google', 'openrouter', 'openrouter-native', 'cursor'].includes(record.source)) continue;
         const key = historyPriceKey(record), signature = priceSignature(record), previous = latest.get(key);
         if (previous && (at < previous.observed_at || signature === previous.signature)) continue;
         insert.run(key, at, signature, JSON.stringify(record));
@@ -38,7 +42,11 @@ export function installLocalPriceDatabase(db) {
     history: (key) => readKey.all(key).map((row) => ({ observedAt: row.observed_at, record: JSON.parse(row.record_json) })),
     status() {
       const row = setup.get();
-      return { completed: Boolean(row), completedAt: row?.completed_at ?? null, autoUpdate: row ? Boolean(row.auto_update) : true, ...counts.get() };
+      return { selectedSources: readPriceSources(db), completed: Boolean(row), completedAt: row?.completed_at ?? null, autoUpdate: row ? Boolean(row.auto_update) : true, ...counts.get() };
+    },
+    selectSources(sources) {
+      if (!validPriceSources(sources)) throw new Error('invalid price sources');
+      db.prepare('INSERT INTO price_preferences (id, sources_json) VALUES (1, ?) ON CONFLICT(id) DO UPDATE SET sources_json = excluded.sources_json').run(JSON.stringify(sources));
     },
     complete({ autoUpdate = true } = {}, at = new Date().toISOString()) {
       db.prepare(`INSERT INTO web_setup (id, completed_at, auto_update) VALUES (1, ?, ?)
