@@ -7,6 +7,13 @@ Web 首次启动离线建立用量快照，主内容区的 `PriceSetup` 引导�
 `offline` / `autoUpdate`，本地继续会推迟第一次自动检查一小时；`--offline` 始终禁止网络更新。
 `GET /api/prices/status` 返回 completed、completedAt、autoUpdate、prices、revisions、observedAt、offline、updating、warnings。
 
+左侧价格页集中展示目录、来源获取时间、四类 token 单价、历史和自动更新偏好。
+`GET /api/prices` 返回 records、updates、status、offline、updating、warnings；records 保存原始的美元/token
+单价和条件元数据，额外附加稳定 id、revisions、observedAt。id 按历史键区分范围、来源、原名及 Cursor 档位。
+单个 `key=<id>` 参数改为返回该项 history（observedAt / record），从新到旧；未知 key 返回空历史。
+未知、重复或空查询参数返回 400。目录和历史 GET 不初始化引导、不采集、不联网，只读已提交事务。
+界面转换为美元/百万 token，并明确标注本机观察时间；通用回退和用户覆盖没有观察历史。
+
 服务开启自动更新后，用可清理、unref 的小时定时器检查价格，也保留启动/报告读取检查。
 成功价格七天到期，失败一小时后重试。手动更新强制检查；并发自动/手动更新共享一个任务，关闭
 服务停止定时器并防止未完成下载写入已关闭数据库。更新不扫描 Agent 文件，结果在 SQLite 事务中提交。

@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { RefreshCw, TriangleAlert } from 'lucide-react';
+import { LoaderCircle, RefreshCw, TriangleAlert } from 'lucide-react';
 import Sidebar from '@/components/Sidebar';
 import Settings from '@/components/Settings';
 import ReportActions from '@/components/ReportActions';
@@ -22,6 +22,7 @@ import * as prefs from '@/lib/prefs';
 import { coded } from '@/components/Coded';
 import PriceSetup from '@/components/PriceSetup';
 import { usePriceDatabase } from '@/lib/usePriceDatabase';
+import PriceCatalog from '@/components/PriceCatalog';
 
 function Skeleton() {
   return <div className="report" aria-busy="true"><div className="skel skel-kpis" /><div className="skel" style={{ height: 220 }} /><div className="skel" style={{ height: 300 }} /></div>;
@@ -54,7 +55,8 @@ export default function Page() {
   const toasts = useToasts();
   const { push: pushToast } = toasts;
   const tx = useCallback((key, vars) => t(locale, key, vars), [locale]);
-  const activePeriod = !prices.status?.completed || view === 'settings' || !today ? null : view === 'today' ? quickPeriod('1d', today)
+  const reportView = view === 'today' || view === 'calendar';
+  const activePeriod = !prices.status?.completed || !reportView || !today ? null : view === 'today' ? quickPeriod('1d', today)
     : period?.preset ? quickPeriod(period.preset, today) : period;
   const report = useReport(activePeriod, refreshRevision, agent, timezone);
   const data = report.timezone === timezone ? report.data : null;
@@ -70,7 +72,8 @@ export default function Page() {
   const firstDay = firstAt != null ? dayKey(new Date(firstAt), timezone) : null;
   const bounds = shown?.mode === 'custom' ? periodBounds(shown) : null;
   const selectedNav = calendarDay ? dayNav(calendarDay, { firstDay: bounds?.since ?? firstDay, today: bounds && bounds.until < today ? bounds.until : today }) : {};
-  const busy = prices.busy || refreshing || priceUpdating || importing || Boolean(databaseBusy) || exporting;
+  const updatingPrices = priceUpdating || Boolean(prices.status?.updating);
+  const busy = prices.busy || refreshing || updatingPrices || importing || Boolean(databaseBusy) || exporting;
   const hasData = Boolean(data && shown && (view !== 'today' || shown.preset === '1d'));
 
   useEffect(() => {
@@ -221,6 +224,7 @@ export default function Page() {
         imported: fmtInt(body.imported), updated: fmtInt(body.updated), duplicates: fmtInt(body.duplicates),
       }] });
       setDatabaseFile(null);
+      await prices.reload();
       if (body.latestAt != null) showLatest(body.latestAt);
       setRefreshRevision((n) => n + 1);
     } catch (err) {
@@ -255,7 +259,7 @@ export default function Page() {
     setSelectedDay(next);
     if (shown.mode !== 'custom' && !inPeriod(next, shown)) setPeriod(periodOf(next, shown.mode));
   };
-  const canExport = hasData && !reportBusy && !pending && !dayPending && !report.error && !busy;
+  const canExport = reportView && hasData && !reportBusy && !pending && !dayPending && !report.error && !busy;
   const onExport = async () => {
     if (!canExport || !reportRef.current) return;
     setExporting(true);
@@ -272,9 +276,11 @@ export default function Page() {
   } else if (!prices.status && prices.error) {
     content = <section className="state-card"><TriangleAlert size={24} /><h2>{tx('errorTitle')}</h2><p>{prices.error}</p><button type="button" className="btn-secondary" onClick={() => void prices.reload()}>{tx('retry')}</button></section>;
   } else if (!prices.status) content = <Skeleton />;
-  else if (view === 'settings') {
+  else if (view === 'prices') {
+    content = <PriceCatalog tx={tx} locale={locale} timezone={timezone} status={prices.status} busy={busy} error={prices.error}
+      revision={`${refreshRevision}:${prices.status.observedAt}`} onAutoUpdate={(autoUpdate) => void onSetup({ offline: true, autoUpdate })} />;
+  } else if (view === 'settings') {
     content = <Settings tx={tx} timezone={timezone} timezonePref={timezonePref} systemZone={systemZone} onTimezone={onTimezone} now={now}
-      prices={prices.status} priceBusy={priceUpdating || prices.busy} onUpdatePrices={onUpdatePrices} onAutoUpdate={(autoUpdate) => void onSetup({ offline: true, autoUpdate })}
       loading={busy} databaseBusy={databaseBusy} onImportDatabase={onSelectDatabase} onExportDatabase={onExportDatabase} importing={importing} onImportCursor={onImportCursor} />;
   } else if (!hasData && report.error) {
     content = <section className="state-card"><TriangleAlert size={24} /><h2>{tx('errorTitle')}</h2><p>{coded(tx('errorBody', { error: report.error }))}</p>
@@ -294,15 +300,17 @@ export default function Page() {
       <Sidebar view={view} onView={setView} timezone={timezone} locale={locale} theme={theme} onTheme={onTheme} onLocale={onLocale} tx={tx} />
       <main className="main" id="main-content">
         <div className="workspace-content">
-          <header className="workspace-head"><div><h1>{tx('nav' + view)}</h1>{view === 'settings' ? <p>{tx('settingsDescription')}</p> : null}</div>
-            {prices.status?.completed ? <ReportActions tx={tx} loading={busy || reportBusy} offline={prices.status.offline} refreshing={refreshing} onRefresh={onRefresh} priceUpdating={priceUpdating} onUpdatePrices={onUpdatePrices}
+          <header className="workspace-head"><div><h1>{tx('nav' + view)}</h1>{view === 'settings' || view === 'prices' ? <p>{tx(view + 'Description')}</p> : null}</div>
+            {prices.status?.completed ? view === 'prices' ? <button type="button" className="btn-secondary price-update-button" disabled={busy || prices.status.offline} title={prices.status.offline ? tx('setupOffline') : undefined} onClick={onUpdatePrices}>
+              {updatingPrices ? <LoaderCircle size={16} className="spin" /> : <RefreshCw size={16} />}{tx(updatingPrices ? 'updatingPrices' : 'updatePrices')}
+            </button> : <ReportActions tx={tx} loading={busy || reportBusy} offline={prices.status.offline} refreshing={refreshing} onRefresh={onRefresh} priceUpdating={updatingPrices} onUpdatePrices={onUpdatePrices}
               exporting={exporting} onExport={onExport} canExport={canExport} settings={view === 'settings'} /> : null}
           </header>
           {prices.status?.completed && view === 'today' ? <div className="today-filters no-export"><label className="agent-filter"><span>Agent</span><select aria-label="Agent" value={agent} onChange={(e) => onAgent(e.target.value)}>
             <option value="">{tx('filterAllAgents')}</option>{(report.data?.view?.availableClients ?? []).map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}</select></label></div> : null}
           {view === 'calendar' && activePeriod && today ? <ReportFilters period={activePeriod} today={today} agent={agent} clients={report.data?.view?.availableClients ?? []}
             onAgent={onAgent} onPeriod={onPeriod} onReset={() => { onAgent(''); onPeriod(periodOf(today, 'month')); }} tx={tx} /> : null}
-          {view !== 'settings' && (reportBusy || (report.error && hasData)) ? <div className="filter-status no-export" role="status">
+          {reportView && (reportBusy || (report.error && hasData)) ? <div className="filter-status no-export" role="status">
             {reportBusy ? tx('filterLoading') : report.error && hasData ? <>{tx('filterFailed')} <button type="button" className="filter-reset" onClick={() => void report.reload()}>{tx('retry')}</button></> : ''}
           </div> : null}
           {content}

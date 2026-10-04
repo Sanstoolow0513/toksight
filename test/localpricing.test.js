@@ -13,6 +13,7 @@ import { createWebServer } from '../src/webserver.js';
 import { readStoredPriceFor } from '../src/usageimports.js';
 import { parseArgs } from '../src/args.js';
 import { readProviderBindings, bindProvider } from '../src/providerbindings.js';
+import { fmtUnitPrice, priceSourceUrl } from '../web/lib/prices.js';
 
 const table = (headers, rows) => `<table><tr>${headers.map(h=>`<th>${h}</th>`).join('')}</tr>${rows.map(r=>`<tr>${r.map(c=>`<td>${c}</td>`).join('')}</tr>`).join('')}</table>`;
 const openai = table(['Model','Input','Cached input','Output'], [['gpt-example','$2.00','$0.50','$10.00']]) + table(['Model','Input','Cached input','Output'], [['gpt-example','$1.00','$0.25','$5.00']]);
@@ -28,6 +29,61 @@ const raw = (entries=[], records=[]) => ({ entries, warnings:[], reportedCosts: 
   pricing:{ records, priceFor:createPriceLookup(records), sources:{}, configDir:'/fixture' } });
 const mockPublic = (now) => ({ records:[rate()],sources:['openai'],warnings:[],sourceDetails:Object.fromEntries(Object.entries(PUBLIC_PRICE_SOURCES)
   .map(([source,url])=>[source,{fetchedAt:new Date(now()).toISOString(),state:'fresh',url}])) });
+
+test('price catalog and history API read saved channels and revisions without scans or downloads', async (t) => {
+  const database = createUsageDatabase({ file: ':memory:' });
+  const get = createWebDataService(parseArgs([]), { database,
+    collect: async () => { throw new Error('catalog must not scan agents'); },
+    publicPricing: async () => { throw new Error('catalog must not download'); },
+  });
+  const server = createWebServer({ port: 0, outDir: '.', getData: get });
+  t.after(() => server.close());
+  const { url } = await server.start();
+  assert.deepEqual((await (await fetch(url + '/api/prices')).json()).records, []);
+  database.replace(raw([]), '2026-10-01T00:00:00Z');
+  const native = rate(), routerRate = parseOpenRouterPrices(router)[0];
+  const cursor = priceRecord({ scope: 'cursor', source: 'cursor', name: 'gpt-example', provider: 'OpenAI', input: 3e-6, output: 12e-6, cacheRead: 0, cacheWrite: 0,
+    cursor: { contextOver: 200000, aliases: ['gpt-example-max'], url: 'https://cursor.com/docs/models/example' } });
+  const builtin = priceRecord({ ...native, source: 'builtin', official: null });
+  database.updatePriceCatalog({ records: [native, routerRate, cursor, builtin], sources: ['openai','openrouter','cursor','builtin'], sourceDetails: {} }, '2026-10-01T00:00:00Z');
+  database.updatePriceCatalog({ records: [rate(1e-6)], sources: ['openai'], sourceDetails: {} }, '2026-10-02T00:00:00Z');
+  const response = await fetch(url + '/api/prices');
+  assert.equal(response.headers.get('cache-control'), 'no-store');
+  assert.equal(response.headers.get('access-control-allow-origin'), null);
+  const body = await response.json();
+  assert.equal(body.records.length, 4);
+  assert.equal(body.status.revisions, 4);
+  const current = body.records.find((row) => row.source === 'openai');
+  assert.equal(current.input, 1e-6, 'API retains USD per token; UI converts to USD per million');
+  assert.equal(current.revisions, 2);
+  assert.equal(current.observedAt, '2026-10-02T00:00:00Z');
+  assert.equal(current.cacheReadFallback, false);
+  assert.equal(body.records.find((row) => row.source === 'cursor').cursor.contextOver, 200000);
+  assert.equal(body.records.find((row) => row.source === 'openrouter').official.rules.length, 2);
+  const fallback = body.records.find((row) => row.source === 'builtin');
+  assert.equal(fallback.revisions, 0);
+  assert.notEqual(fallback.id, current.id, 'same model in different channels keeps separate IDs');
+  const history = await (await fetch(url + '/api/prices?' + new URLSearchParams({ key: current.id }))).json();
+  assert.deepEqual(history.history.map((row) => row.record.input), [1e-6, 2e-6]);
+  const unknown = await fetch(url + '/api/prices?' + new URLSearchParams({ key: "' OR 1=1 --" }));
+  assert.equal(unknown.status, 200);
+  assert.equal((await unknown.json()).history.length, 0);
+  assert.equal((await fetch(url + '/api/prices', { method: 'HEAD' })).status, 200);
+  assert.equal((await fetch(url + '/api/prices', { method: 'POST' })).status, 405);
+  for (const query of ['?unknown=1', '?key=', '?key=a&key=b']) assert.equal((await fetch(url + '/api/prices' + query)).status, 400);
+  const forged = await new Promise((resolve, reject) => { const request = http.get(url + '/api/prices', { headers: { host: 'foreign.test' } }, (res) => { res.resume(); resolve(res.statusCode); }); request.on('error', reject); });
+  assert.equal(forged, 403);
+  assert.equal(database.priceStatus().completed, false, 'browsing does not complete setup');
+});
+
+test('price display preserves tiny token rates, free rates and safe source links', () => {
+  assert.equal(fmtUnitPrice(0), '$0');
+  assert.equal(fmtUnitPrice(0.03e-6), '$0.03');
+  assert.equal(fmtUnitPrice(1e-12), '$0.000001');
+  assert.equal(fmtUnitPrice(null), '—');
+  assert.equal(priceSourceUrl({ official: { url: 'javascript:alert(1)' } }), null);
+  assert.equal(priceSourceUrl({ official: { url: 'https://example.test/prices' } }), 'https://example.test/prices');
+});
 
 test('official adapters read Standard rates, collapsed OpenAI rows, cache duration and Google text prices', () => {
   assert.equal(parseOpenAIPrices(openai)[0].input,2e-6);

@@ -46,4 +46,9 @@ Cursor 的 `pricing.modelRates` 额外包含 `maxMode`（目录匹配后多出�
 
 本期、上期的费用覆盖统计使用同一份价格快照；无基准、范围不完整等情况由比较结果显式表达，不能靠空数组推断。
 
+价格目录独立由 `GET /api/prices` 返回，不并入报告载荷。`records` 保持 USD/token 的四项基础单价、缓存回退
+布尔值与 official / cursor / contextTiers 元数据，附加来源隔离的 `id`、本机 `observedAt` 和 `revisions`。
+`updates` 保留每个来源的获取/检查时间及状态，`status` 给出本地建库状态。传单个 `key=<id>` 时改为返回
+`history`（从新到旧的 observedAt / record）；页面仅在展示时转换为美元/百万 token。这些字段不改变 CLI JSON。
+
 `topSessions` 和 `longestSession` 中的 `durationMs` 是原始跨度，`activeMs` 将请求间空闲间隔封顶为五分钟；最长会话按 `activeMs` 排名。新增 Web 字段应维持 CLI JSON 的既有字段。

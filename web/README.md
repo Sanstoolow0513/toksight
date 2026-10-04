@@ -3,10 +3,11 @@
 `toksight web` 的前端：一个 Next.js（App Router）静态导出应用，由 CLI 内置的零依赖
 HTTP 服务器（`src/webserver.js`）托管，数据来自同源的 `/api/data` JSON API；普通查询读取已提交快照。
 
-默认打开今天，采用全高侧栏与主内容左右分区；Logo 靠侧栏顶部，今天 / 日历 / 设置导航组垂直居中，
+默认打开今天，采用全高侧栏与主内容左右分区；Logo 靠侧栏顶部，今天 / 日历 / 价格 / 设置导航组垂直居中，
 配色与语言切换位于底部。侧栏为无点阵灰底，主内容保留减弱的点阵；窄屏通过“显示偏好”菜单切换配色与语言。
 今天突出 Tokens / 费用，直接展示小时分布、Agent / 模型与会话；单模型信息不重复生成模型排行。
 日历先展示范围总量，窄屏选择日期后定位单日详情，趋势位于详情之后并提供快捷入口。
+价格页展示本地单价目录、来源、条件和历史，支持搜索、来源筛选及自动更新偏好；读取不触发下载。
 设置提供可调整时区、数据库导入导出和 Cursor CSV。刷新、图片导出与更新单价在内容顶部。
 视觉与交互规范见仓库根目录 `design-spec.md`。
 
@@ -63,6 +64,7 @@ npm run web:dev:ui
 - `components/Sidebar.jsx`：顶部品牌、居中导航、底部配色与语言切换，以及当前时区入口。
 - `components/ReportActions.jsx`：刷新、单价更新、PNG 导出；`ReportFooter.jsx`：时间、时区和价格说明。
 - `components/Settings.jsx` / `DatabaseImport.jsx`：时区、数据管理、数据库合并确认。
+- `components/PriceCatalog.jsx` / `lib/usePriceCatalog.js`：本地价格搜索、来源筛选、条件和按需历史；取消旧请求与目录轮询。
 - `components/CalendarView.jsx` / `HeatGrid.jsx`：顶部范围统计、月 / 年日历、选择定位和内联单日详情。
 - `components/ReportFilters.jsx`：Agent、快捷范围、月份、自定义日期与重置。
 - `components/DayDetail.jsx`：单日头和直接展开的 `DayBody`，Today 复用同样内容。

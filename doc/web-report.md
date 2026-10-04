@@ -10,6 +10,7 @@
 | `/api/refresh` | POST | 重扫 Agent 并事务替换快照 |
 | `/api/prices/update` | POST | 本机强制获取厂商、OpenRouter 与 Cursor 公开价格 |
 | `/api/prices/status` | GET/HEAD | 本地价格/历史版本数、引导完成与自动更新状态 |
+| `/api/prices` | GET/HEAD | 已提交本地目录；可用单个 key 参数读取某项价格历史 |
 | `/api/setup` | POST | 首次建库或保存自动更新偏好；参数为布尔 offline / autoUpdate |
 | `/api/import/cursor` | POST | 导入 Cursor Usage Events CSV |
 | `/api/export/db` | GET/HEAD | 下载独立 SQLite 备份 |
@@ -20,10 +21,17 @@
 ## 页面与数据流
 
 首次未完成引导时，主内容区显示 `PriceSetup`，可立即下载价格或本地继续，状态保存在数据库。
-设置页提供价格/历史版本数、最近记录变化的时间和自动更新开关；`usePriceDatabase` 独立加载状态。
+价格页提供完整目录、价格/历史版本数、最近记录变化时间和自动更新开关；`usePriceDatabase` 独立加载状态。
 离线时禁用联网更新；本地继续不能在下一次 GET 自动下载。具体来源和历史语义见[本机价格库](local-pricing.md)。
 
-Next App Router 静态导出为 `web/out/`，生产由 CLI 托管。页面默认打开 Today，采用全高侧栏与主内容左右分区，不设独立顶栏。`Sidebar` 顶部展示品牌，今天 / 日历 / 设置导航组垂直居中，底部提供配色、语言与时区入口；导航项至少 48px 高，偏好按钮至少 44×44px。侧栏从视口顶部吸附，矮窗口内可独立滚动；≤600px 收为品牌、显示偏好菜单与横向导航，菜单支持 Escape 关闭和焦点返回。侧栏为纯灰底，主内容保留减弱的点阵，图表与表格阅读区用页面底色。`ReportActions` 在紧凑页首提供同等描边权重的刷新、更新单价、图片导出；`Settings` 管时区、SQLite 备份 / 合并与 Cursor CSV。视觉与交互以 `design-spec.md` 为准。
+Next App Router 静态导出为 `web/out/`，生产由 CLI 托管。页面默认打开 Today，采用全高侧栏与主内容左右分区，不设独立顶栏。`Sidebar` 顶部展示品牌，今天 / 日历 / 价格 / 设置导航组垂直居中，底部提供配色、语言与时区入口；导航项至少 48px 高，偏好按钮至少 44×44px。侧栏从视口顶部吸附，矮窗口内可独立滚动；≤600px 收为品牌、显示偏好菜单与横向导航，菜单支持 Escape 关闭和焦点返回。侧栏为纯灰底，主内容保留减弱的点阵，图表与表格阅读区用页面底色。`ReportActions` 在紧凑页首提供同等描边权重的刷新、更新单价、图片导出；价格页页首提供单价更新；`Settings` 管时区、SQLite 备份 / 合并与 Cursor CSV。视觉与交互以 `design-spec.md` 为准。
+
+`PriceCatalog` 从独立的 `/api/prices` 读取所有来源的目录，支持模型/提供商/端点搜索、来源筛选和每页 50 条。
+单价按美元/百万 token 显示并保留小数精度，缓存回退加星号说明。点击模型在行下展示原始 ID、计费渠道、
+提供商、供应端点、匹配别名、来源链接、上下文/UTC 条件和保留状态；有历史的记录再按 key 请求版本。
+价格与历史都在同一 SQLite 读事务内获取，不触发采集或联网。`usePriceCatalog` 只在价格页挂载，取消
+旧请求并检查序号，页面关闭清理轮询；目录每分钟及回到前台重读，单项历史按需读取。手机表格在自己的
+可聚焦滚动区横向查看，不扩大页面宽度。切到价格或设置会停止用量报告请求。
 
 Today 请求 `period=custom&since=<今天>&until=<今天>&timezone=<IANA>`，首先展示四项 KPI，Tokens / 费用为主要指标，缓存命中 / 请求为辅助指标。`DayBody` 直接铺开小时分布、Agent / 模型和会话；`hasModelComparison` 仅在任一 Agent 有多个模型时保留独立模型排行，单模型名称直接显示在 Agent 行。小时图与趋势图标明纵轴数量，小时峰值同时给出时间和用量。
 

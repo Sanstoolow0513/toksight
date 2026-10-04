@@ -1,9 +1,9 @@
 import { useRef } from 'react';
-import { CalendarDays, Globe2, HardDrive, Monitor, Moon, Settings2, SlidersHorizontal, Sun } from 'lucide-react';
+import { CalendarDays, DollarSign, Globe2, HardDrive, Monitor, Moon, Settings2, SlidersHorizontal, Sun } from 'lucide-react';
 import BrandMark from '@/components/BrandMark';
 import Segmented from '@/components/Segmented';
 
-const items = [['today', Sun], ['calendar', CalendarDays], ['settings', Settings2]];
+const items = [['today', Sun], ['calendar', CalendarDays], ['prices', DollarSign], ['settings', Settings2]];
 const icon = { size: 18, strokeWidth: 1.7, 'aria-hidden': true };
 
 function Preferences({ locale, theme, onTheme, onLocale, tx }) {

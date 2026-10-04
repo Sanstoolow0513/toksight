@@ -262,7 +262,7 @@ export function createWebServer({
     // 127.0.0.1 is still remoteAddress-loopback, but its Host header is not.
     const localHostHeader = isLocalHostHeader(req.headers.host);
 
-    if (['/api/data', '/api/refresh', '/api/prices/update', '/api/prices/status', '/api/setup', '/api/import/cursor', '/api/import/db', '/api/export/db'].includes(pathname)) {
+    if (['/api/data', '/api/refresh', '/api/prices', '/api/prices/update', '/api/prices/status', '/api/setup', '/api/import/cursor', '/api/import/db', '/api/export/db'].includes(pathname)) {
       // Loopback-bound servers (the default) reject foreign Host headers;
       // a user who deliberately binds --host 0.0.0.0 exposes the dashboard
       // to the LAN on purpose, so the Host check would only break that.
@@ -273,6 +273,7 @@ export function createWebServer({
       const refresh = pathname === '/api/refresh';
       const priceUpdate = pathname === '/api/prices/update';
       const priceStatus = pathname === '/api/prices/status';
+      const prices = pathname === '/api/prices';
       const setup = pathname === '/api/setup';
       const importing = pathname === '/api/import/cursor';
       const importingDb = pathname === '/api/import/db';
@@ -289,7 +290,7 @@ export function createWebServer({
       }
       try {
         if ((refresh && !getData.refresh) || (priceUpdate && !getData.updatePrices) || (importing && !getData.importCursor) ||
-          (importingDb && !getData.importDatabase) || (exportingDb && !getData.exportDatabase) || (setup && !getData.setup) || (priceStatus && !getData.priceStatus)) {
+          (importingDb && !getData.importDatabase) || (exportingDb && !getData.exportDatabase) || (setup && !getData.setup) || (priceStatus && !getData.priceStatus) || (prices && !getData.prices)) {
           sendJson(res, 501, { error: 'operation is not configured', code: 'NOT_IMPLEMENTED' }, req.method);
           return;
         }
@@ -301,7 +302,7 @@ export function createWebServer({
           return;
         }
         const payload = refresh ? await getData.refresh() : priceUpdate ? await getData.updatePrices()
-          : setup ? await getData.setup(await readSetupBody(req)) : priceStatus ? await getData.priceStatus()
+          : setup ? await getData.setup(await readSetupBody(req)) : priceStatus ? await getData.priceStatus() : prices ? await getData.prices(url.searchParams)
           : importing ? await getData.importCursor(await readCsvBody(req))
           : importingDb ? await getData.importDatabase(await readDatabaseBody(req)) : await getData(url.searchParams);
         sendJson(res, 200, payload, req.method);

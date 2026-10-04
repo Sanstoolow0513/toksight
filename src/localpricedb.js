@@ -20,6 +20,8 @@ export function installLocalPriceDatabase(db) {
   const insert = db.prepare(`INSERT INTO price_history (price_key, observed_at, signature, record_json) VALUES (?, ?, ?, ?)
     ON CONFLICT(price_key, observed_at) DO UPDATE SET signature = excluded.signature, record_json = excluded.record_json`);
   const read = db.prepare('SELECT * FROM price_history ORDER BY observed_at, price_key');
+  const readKey = db.prepare('SELECT observed_at, record_json FROM price_history WHERE price_key = ? ORDER BY observed_at DESC');
+  const summary = db.prepare('SELECT price_key, COUNT(*) AS revisions, MAX(observed_at) AS observedAt FROM price_history GROUP BY price_key');
   const setup = db.prepare('SELECT * FROM web_setup WHERE id = 1');
   const counts = db.prepare('SELECT COUNT(*) AS revisions, COUNT(DISTINCT price_key) AS prices, MAX(observed_at) AS observedAt FROM price_history');
   return {
@@ -32,6 +34,8 @@ export function installLocalPriceDatabase(db) {
       }
     },
     read: () => read.all(),
+    summary: () => summary.all(),
+    history: (key) => readKey.all(key).map((row) => ({ observedAt: row.observed_at, record: JSON.parse(row.record_json) })),
     status() {
       const row = setup.get();
       return { completed: Boolean(row), completedAt: row?.completed_at ?? null, autoUpdate: row ? Boolean(row.auto_update) : true, ...counts.get() };

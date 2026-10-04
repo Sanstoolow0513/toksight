@@ -273,14 +273,19 @@ bytes, merge statistics as JSON); both retain the local Host check and import re
 origin. Transfers work offline and never write agent files.
 
 The **Update prices** button calls `POST /api/prices/update` to download the public sources
-directly on this machine, bypassing the 7-day interval. **Settings → Local price database**
-shows price/revision counts and lets you disable automatic updates. When enabled, the server
+directly on this machine, bypassing the 7-day interval. **Prices** in the left navigation shows
+the saved catalog, source download times, and input/output/cache rates in USD per million tokens.
+Search by model/provider/endpoint, filter by source, and select a model to inspect its billing
+channel, conditions and locally observed price history. This page also controls automatic updates.
+Browsing prices reads only the local database. When automatic updates are enabled, the server
 checks hourly as well as on startup/report requests; expired sources refresh and failed checks
 retry after an hour. Checks stop when the server closes. Price changes revalue the applicable
 requests without rescanning usage or replacing reported amounts. `--offline` prevents network
 updates. Continuing with local prices during setup defers the first automatic check for an hour.
 `GET /api/prices/status` returns setup/update status; `POST /api/setup` completes setup or updates
-the automatic-update preference. Both use the existing Host/Origin checks.
+the automatic-update preference. `GET /api/prices` reads the catalog; add `key=<record id>` to
+read a model's revisions, newest first. API token rates remain USD per token. These endpoints
+use the existing Host/Origin checks.
 
 To add Cursor history, export **Usage Events** as CSV in Cursor, open `toksight web`, and choose
 **Import Cursor CSV** in **Settings**. The file is sent only to the local toksight server and its
@@ -293,7 +298,7 @@ Cursor exports no event ID, so two truly distinct events with identical timestam
 token counts cannot be distinguished from one event repeated across files; if Cursor later revises
 a model name or token counts, that event may be counted again. The import reports what it matched.
 
-The dashboard opens on **Today**, with **Calendar** and **Settings** in the sidebar.
+The dashboard opens on **Today**, with **Calendar**, **Prices** and **Settings** in the sidebar.
 The full-height sidebar sits beside the report, with the logo at the top, vertically centered
 navigation, and theme and 中文 / EN controls at the bottom. Navigation and preference buttons
 have generous click targets. On small screens, the sidebar becomes a compact area above the report
@@ -468,7 +473,7 @@ See the [release guide](doc/release.md) for branch protection, npm Trusted Publi
 ### Roadmap
 
 - [x] Web dashboard (`toksight web`, phase 2)
-- [x] Today / Calendar / Settings workspace with adjustable time zone and image export (`toksight web`)
+- [x] Today / Calendar / Prices / Settings workspace with adjustable time zone and image export (`toksight web`)
 - [ ] TUI watch mode
 - [ ] More clients (Windsurf, pi…)
 - [ ] `--export csv`, leaderboard-style sharing

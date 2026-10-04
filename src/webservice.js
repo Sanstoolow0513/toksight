@@ -168,6 +168,14 @@ export function createWebDataService(base, { collect = collectAll, env, home, da
   getData.refresh = refresh;
   getData.updatePrices = () => updatePrices(true);
   getData.priceStatus = () => ({ ...database.priceStatus(), offline: Boolean(base.offline), updating: Boolean(inflightPrices), warnings: startupPricingWarnings });
+  getData.prices = (params = new URLSearchParams()) => {
+    assertOpen();
+    const keys = [...params.keys()], key = params.get('key');
+    if (keys.some((name) => name !== 'key') || keys.length > 1 || (key != null && (!key || key.length > 8192))) {
+      const err = new Error('invalid price query'); err.status = 400; err.code = 'BAD_QUERY'; throw err;
+    }
+    return { ...database.priceCatalog(key), offline: Boolean(base.offline), updating: Boolean(inflightPrices), warnings: startupPricingWarnings };
+  };
   getData.setup = (options = {}) => {
     if (inflightSetup) return inflightSetup;
     if (typeof options !== 'object' || options == null || Array.isArray(options) ||

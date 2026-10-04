@@ -477,6 +477,31 @@ export function createUsageDatabase({ file, env, home } = {}) {
     read,
     replace,
     priceStatus: () => localPrices.status(),
+    priceCatalog(key = null) {
+      // Read only committed price data, without collecting usage or downloading.
+      db.exec('BEGIN');
+      try {
+        const status = localPrices.status();
+        let result;
+        if (key != null) result = { key, history: localPrices.history(key), status };
+        else {
+          const history = new Map(localPrices.summary().map((row) => [row.price_key, row]));
+          const records = getPrices.all().map(decodePriceRecord).map((record) => {
+            const id = historyPriceKey(record), summary = history.get(id);
+            return { ...record, cacheReadFallback: Boolean(record.cacheReadFallback), cacheWriteFallback: Boolean(record.cacheWriteFallback),
+              id, revisions: summary?.revisions ?? 0, observedAt: summary?.observedAt ?? null };
+          });
+          const updates = Object.fromEntries(getPriceUpdates.all().map((row) => [row.source,
+            { fetchedAt: row.fetched_at, checkedAt: row.checked_at, state: row.state, url: row.url }]));
+          result = { records, updates, status };
+        }
+        db.exec('COMMIT');
+        return result;
+      } catch (err) {
+        db.exec('ROLLBACK');
+        throw err;
+      }
+    },
     completeSetup: (options, at) => localPrices.complete(options, at),
     exportDatabase: () => {
       if (!read()) throw new Error('No usage snapshot; run toksight refresh first');
