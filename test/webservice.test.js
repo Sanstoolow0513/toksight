@@ -19,7 +19,7 @@ const base = parseArgs(['--offline']);
 const now = () => new Date(2026, 8, 8, 12).getTime();
 const at = (day) => new Date(2026, 8, day, 12).getTime();
 const entry = (over = {}) => ({ client: 'claude', model: 'model-a', sessionId: 's1', timestamp: at(8), inputTokens: 100, outputTokens: 10, reasoningTokens: 0, cacheReadTokens: 50, cacheWriteTokens: 0, costUsd: 1, directory: null, title: null, ...over });
-const raw = (entries) => ({ entries, warnings: [], perClient: [], reportedCosts: new WeakSet(), pricing: { priceFor: () => ({ source: 'builtin' }), sources: { builtin: true }, configDir: '/fixture' } });
+const raw = (entries) => ({ entries, warnings: [], perClient: [], reportedCosts: new WeakSet(), pricing: { priceFor: () => ({ source: 'user' }), sources: { user: true }, configDir: '/fixture' } });
 const memoryDatabase = () => { const database = createUsageDatabase({ file: ':memory:' }); database.completeSetup(); return database; };
 const createWebDataService = (base, options) => createService(base, { publicPricing: async ({ now }) => ({ records: [], sources: [], warnings: [],
   sourceDetails: Object.fromEntries(Object.entries(PUBLIC_PRICE_SOURCES).map(([source,url]) => [source, { fetchedAt: new Date(now()).toISOString(), state: 'fresh', url }])) }), ...options });
@@ -351,10 +351,12 @@ test('real collection preserves agent-reported cost provenance alongside compute
   const project = path.join(home, '.claude', 'projects', 'fixture');
   await mkdir(project, { recursive: true });
   await writeFile(path.join(project, 'session.jsonl'), JSON.stringify({ type: 'assistant', sessionId: 'claude-fixture', timestamp: '2026-09-08T10:00:00Z', message: { id: 'm', model: 'claude-sonnet-4', usage: { input_tokens: 100, output_tokens: 10 } } }));
+  await mkdir(env.TOKSIGHT_CONFIG_DIR, { recursive: true });
+  await writeFile(path.join(env.TOKSIGHT_CONFIG_DIR, 'pricing.json'), JSON.stringify({ 'claude-sonnet-4': { input: 3, output: 15 } }));
   const get = createWebDataService(base, { home, env, now });
   const data = await get();
   assert.ok(data.costCoverage.sources.reported.requests > 0);
-  assert.equal(data.costCoverage.sources.builtin.requests, 1);
+  assert.equal(data.costCoverage.sources.user.requests, 1);
   assert.equal(data.costCoverage.sources.reported.costUsd, data.clients.opencode.costUsd);
   get.close();
 });
@@ -390,7 +392,7 @@ test('cost coverage separates reports, estimates, unpriced requests and actual c
   assert.equal(coverage.sources.reported.costUsd, 7);
   assert.equal(coverage.sources.user.requests, 2);
   assert.equal(coverage.sources.litellm.requests, 1);
-  assert.equal(coverage.sources.builtin.requests, 1);
+  assert.equal(coverage.sources.unknown.requests, 1); // claude-sonnet-4 has no fetched or user price.
   assert.equal(coverage.cacheFallbackRequests, 2); // explicit equal prices and reported costs are not fallbacks.
   assert.equal(coverage.unpricedRequests, 1);
 });

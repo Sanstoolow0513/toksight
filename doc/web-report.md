@@ -9,6 +9,7 @@
 | `/api/data` | GET/HEAD | 从已提交快照生成筛选后的报告；参数见[数据契约](data-contract.md) |
 | `/api/refresh` | POST | 重扫 Agent 并事务替换快照 |
 | `/api/prices/update` | POST | 本机强制获取厂商、OpenRouter 与 Cursor 公开价格 |
+| `/api/prices/reset` | POST | 清除价格、历史及下载缓存，返回建库引导，保留用量与导入；本服务忙时返回 409 |
 | `/api/prices/status` | GET/HEAD | 本地价格/历史版本数、引导完成与自动更新状态 |
 | `/api/prices` | GET/HEAD | 已提交本地目录；可用单个 key 参数读取某项价格历史 |
 | `/api/setup` | POST | 首次建库或保存自动更新偏好；参数为布尔 offline / autoUpdate |
@@ -21,7 +22,8 @@
 ## 页面与数据流
 
 首次未完成引导时，主内容区显示 `PriceSetup`，可立即下载价格或本地继续，状态保存在数据库。
-价格页提供完整目录、价格/历史版本数、最近记录变化时间和自动更新开关；`usePriceDatabase` 独立加载状态。
+价格页提供完整目录、价格/历史版本数、最近记录变化时间、自动更新开关及页首“重置价格库”入口（与更新单价并列）；`usePriceDatabase` 独立加载状态。
+`PriceReset` 使用原生 dialog，提供范围说明、取消、忙状态和失败重试；成功后关闭弹窗并返回建库引导。
 离线时禁用联网更新；本地继续不能在下一次 GET 自动下载。具体来源和历史语义见[本机价格库](local-pricing.md)。
 
 Next App Router 静态导出为 `web/out/`，生产由 CLI 托管。页面默认打开 Today，采用全高侧栏与主内容左右分区，不设独立顶栏。`Sidebar` 顶部展示品牌，今天 / 日历 / 价格 / 设置导航组垂直居中，底部提供配色、语言与时区入口；导航项至少 48px 高，偏好按钮至少 44×44px。侧栏从视口顶部吸附，矮窗口内可独立滚动；≤600px 收为品牌、显示偏好菜单与横向导航，菜单支持 Escape 关闭和焦点返回。侧栏为纯灰底，主内容保留减弱的点阵，图表与表格阅读区用页面底色。`ReportActions` 在紧凑页首提供同等描边权重的刷新、更新单价、图片导出；价格页页首提供单价更新；`Settings` 管时区、SQLite 备份 / 合并与 Cursor CSV。视觉与交互以 `design-spec.md` 为准。

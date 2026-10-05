@@ -31,7 +31,7 @@ export function installLocalPriceDatabase(db) {
   return {
     observe(records, at) {
       for (const record of records) {
-        if (!['openai', 'anthropic', 'google', 'openrouter', 'openrouter-native', 'cursor'].includes(record.source)) continue;
+        if (!['openai', 'anthropic', 'google', 'deepseek', 'moonshot', 'zai', 'qwen', 'openrouter', 'openrouter-native', 'cursor'].includes(record.source)) continue;
         const key = historyPriceKey(record), signature = priceSignature(record), previous = latest.get(key);
         if (previous && (at < previous.observed_at || signature === previous.signature)) continue;
         insert.run(key, at, signature, JSON.stringify(record));

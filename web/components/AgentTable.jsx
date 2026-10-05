@@ -8,11 +8,10 @@ import { useTableColumns } from '@/lib/useTableColumns';
 
 const RATE_PARTS = ['input', 'cacheRead', 'cacheWrite', 'output'];
 const PART_LABELS = ['compInput', 'compCacheRead', 'compCacheWrite', 'compOutput'];
-const SOURCE_NAMES = { litellm: 'LiteLLM', cursor: 'Cursor', openai: 'OpenAI', anthropic: 'Anthropic', google: 'Google', openrouter: 'OpenRouter', 'openrouter-native': 'OpenRouter (native reference)' };
+const SOURCE_NAMES = { litellm: 'LiteLLM', cursor: 'Cursor', openai: 'OpenAI', anthropic: 'Anthropic', google: 'Google', deepseek: 'DeepSeek', moonshot: 'Moonshot', zai: 'Z.AI', qwen: 'Qwen', openrouter: 'OpenRouter', 'openrouter-native': 'OpenRouter (native reference)' };
 
 function sourceLabel(source, tx) {
   if (source === 'openrouter-native') return tx('priceNativeRouter');
-  if (source === 'builtin') return tx('sourceBuiltin');
   if (source === 'user') return tx('sourceUser');
   return SOURCE_NAMES[source] ?? source;
 }

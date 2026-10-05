@@ -5,8 +5,8 @@
 Web 首次启动离线建立用量快照，主内容区的 `PriceSetup` 引导获取公开价格或使用本地价格继续。
 `web_setup` 保存引导完成时间、`auto_update` 偏好；`price_preferences.sources_json` 独立保存来源选择，
 不依赖浏览器。`POST /api/setup` 接受布尔 `offline` / `autoUpdate` 和无重复的 `selectedSources` 数组；
-缺省保持原偏好，空数组关闭所有可选来源。允许值为 openai、anthropic、google、openrouter-native、
-cursor、openrouter、litellm。后两项默认关闭，已有库无偏好时也使用此默认值。内置价和用户覆盖不受开关影响。
+缺省保持原偏好，空数组关闭所有可选来源。允许值为 openai、anthropic、google、deepseek、moonshot、zai、qwen、openrouter-native、
+cursor、openrouter、litellm。后两项默认关闭，已有库无偏好时也使用此默认值。用户覆盖不受开关影响。
 状态 API 增加 selectedSources、availableSources。价格页先勾选，再一次保存；在线保存按所选来源更新，
 离线保存仅切换本地查询。首次本地继续会推迟第一次自动检查一小时；`--offline` 始终禁止网络更新。
 `src/priceselection.js` 统一筛选价格目录、历史和快照/导入的逐模型回退；关闭来源清除派生估价，保留自报费用。
@@ -18,15 +18,31 @@ cursor、openrouter、litellm。后两项默认关闭，已有库无偏好时也
 单价和条件元数据，额外附加稳定 id、revisions、observedAt。id 按历史键区分范围、来源、原名及 Cursor 档位。
 单个 `key=<id>` 参数改为返回该项 history（observedAt / record），从新到旧；未知 key 返回空历史。
 未知、重复或空查询参数返回 400。目录和历史 GET 不初始化引导、不采集、不联网，只读已提交事务。
-界面转换为美元/百万 token，并明确标注本机观察时间；通用回退和用户覆盖没有观察历史。
+界面转换为美元/百万 token，并明确标注本机观察时间；用户覆盖没有观察历史。
 
 服务开启自动更新后，用可清理、unref 的小时定时器检查价格，也保留启动/报告读取检查。
 成功价格七天到期，失败一小时后重试。手动更新强制检查；并发自动/手动更新共享一个任务，关闭
 服务停止定时器并防止未完成下载写入已关闭数据库。更新不扫描 Agent 文件，结果在 SQLite 事务中提交。
 
+## 重置价格库
+
+价格页确认后调用 `POST /api/prices/reset`；CLI 提供 `reset-prices`，支持 JSON 输出和离线使用，拒绝日期/客户端筛选。
+`src/pricereset.js` 仅删除下载缓存 `cache/litellm-pricing.json`、`cache/cursor-pricing.json`，保留用户配置和其他文件。
+`database.resetPrices()` 在一个事务中清空 `model_prices`、`price_updates`、`price_history`、`web_setup`，
+同时清空快照的 `model_prices_json` / `pricing_sources_json` 和 `usage_imports.price_json`，避免旧回退价格复活。
+用量、导入、自报费用、来源选择、快照刷新时间保持不变；SQLite 文件仍保留，因为它还存放用量。
+数据库失败回滚价格和引导状态；缓存文件删除在事务前完成，失败时已删除的缓存可由下次下载恢复。
+
+服务重置拒绝本进程仍在执行的刷新、价格更新、引导和 Cursor 导入（409），停止自动检查并返回未完成引导的状态。
+CLI 重置需先关闭其他 toksight 进程，避免其他进程中的采集/下载重新写入旧价格。其他连接通过 `data_version` 发现已提交重置。
+重置本身不联网、不采集；旧估算在新价格建立前为空，自报费用不变。重新在线引导会下载全新价格历史；
+离线继续重新加载用户定价，未知单价保留为空。来源选择保留，自动更新由重新引导选择。
+
 ## 本地来源
 
-`src/publicpricing.js` 直接访问 OpenAI、Anthropic、Google 官方价格页和 OpenRouter `/api/v1/models`。
+`src/publicpricing.js` 直接访问 OpenAI、Anthropic、Google、DeepSeek、Moonshot、Z.AI、Qwen 官方价格页
+（Moonshot 走文档站的 `.md` 接口，Qwen 取阿里云国际站 USD 分区并保留上下文档位）
+和 OpenRouter `/api/v1/models`。
 OpenAI 的折叠模型行从限定组件的序列化表格数据解码，不运行页面脚本。其他页面从可见 Standard
 价格表读取。Cursor 继续使用现有官方目录抓取器。仅下载勾选的来源；LiteLLM 必须显式启用，
 开启后 Web 更新可下载，CLI 使用同一数据库偏好，有本地公开历史时优先读取本地价格。
@@ -38,7 +54,7 @@ Google、xAI、DeepSeek、Moonshot、Alibaba/Qwen、Z.AI、MiniMax、Mistral、C
 `parseNativeRouterPrices` 不使用模型总表的聚合报价；原厂端点缺失时跳过，多端点四类单价、缓存回退、
 1h 缓存或条件不一致时报警并跳过。等价端点合并成一条参考记录，保留 routerModel、routerEndpoints、
 providerName 与端点 API URL；source 为 openrouter-native，official.channel/provider 为原厂计价渠道。
-匹配优先级低于官网、高于 LiteLLM/内置价；历史和备份保留原始出处。已知自定义中转商仍需显式绑定，
+匹配优先级低于官网、高于 LiteLLM；历史和备份保留原始出处。已知自定义中转商仍需显式绑定，
 不能因模型同名套用原厂价。原厂 API 参考值不代表直连实付，也不代替 OpenRouter 实际路由报价。
 
 完整 OpenRouter 来源启用后，为使用过的路由模型获取端点详情，最多四个并发，保留默认模型报价

@@ -182,7 +182,6 @@ export function renderCommand(ctx, fmt) {
       console.log(`  litellm: ${pricing.sources.litellm}`);
       console.log(`  cursor official: ${pricing.sources.cursor}`);
       console.log(`  user overrides: ${pricing.sources.user ? 'loaded' : 'none'}`);
-      console.log(`  builtin: always available (${fmt.dim('best-effort estimates')})`);
       break;
     }
   }

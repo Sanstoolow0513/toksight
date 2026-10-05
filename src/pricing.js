@@ -10,31 +10,6 @@ const LITELLM_URL =
 export const PRICE_REFRESH_MS = 7 * 24 * 60 * 60 * 1000;
 const FETCH_TIMEOUT_MS = 4000;
 
-// Built-in fallback prices, USD per million tokens (best-effort snapshot).
-// LiteLLM data (fetched with a 7-day disk cache) and a user overrides file take
-// precedence, in that order.
-const BUILTIN_RULES = [
-  { match: 'claude-opus-4', input: 15, cacheRead: 1.5, cacheWrite: 18.75, output: 75 },
-  { match: 'claude-sonnet-4', input: 3, cacheRead: 0.3, cacheWrite: 3.75, output: 15 },
-  { match: 'claude-haiku-4', input: 1, cacheRead: 0.1, cacheWrite: 1.25, output: 5 },
-  { match: 'gpt-5-codex', input: 1.25, cacheRead: 0.125, cacheWrite: 0, output: 10 },
-  { match: 'gpt-5-mini', input: 0.25, cacheRead: 0.025, cacheWrite: 0, output: 2 },
-  { match: 'gpt-5', input: 1.25, cacheRead: 0.125, cacheWrite: 0, output: 10 },
-  { match: 'gpt-4.1', input: 2, cacheRead: 0.5, cacheWrite: 0, output: 8 },
-  { match: 'glm-5', input: 0.6, cacheRead: 0.11, cacheWrite: 0.6, output: 2.2 },
-  { match: 'glm-4.6', input: 0.6, cacheRead: 0.11, cacheWrite: 0.6, output: 2.2 },
-  { match: 'glm-4.5', input: 0.6, cacheRead: 0.11, cacheWrite: 0.6, output: 2.2 },
-  { match: 'glm-4', input: 0.1, cacheRead: 0.02, cacheWrite: 0, output: 0.1 },
-  { match: 'gemini-3-pro', input: 2, cacheRead: 0.2, cacheWrite: 0, output: 12 },
-  { match: 'gemini-3-flash', input: 0.3, cacheRead: 0.03, cacheWrite: 0, output: 2.5 },
-  { match: 'gemini-2.5-pro', input: 1.25, cacheRead: 0.31, cacheWrite: 0, output: 10 },
-  { match: 'gemini-2.5-flash', input: 0.3, cacheRead: 0.075, cacheWrite: 0, output: 2.5 },
-  { match: 'deepseek', input: 0.28, cacheRead: 0.028, cacheWrite: 0, output: 0.42 },
-  { match: 'kimi', input: 0.6, cacheRead: 0.11, cacheWrite: 0.6, output: 2.5 },
-  { match: 'qwen3-coder', input: 0.3, cacheRead: 0.03, cacheWrite: 0, output: 1.2 },
-  { match: 'minimax', input: 0.4, cacheRead: 0.04, cacheWrite: 0, output: 1.6 },
-];
-
 export function configDir({ env = process.env, home = os.homedir() } = {}) {
   if (env.TOKSIGHT_CONFIG_DIR) return env.TOKSIGHT_CONFIG_DIR;
   const base = env.XDG_CONFIG_HOME || path.join(home, '.config');
@@ -45,8 +20,8 @@ export function normalizeModelName(name) {
   return modelIdentity(name).id;
 }
 
-// Built-in prices are authored per MTok; LiteLLM and user overrides are
-// converted to USD per token before being stored in lookup maps.
+// User overrides are authored per MTok and converted to USD per token before
+// being stored in lookup maps.
 const perToken = (pricePerMTok) => ({
   input: pricePerMTok.input / 1e6,
   output: pricePerMTok.output / 1e6,
@@ -168,9 +143,8 @@ export async function getPricing({ offline = false, force = false, env, home, se
   const lite = enabled.includes('litellm')
     ? await loadLitellmPricing(path.join(dir, 'cache', 'litellm-pricing.json'), { offline, force, now, fetchImpl })
     : { map: null, state: 'disabled', fetchedAt: null };
-  if (lite.warning) warnings.push(`LiteLLM pricing unavailable, using cached/built-in estimates: ${lite.warning}`);
+  if (lite.warning) warnings.push(`LiteLLM pricing unavailable, using cached estimates: ${lite.warning}`);
   const records = [
-    ...BUILTIN_RULES.map((rule) => priceRecord({ name: rule.match, ...perToken({ ...rule, source: 'builtin' }) })),
     ...(lite.map?.records ?? []),
     ...(userMap?.records ?? []),
   ].filter(Boolean);
@@ -180,7 +154,7 @@ export async function getPricing({ offline = false, force = false, env, home, se
     priceFor: lookup,
     records,
     warnings,
-    sources: { user: Boolean(userMap), litellm: lite.state, builtin: true },
+    sources: { user: Boolean(userMap), litellm: lite.state },
     sourceDetails: { litellm: { fetchedAt: lite.fetchedAt == null ? null : new Date(lite.fetchedAt).toISOString(), url: LITELLM_URL, state: lite.state } },
     configDir: dir,
   };

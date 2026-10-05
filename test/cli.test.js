@@ -79,6 +79,11 @@ const BASE_OPTS = {
 test('collectAll collects fixtures, prices entries without mutating them', async () => {
   const { tmp, env, home } = makeFixture();
   try {
+    // Cost comes from a user pricing.json override (offline, no fetched catalog).
+    fs.mkdirSync(env.TOKSIGHT_CONFIG_DIR, { recursive: true });
+    fs.writeFileSync(path.join(env.TOKSIGHT_CONFIG_DIR, 'pricing.json'), JSON.stringify({
+      'claude-sonnet-4': { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 },
+    }));
     const ctx = await collectAll(BASE_OPTS, { env, home });
     assert.equal(ctx.entries.length, 3);
     assert.ok(ctx.entries.every((e) => e.client === 'claude'));
@@ -89,7 +94,6 @@ test('collectAll collects fixtures, prices entries without mutating them', async
     const malformed = ctx.entries.find((e) => e.inputTokens === 30);
     assert.equal(malformed.timestamp, null);
 
-    // Cost comes from the builtin table (offline, no user pricing.json).
     const priced = ctx.entries.find((e) => e.inputTokens === 100);
     assert.equal(priced.costUsd, 100 * 3e-6 + 900 * 0.3e-6 + 50 * 3.75e-6 + 200 * 15e-6);
     assert.ok(ctx.entries.every((e) => e.costUsd > 0));
@@ -101,7 +105,7 @@ test('collectAll collects fixtures, prices entries without mutating them', async
 
     // Offline pricing state is surfaced.
     assert.equal(ctx.pricing.sources.litellm, 'disabled');
-    assert.equal(ctx.pricing.sources.user, false);
+    assert.equal(ctx.pricing.sources.user, true);
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true });
   }

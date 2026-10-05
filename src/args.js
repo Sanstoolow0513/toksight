@@ -8,7 +8,7 @@
 import { resolveClientIds } from './clients/index.js';
 import { endOfDay, parseDateArg, startOfDay, startOfMonth, stepDay } from './dates.js';
 
-const COMMANDS = ['overview', 'daily', 'monthly', 'models', 'sessions', 'web', 'refresh', 'export-db', 'import-db', 'env', 'help'];
+const COMMANDS = ['overview', 'daily', 'monthly', 'models', 'sessions', 'web', 'refresh', 'reset-prices', 'export-db', 'import-db', 'env', 'help'];
 
 export function parseArgs(argv, { now = Date.now() } = {}) {
   const opts = {
@@ -103,6 +103,9 @@ export function parseArgs(argv, { now = Date.now() } = {}) {
     opts.file = positional[1];
     if (!opts.file && !opts.help && !opts.version) throw new Error(`${opts.command} requires a file path`);
     if (opts.clients || opts.since != null || opts.until != null) throw new Error('database transfers include all usage; date and client filters are not supported');
+  }
+  if (opts.command === 'reset-prices' && (opts.clients || opts.since != null || opts.until != null)) {
+    throw new Error('price reset applies to the entire catalog; date and client filters are not supported');
   }
   return opts;
 }

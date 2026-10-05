@@ -118,7 +118,7 @@ export function readDatabaseBackup(bytes) {
           ${hasMetadata ? 'metadata_json' : "'null'"} AS metadataJson FROM model_prices ORDER BY id`).all().map(decodePriceRecord);
         for (const row of catalog) {
           price(row);
-          check(['default', 'cursor'].includes(row.scope) && ['builtin', 'litellm', 'cursor', 'user', 'openai', 'anthropic', 'google', 'openrouter', 'openrouter-native'].includes(row.source) &&
+          check(['default', 'cursor'].includes(row.scope) && ['builtin', 'litellm', 'cursor', 'user', 'openai', 'anthropic', 'google', 'deepseek', 'moonshot', 'zai', 'qwen', 'openrouter', 'openrouter-native'].includes(row.source) &&
             typeof row.modelId === 'string' && typeof row.name === 'string' && nullableText(row.provider) && nullableText(row.pool) &&
             bit(row.cacheReadFallback) && bit(row.cacheWriteFallback), 'invalid price catalog');
         }
@@ -130,7 +130,7 @@ export function readDatabaseBackup(bytes) {
         for (const row of history) {
           const record = JSON.parse(row.record_json);
           price(record);
-          check(['default', 'cursor'].includes(record.scope) && ['builtin', 'litellm', 'cursor', 'user', 'openai', 'anthropic', 'google', 'openrouter', 'openrouter-native'].includes(record.source) &&
+          check(['default', 'cursor'].includes(record.scope) && ['builtin', 'litellm', 'cursor', 'user', 'openai', 'anthropic', 'google', 'deepseek', 'moonshot', 'zai', 'qwen', 'openrouter', 'openrouter-native'].includes(record.source) &&
             typeof record.name === 'string' && typeof record.modelId === 'string' && nullableText(record.provider) && nullableText(record.pool) &&
             typeof record.cacheReadFallback === 'boolean' && typeof record.cacheWriteFallback === 'boolean' &&
             Number.isFinite(Date.parse(row.observed_at)) && row.observed_at === new Date(row.observed_at).toISOString() &&

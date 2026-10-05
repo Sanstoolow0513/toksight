@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { LoaderCircle, RefreshCw, TriangleAlert } from 'lucide-react';
+import { LoaderCircle, RefreshCw, RotateCcw, TriangleAlert } from 'lucide-react';
 import Sidebar from '@/components/Sidebar';
 import Settings from '@/components/Settings';
 import ReportActions from '@/components/ReportActions';
@@ -23,6 +23,7 @@ import { coded } from '@/components/Coded';
 import PriceSetup from '@/components/PriceSetup';
 import { usePriceDatabase } from '@/lib/usePriceDatabase';
 import PriceCatalog from '@/components/PriceCatalog';
+import PriceReset from '@/components/PriceReset';
 
 function Skeleton() {
   return <div className="report" aria-busy="true"><div className="skel skel-kpis" /><div className="skel" style={{ height: 220 }} /><div className="skel" style={{ height: 300 }} /></div>;
@@ -45,6 +46,8 @@ export default function Page() {
   const [exporting, setExporting] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [priceUpdating, setPriceUpdating] = useState(false);
+  const [priceResetOpen, setPriceResetOpen] = useState(false);
+  const [priceResetError, setPriceResetError] = useState(null);
   const [importing, setImporting] = useState(false);
   const [databaseBusy, setDatabaseBusy] = useState(null);
   const [databaseFile, setDatabaseFile] = useState(null);
@@ -168,6 +171,16 @@ export default function Page() {
     } finally {
       setPriceUpdating(false);
     }
+  };
+  const onResetPrices = async () => {
+    if (busy) return;
+    setPriceResetError(null);
+    try {
+      await prices.reset();
+      setPriceResetOpen(false);
+      setRefreshRevision((n) => n + 1);
+      pushToast({ key: 'prices', tone: 'success', message: ['priceResetSuccess'] });
+    } catch (err) { setPriceResetError(String(err?.message || err)); }
   };
   const onImportCursor = async (file) => {
     setImporting(true);
@@ -301,9 +314,13 @@ export default function Page() {
       <main className="main" id="main-content">
         <div className="workspace-content">
           <header className="workspace-head"><div><h1>{tx('nav' + view)}</h1>{view === 'settings' || view === 'prices' ? <p>{tx(view + 'Description')}</p> : null}</div>
-            {prices.status?.completed ? view === 'prices' ? <button type="button" className="btn-secondary price-update-button" disabled={busy || prices.status.offline} title={prices.status.offline ? tx('setupOffline') : undefined} onClick={onUpdatePrices}>
+            {prices.status?.completed ? view === 'prices' ? <div className="price-actions"><button type="button" className="btn-secondary price-update-button" disabled={busy || prices.status.offline} title={prices.status.offline ? tx('setupOffline') : undefined} onClick={onUpdatePrices}>
               {updatingPrices ? <LoaderCircle size={16} className="spin" /> : <RefreshCw size={16} />}{tx(updatingPrices ? 'updatingPrices' : 'updatePrices')}
-            </button> : <ReportActions tx={tx} loading={busy || reportBusy} offline={prices.status.offline} refreshing={refreshing} onRefresh={onRefresh} priceUpdating={updatingPrices} onUpdatePrices={onUpdatePrices}
+            </button>
+              <button type="button" className="btn-secondary price-update-button" disabled={busy} onClick={() => { setPriceResetError(null); setPriceResetOpen(true); }}>
+                <RotateCcw size={16} aria-hidden="true" />{tx('priceReset')}
+              </button>
+            </div> : <ReportActions tx={tx} loading={busy || reportBusy} offline={prices.status.offline} refreshing={refreshing} onRefresh={onRefresh} priceUpdating={updatingPrices} onUpdatePrices={onUpdatePrices}
               exporting={exporting} onExport={onExport} canExport={canExport} settings={view === 'settings'} /> : null}
           </header>
           {prices.status?.completed && view === 'today' ? <div className="today-filters no-export"><label className="agent-filter"><span>Agent</span><select aria-label="Agent" value={agent} onChange={(e) => onAgent(e.target.value)}>
@@ -317,6 +334,7 @@ export default function Page() {
         </div>
       </main>
     </div>
+    {priceResetOpen ? <PriceReset tx={tx} busy={busy} resetting={prices.busy} error={priceResetError} onReset={onResetPrices} onClose={() => setPriceResetOpen(false)} /> : null}
     {databaseFile ? <DatabaseImport file={databaseFile} error={databaseError} busy={databaseBusy === 'import'} onImport={onImportDatabase} onClose={() => setDatabaseFile(null)} tx={tx} /> : null}
     <Toasts toasts={toasts.toasts} onDismiss={toasts.dismiss} tx={tx} />
   </div>;

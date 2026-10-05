@@ -65,8 +65,8 @@ test('exact snapshot, provider and fine-tuning keys win before safe, unambiguous
   const lookup = createPriceLookup(records.slice(0, -1));
   for (const [name, expected] of [['model', 1], ['model-20260101', 2], ['model-2026-02-01', 3],
     ['example/model', 1], ['example/model-20260101', 2], ['ft:model', 9], ['model-20260301', 1],
-    ['builtin:MODEL:latest', 1], ['dated-only', 2], ['one/ambiguous', 1]]) assert.equal(lookup(name)?.input, expected, name);
-  for (const name of ['ambiguous', 'conflict', 'other/model', 'ft:unknown', 'model-fast', 'model-2']) assert.equal(lookup(name), null, name);
+    ['dated-only', 2], ['one/ambiguous', 1]]) assert.equal(lookup(name)?.input, expected, name);
+  for (const name of ['ambiguous', 'conflict', 'other/model', 'ft:unknown', 'model-fast', 'model-2', 'builtin:MODEL:latest']) assert.equal(lookup(name), null, name);
   assert.equal(createPriceLookup(records)('model').source, 'user');
   const suffixed = createPriceLookup([rate('model', 1), rate('example/model-20260101', 2)]);
   assert.equal(suffixed('model-20260101').input, 2);
@@ -90,7 +90,7 @@ test('Kimi Code K3 endpoints use Moonshot reference prices without guessing othe
       'kimi-code/kimi-for-coding-highspeed', 'ft:kimi-code/k3']) assert.equal(lookup(name, 'kimi'), null, name);
   }
   const withoutMoonshot = createPriceLookup(pricing.records.filter((r) => r.provider !== 'moonshot'));
-  assert.equal(withoutMoonshot('kimi-code/k3', 'kimi'), null, 'a third-party K3 rate and the old builtin kimi rate are not fallbacks');
+  assert.equal(withoutMoonshot('kimi-code/k3', 'kimi'), null, 'a third-party K3 rate is not a fallback');
 });
 
 test('exact Kimi Code rates and user overrides win before reference aliases, including request context tiers', async (t) => {

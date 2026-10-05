@@ -23,7 +23,7 @@ function entry(over = {}) {
   };
 }
 
-function payload(entries, opts = {}, pricing = { sources: { builtin: true }, configDir: null }) {
+function payload(entries, opts = {}, pricing = { sources: { user: false }, configDir: null }) {
   return buildPayload({
     entries,
     warnings: [],

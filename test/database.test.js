@@ -20,9 +20,9 @@ function collected(entries) {
   return {
     entries, warnings: ['fixture warning'], reportedCosts: new WeakSet(entries.slice(0, 1)),
     pricing: {
-      sources: { builtin: true, litellm: 'skipped (offline)', user: false },
+      sources: { user: true, litellm: 'skipped (offline)' },
       configDir: '/fixture',
-      priceFor: (model) => model === 'priced' ? { source: 'builtin', cacheReadFallback: true } : null,
+      priceFor: (model) => model === 'priced' ? { source: 'user', cacheReadFallback: true } : null,
     },
   };
 }
@@ -44,7 +44,7 @@ test('SQLite snapshot survives reopen, retains cost provenance, and notices exte
   assert.deepEqual(first.warnings, ['fixture warning']);
   const coverage = buildCostCoverage(first.entries, first);
   assert.equal(coverage.sources.reported.requests, 1);
-  assert.equal(coverage.sources.builtin.requests, 1);
+  assert.equal(coverage.sources.user.requests, 1);
   assert.equal(coverage.cacheFallbackRequests, 1);
 
   writer.replace(collected([entry('new', 9)]), '2026-09-08T13:00:00.000Z');

@@ -101,7 +101,7 @@ export default function PriceCatalog({ tx, timezone, locale, status, busy, error
     </div>
     {sources.length ? <div className="price-sources">{sources.map((id) => {
       const update = catalog.data?.updates[id];
-      return <div key={id}><strong>{priceSourceLabel(id, tx)}</strong><span>{update?.fetchedAt ? fmtDateTime(update.fetchedAt, timezone) : tx(id === 'user' || id === 'builtin' ? 'priceLocalSource' : 'priceNotFetched')}</span>
+      return <div key={id}><strong>{priceSourceLabel(id, tx)}</strong><span>{update?.fetchedAt ? fmtDateTime(update.fetchedAt, timezone) : tx(id === 'user' ? 'priceLocalSource' : 'priceNotFetched')}</span>
         {update?.state === 'unavailable' ? <span className="price-source-warning">{tx('priceSourceUnavailable')}</span> : null}</div>;
     })}</div> : null}
     <section className="price-list" aria-busy={catalog.loading}>

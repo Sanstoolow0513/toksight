@@ -94,6 +94,12 @@ async function main() {
       XDG_STATE_HOME: path.join(fixture, 'xdg-state'),
       TOKSIGHT_CONFIG_DIR: path.join(fixture, 'pricing'),
     };
+    // A user pricing.json override keeps the packaged cost-estimate path
+    // exercised now that no built-in fallback table exists.
+    await mkdir(path.join(fixture, 'pricing'), { recursive: true });
+    await writeFile(path.join(fixture, 'pricing', 'pricing.json'), JSON.stringify({
+      'claude-sonnet-4': { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 },
+    }));
     const port = await freePort();
     const url = `http://127.0.0.1:${port}`;
     child = startNode([path.join(installed, 'bin', 'toksight.js'), 'web', '--offline', '--no-open', '--port', String(port)], {
@@ -146,7 +152,7 @@ async function main() {
     assert.equal(filteredData.selection.rows.length, 1);
     assert.equal(filteredData.selection.rows[0].date, '2026-08-29');
     assert.equal(filteredData.comparison.days, 1);
-    assert.equal(filteredData.costCoverage.sources.builtin.requests, 1);
+    assert.equal(filteredData.costCoverage.sources.user.requests, 1);
     const emptyFilter = await fetch(url + '/api/data?client=codex');
     assert.equal((await emptyFilter.json()).totals.requests, 0);
     assert.equal((await fetch(url + '/api/data?since=2026-02-30')).status, 400);
@@ -214,6 +220,17 @@ async function main() {
     assert.equal(JSON.parse(imported.stdout).duplicates, 3);
     assert.equal((await (await fetch(url + '/api/data')).json()).totals.totalTokens, 314);
     console.log('OK installed database export/import through HTTP and CLI');
+    const reset = await fetch(url + '/api/prices/reset', { method: 'POST' });
+    assert.equal(reset.status, 200);
+    assert.equal((await reset.json()).completed, false);
+    assert.deepEqual((await (await fetch(url + '/api/prices')).json()).records, []);
+    assert.equal((await (await fetch(url + '/api/data')).json()).totals.totalTokens, 314);
+    const localSetup = await fetch(url + '/api/setup', { method: 'POST', body: JSON.stringify({ offline: true }) });
+    assert.equal(localSetup.status, 200);
+    assert.equal((await localSetup.json()).completed, true);
+    const afterReset = await (await fetch(url + '/api/data?client=cursor')).json();
+    assert.equal(afterReset.totals.costUsd, 1);
+    console.log('OK installed price reset and local rebuild preserve usage and Cursor charges');
     console.log(`Package check passed: toksight ${pkg.version}`);
   } catch (err) {
     if (output) console.error(output);

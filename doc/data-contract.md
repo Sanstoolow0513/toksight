@@ -40,8 +40,8 @@ Cursor 的 `pricing.modelRates` 额外包含 `maxMode`（目录匹配后多出�
 
 - 基础 Web 聚合：`heatmap`、`trend`、`trend7`、`trend90`、`trendByAgent`、`hourly`、`today`、`last7Days`、`last30Days`、`thisMonth`、`activeDays`、`streaks`、`peakDay`、`topSessions`、`longestSession`、`activityRange`、`timezone`。
 - 快照/选择：`snapshot`、`view`、`scopeRange`、`selection`。`selection` 的趋势/热力图最多呈现最后 366 天，`totals` 与 `comparison` 仍用完整请求范围。
-- 本机价格：`priceDatabase` 给出引导、自动更新、价格/历史版本数与离线状态；`costCoverage.sources` 新增 openai、anthropic、google、openrouter。
-- 费用说明：`costCoverage` 按 `reported`、`cursor`、`user`、`litellm`、`builtin`、`unknown` 分来源统计请求和金额，并给出未定价与使用缓存价格回退的请求数。
+- 本机价格：`priceDatabase` 给出引导、自动更新、价格/历史版本数与离线状态；`costCoverage.sources` 新增 openai、anthropic、google、deepseek、moonshot、zai、qwen、openrouter。
+- 费用说明：`costCoverage` 按 `reported`、`cursor`、`user`、`litellm`、`unknown` 分来源统计请求和金额，并给出未定价与使用缓存价格回退的请求数。
 - 相邻周期：`comparison` 用等日历天数的前一段作为基准，给出贡献和覆盖情况；没有起始日期时默认比较截至选定终点/今天的七天。前段越过启动范围时返回不可比较状态。
 
 本期、上期的费用覆盖统计使用同一份价格快照；无基准、范围不完整等情况由比较结果显式表达，不能靠空数组推断。

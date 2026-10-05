@@ -42,6 +42,7 @@ toksight models       # 按模型统计
 toksight sessions     # 按成本排序的会话
 toksight web          # 本地用量与成本报告（热力图、Agent、模型，可导出图片）
 toksight refresh      # 重新扫描 Agent 并更新本地 SQLite 数据库
+toksight reset-prices # 清除旧单价、历史与缓存，再打开 Web 重新建库
 toksight export-db backup.sqlite  # 导出完整的已提交用量数据库
 toksight import-db backup.sqlite  # 合并备份并去重
 toksight env          # 查看检测到的数据源与定价状态
@@ -95,31 +96,33 @@ CLI 按天分组和日期过滤使用**本地时区**。网页可在设置里单
 ## 定价
 
 首次启动 Web 会引导建立**本地价格库**，保存在 toksight 自己的 `usage.sqlite`。
-这台电脑直接获取 OpenAI、Anthropic、Google、OpenRouter 和 Cursor 的公开价格，
-不需要安装或维护远程 toksight 目录。可立即获取价格，也可用本地/离线估算继续；
+这台电脑直接获取 OpenAI、Anthropic、Google、DeepSeek、Moonshot、Z.AI、Qwen（阿里云国际站）、
+OpenRouter 和 Cursor 的公开价格，
+不需要安装或维护远程 toksight 目录。可立即获取价格，也可用已保存的价格或自定义定价继续；
 引导完成状态、来源选择和自动更新偏好保存在数据库中，不依赖浏览器。
 
 首次建库和价格页都可选择来源，例如只勾选 Google。**LiteLLM 不推荐，默认关闭**；
 完整 OpenRouter 目录也默认关闭。取消勾选后，Web 和 CLI 都不再使用该来源的缓存、历史及导入价格；
-原始价格仍保留，重新开启即可使用。内置回退估价和用户覆盖始终可用。
+原始价格仍保留，重新开启即可使用。用户覆盖始终可用。
 
 默认启用的“原厂端点参考价（经 OpenRouter）”发现 OpenAI、Anthropic、Google、xAI、DeepSeek、
 Moonshot、Alibaba/Qwen、Z.AI、MiniMax、Mistral、Cohere 和 AI21 的模型，同时核对模型作者与实际端点
 运营商，不只看模型名前缀。只有存在原厂端点的模型才纳入；只有第三方端点、或多个原厂端点
-价格/条件不一致时跳过，不拿中转商或最低价补位。这是 OpenRouter 的 token 参考价，不代表厂商
+价格/条件不一致时跳过，不拿中转商或最低价补位；异步 `:batch` 半价变体不参与估算。
+这是 OpenRouter 的 token 参考价，不代表厂商
 直连账单；目录保留模型原名、端点与来源链接，并支持独立的来源及厂商筛选。
-优先级为用户覆盖 → 官网价格 → 原厂端点参考价 → 可选 LiteLLM → 内置估价。
+优先级为用户覆盖 → 官网价格 → 原厂端点参考价 → 可选 LiteLLM。
 
 公开价格变化按本机获取时间保存。每条请求使用时间戳之前最后一次观察到的价格；
 早于首次获取的记录使用最早已知价格作为参考。单价相同不会新增历史版本。
 更新保留旧价格和自报金额，历史随 SQLite 备份保存；无法还原本机未更新期间错过的调价。
 
-用户覆盖优先，其次使用本地保存的公开价格。尚未建立公开目录时，CLI 使用以下回退层（后者覆盖前者）：
+用户覆盖优先，其次使用本地保存的公开价格。尚未建立公开目录时，CLI 使用以下价格层（后者覆盖前者）；
+没有任何已获取或已配置价格的模型不估价，仅统计 token：
 
-1. **内置价格表** — 明确列出的模型的最佳努力估算（美元 / 百万 token），离线可用；新版本和变体不会沿用同系列旧型号的价格。
-2. **LiteLLM（可选，不推荐）** — 仅在价格页明确启用后才加载；从社区[模型价格库](https://github.com/BerriAI/litellm/blob/main/model_prices_and_context_window.json)拉取，
+1. **LiteLLM（可选，不推荐）** — 仅在价格页明确启用后才加载；从社区[模型价格库](https://github.com/BerriAI/litellm/blob/main/model_prices_and_context_window.json)拉取，
    本地缓存 7 天（`<toksight-dir>/cache/litellm-pricing.json`）；`--offline` 可读取已有缓存且不发网络请求。
-3. **用户覆盖** — 编辑 `<toksight-dir>/pricing.json`（单位：美元 / 百万 token）：
+2. **用户覆盖** — 编辑 `<toksight-dir>/pricing.json`（单位：美元 / 百万 token）：
 
    ```json
    {
@@ -241,6 +244,17 @@ CLI 提供 `toksight export-db <文件>` 与 `toksight import-db <文件>`，加
 返回 JSON 合并统计）；两者均保留本机 Host 检查，导入还需通过来源检查。
 导入导出支持离线操作，不会写入 Agent 文件。
 
+价格页顶部、“更新单价”旁的**重置价格库**会清除已保存的单价、价格观察历史、Cursor/LiteLLM 下载缓存以及快照和导入记录中的价格回退值，
+弹窗说明清除范围，执行中禁止重复操作，失败可在弹窗内重试；确认成功后返回首次建库引导。可选择重新下载公开价格，或使用自定义定价本地继续。
+历史估算费用会重新计算；用量、自报费用、Cursor CSV/数据库导入、已选价格来源、`pricing.json` 和
+`providers.json` 均保留。重置的是共享 `usage.sqlite` 内的价格数据，不删除用量数据库文件。
+如需保留价格历史，可先导出数据库备份。
+
+CLI 对应命令是 `toksight reset-prices`，支持 `--json` 和离线执行，之后运行 `toksight web` 重新建库；
+不接受日期或 Agent 筛选。运行 CLI 重置前请关闭其他 toksight 进程。
+Web 使用 `POST /api/prices/reset`，返回 `completed: false` 的引导状态；
+该服务正在刷新、导入 Cursor 或更新价格时返回 HTTP 409。重置本身不扫描 Agent，也不联网。
+
 报告上方的**更新单价**按钮调用 `POST /api/prices/update`，由本机直接下载公开价格，
 不受 7 天更新间隔限制。左侧**价格**页显示本地目录、来源获取时间，以及输入、输出、缓存读写单价
 （美元 / 百万 tokens）。可以搜索模型/提供商/端点、按来源筛选，点击模型查看计费渠道、条件与
@@ -335,7 +349,7 @@ toksight 本地优先：CLI 与网页报告只**读取**各 Agent 的会话文�
 SQLite 数据库，价格抓取可能更新本地缓存；toksight 不会上传用量数据，也不会写回 Agent 文件。
 Cursor CSV 导入数据同样存于这个数据库。
 如果修改 `--host`，同一网络中的其他客户端可能读取报告和 API。
-外部请求仅用于获取 OpenAI、Anthropic、Google 官方价格、OpenRouter 模型/端点及 Cursor
+外部请求仅用于获取 OpenAI、Anthropic、Google、DeepSeek、Moonshot、Z.AI、Qwen 官方价格、OpenRouter 模型/端点及 Cursor
 官方价格总表、索引和详情页；原厂端点参考价经 OpenRouter 获取，LiteLLM 仅在明确启用后获取。`--offline` 可关闭联网价格请求。
 报告图片在浏览器里生成，只保存到你下载的位置。
 

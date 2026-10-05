@@ -172,7 +172,7 @@ export function createUsageDatabase({ file, env, home } = {}) {
         skip.add(source); // A concurrent refresh must not replace newer fetched rates.
         continue;
       }
-      if (['openai', 'anthropic', 'google', 'openrouter', 'openrouter-native'].includes(source)) {
+      if (['openai', 'anthropic', 'google', 'deepseek', 'moonshot', 'zai', 'qwen', 'openrouter', 'openrouter-native'].includes(source)) {
         const keys = new Set(rows.map(historyPriceKey));
         for (const old of getPrices.all().filter((row) => row.source === source).map(decodePriceRecord)) {
           if (!keys.has(historyPriceKey(old))) rows.push({ ...old, cacheReadFallback: Boolean(old.cacheReadFallback), cacheWriteFallback: Boolean(old.cacheWriteFallback),
@@ -312,7 +312,7 @@ export function createUsageDatabase({ file, env, home } = {}) {
         insertEntry.run(i, entry.client, entry.timestamp, JSON.stringify(entry), raw.reportedCosts?.has(entry) ? 1 : 0);
       });
       if (raw.pricing.records) {
-        const availableSources = [...new Set(['builtin', 'user', ...raw.pricing.records.map((record) => record.source)])];
+        const availableSources = [...new Set(['user', ...raw.pricing.records.map((record) => record.source)])];
         writeCatalog(raw.pricing.records, raw.pricing.sourceDetails, refreshedAt, availableSources);
       }
       putMeta.run(
@@ -480,6 +480,25 @@ export function createUsageDatabase({ file, env, home } = {}) {
     file: filename,
     read,
     replace,
+    resetPrices() {
+      db.exec('BEGIN IMMEDIATE');
+      try {
+        db.exec(`
+          DELETE FROM model_prices;
+          DELETE FROM price_updates;
+          DELETE FROM price_history;
+          DELETE FROM web_setup;
+          UPDATE snapshot_meta SET model_prices_json = '[]', pricing_sources_json = '{}';
+          UPDATE usage_imports SET price_json = 'null';
+        `);
+        db.exec('COMMIT');
+      } catch (err) {
+        db.exec('ROLLBACK');
+        throw err;
+      }
+      cached = null;
+      return localPrices.status();
+    },
     priceStatus: () => localPrices.status(),
     priceCatalog(key = null) {
       // Read only committed price data, without collecting usage or downloading.

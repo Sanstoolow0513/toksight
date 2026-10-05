@@ -13,6 +13,7 @@ import { pathExists } from './fsutils.js';
 import { createWebServer } from './webserver.js';
 import { createWebDataService } from './webservice.js';
 import { createUsageDatabase } from './database.js';
+import { resetPriceDatabase } from './pricereset.js';
 import { parseArgs } from './args.js';
 import { runDatabaseTransfer } from './dbcommand.js';
 import { printEmpty, printWarnings, renderCommand, renderJson } from './render.js';
@@ -33,6 +34,7 @@ Commands
   sessions      Top sessions by cost
   web           Launch the local dashboard (token usage & cost report)
   refresh       Rebuild the local SQLite usage database
+  reset-prices  Clear saved prices and history; reopen Web to rebuild the price database
   export-db <file>  Export the complete committed database to a new SQLite file
   import-db <file>  Merge a toksight SQLite backup, deduplicating usage
   env           Show detected data sources and pricing state
@@ -134,6 +136,15 @@ export async function main(argv = process.argv.slice(2)) {
       if (opts.json) console.log(JSON.stringify(result));
       else if (opts.command === 'export-db') console.log(`Exported ${result.entries} entries to ${result.file}`);
       else console.log(`Imported ${result.imported}, updated ${result.updated}, duplicates ${result.duplicates}; ${result.entries} total entries`);
+      return 0;
+    }
+    if (opts.command === 'reset-prices') {
+      const database = createUsageDatabase();
+      try {
+        const result = resetPriceDatabase(database);
+        if (opts.json) console.log(JSON.stringify(result));
+        else console.log('Prices and history cleared. Run toksight web to rebuild the price database. Usage and imports are preserved.');
+      } finally { database.close(); }
       return 0;
     }
     if (opts.command === 'web') {

@@ -22,10 +22,10 @@ export function usePriceDatabase() {
     window.addEventListener('focus', focus);
     return () => { clearInterval(timer); window.removeEventListener('focus', focus); ++sequence.current; controller.current?.abort(); };
   }, [reload]);
-  const setup = useCallback(async (options) => {
+  const mutate = useCallback(async (url, options) => {
     setBusy(true); setError(null);
     try {
-      const response = await fetch('/api/setup', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(options) });
+      const response = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(options) });
       const body = await response.json();
       if (!response.ok) throw new Error(body.error || `HTTP ${response.status}`);
       controller.current?.abort(); ++sequence.current;
@@ -34,5 +34,7 @@ export function usePriceDatabase() {
     } catch (err) { setError(err.message); throw err; }
     finally { setBusy(false); }
   }, []);
-  return { status, error, busy, reload, setup };
+  const setup = useCallback((options) => mutate('/api/setup', options), [mutate]);
+  const reset = useCallback(() => mutate('/api/prices/reset', {}), [mutate]);
+  return { status, error, busy, reload, setup, reset };
 }

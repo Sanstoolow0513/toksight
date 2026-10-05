@@ -3,11 +3,16 @@
 import { DEFAULT_PRICE_SOURCES } from './priceselection.js';
 import { NATIVE_PROVIDERS, nativeEndpoint } from './nativeproviders.js';
 import { priceRecord } from './pricecatalog.js';
+import { validContextTiers } from './contextpricing.js';
 
 export const PUBLIC_PRICE_SOURCES = {
   openai: 'https://developers.openai.com/api/docs/pricing',
   anthropic: 'https://platform.claude.com/docs/en/about-claude/pricing',
   google: 'https://ai.google.dev/gemini-api/docs/pricing?hl=en',
+  deepseek: 'https://api-docs.deepseek.com/quick_start/pricing',
+  moonshot: 'https://platform.moonshot.ai/docs/pricing/chat.md',
+  zai: 'https://docs.z.ai/guides/overview/pricing',
+  qwen: 'https://www.alibabacloud.com/help/en/model-studio/model-pricing',
   openrouter: 'https://openrouter.ai/api/v1/models',
 };
 
@@ -151,6 +156,165 @@ export function parseGooglePrices(html, at = Date.now()) {
   return records;
 }
 
+// DeepSeek publishes one table whose columns are models and whose pricing rows
+// repeat OFF-PEAK/PEAK. Peak hours are the standard rate; off-peak is a timed
+// discount, so estimates use the PEAK rows. Cache writes bill as plain input.
+export function parseDeepSeekPrices(html) {
+  for (const table of cleanHtml(html).matchAll(/<table\b[^>]*>([\s\S]*?)<\/table>/gi)) {
+    const rows = tableRows(table[1]);
+    const header = rows.find((row) => htmlText(row[0]).toUpperCase() === 'MODEL');
+    if (!header) continue;
+    const names = header.slice(1).map((cell) => htmlText(cell).replace(/\s*\([^)]*\)\s*/g, '').trim().toLowerCase());
+    if (!names.length || names.some((name) => !/^[a-z0-9.-]+$/.test(name))) continue;
+    const rates = names.map(() => ({}));
+    let label = null;
+    for (const row of rows) {
+      const cells = row.map(htmlText);
+      const text = cells.join(' ');
+      if (/CACHE HIT/i.test(text)) label = 'cacheRead';
+      else if (/CACHE MISS/i.test(text)) label = 'input';
+      else if (/OUTPUT TOKENS/i.test(text)) label = 'output';
+      const marker = cells.findIndex((cell) => /^(OFF-PEAK|PEAK)$/i.test(cell.trim()));
+      if (marker < 0 || !label || !/^PEAK$/i.test(cells[marker].trim())) continue;
+      cells.slice(marker + 1).forEach((cell, i) => {
+        const value = dollar(cell);
+        if (value != null && rates[i]) rates[i][label] = value;
+      });
+    }
+    const records = names.map((name, i) => record('deepseek', name, rates[i].input, rates[i].output, rates[i].cacheRead ?? null, null,
+      { official: { reference: true } })).filter(Boolean);
+    if (records.length) return records;
+  }
+  throw new Error('DeepSeek standard token pricing table was not found');
+}
+
+// Moonshot's docs expose raw MDX where price tables are serialized DocTable
+// props: a columns title list plus row arrays whose price cells are JSX
+// `<>{"$"}N</>` fragments. Column titles decide each rate's role; K3 tables
+// also publish a 1h cache write price.
+export function parseMoonshotPrices(md) {
+  const records = [];
+  for (const block of String(md).matchAll(/<DocTable\b([\s\S]*?)^\/>/gm)) {
+    const columns = /columns=\{\[([\s\S]*?)\]\}/.exec(block[1]);
+    const rows = /rows=\{\[([\s\S]*?)\]\}/.exec(block[1]);
+    if (!columns || !rows) continue;
+    const kinds = [...columns[1].matchAll(/title:\s*"([^"]+)"/g)].map((m) => {
+      const title = m[1];
+      if (/cache write/i.test(title)) return /1h/i.test(title) ? 'cacheWrite1h' : 'cacheWrite';
+      if (/cached input|cache hit/i.test(title)) return 'cacheRead';
+      if (/cache miss/i.test(title)) return 'input';
+      if (/^input price$/i.test(title)) return 'input';
+      if (/output price/i.test(title)) return 'output';
+      return null;
+    });
+    const priceKinds = kinds.filter(Boolean);
+    if (!priceKinds.includes('input') || !priceKinds.includes('output')) continue;
+    for (const line of rows[1].matchAll(/^\[(.+?)\],?$/gm)) {
+      const name = /^"([a-z0-9][a-z0-9.-]*)"/i.exec(line[1].trim())?.[1]?.toLowerCase();
+      if (!name) continue;
+      const values = [...line[1].matchAll(/<>{"\$"}(\d+(?:\.\d+)?)<\/>/g)].map((m) => Number(m[1]) / 1e6);
+      if (values.length !== priceKinds.length) continue;
+      const price = Object.fromEntries(priceKinds.map((kind, i) => [kind, values[i]]));
+      const row = record('moonshot', name, price.input, price.output, price.cacheRead ?? null, price.cacheWrite ?? null,
+        { official: { reference: true, ...(price.cacheWrite1h != null ? { cacheWrite1h: price.cacheWrite1h } : {}) } });
+      if (row) records.push(row);
+    }
+  }
+  if (!records.length) throw new Error('Moonshot standard token pricing tables were not found');
+  return records;
+}
+
+// Z.AI lists GLM chat models in tables with Input / Cached Input / Output
+// columns. Free rows are genuine $0 prices; a '-' cache cell falls back to the
+// input rate. Per-image/video/tool tables have no Input column and are skipped.
+export function parseZaiPrices(html) {
+  const records = [];
+  for (const table of cleanHtml(html).matchAll(/<table\b[^>]*>([\s\S]*?)<\/table>/gi)) {
+    const rows = tableRows(table[1]);
+    const header = rows.find((row) => htmlText(row[0]).toLowerCase() === 'model');
+    if (!header) continue;
+    const headers = header.map((cell) => htmlText(cell).toLowerCase());
+    const inputIdx = headers.indexOf('input'), outputIdx = headers.indexOf('output'), readIdx = headers.indexOf('cached input');
+    if (inputIdx < 0 || outputIdx < 0) continue;
+    for (const row of rows) {
+      if (row === header) continue;
+      const name = htmlText(row[0] ?? '').toLowerCase();
+      if (!/^glm-[a-z0-9.-]+$/.test(name)) continue;
+      const rate = (idx) => {
+        if (idx < 0) return null;
+        const text = htmlText(row[idx] ?? '');
+        return /^free$/i.test(text) ? 0 : dollar(text);
+      };
+      const price = record('zai', name, rate(inputIdx), rate(outputIdx), readIdx >= 0 ? rate(readIdx) : null, null,
+        { official: { reference: true } });
+      if (price) records.push(price);
+    }
+  }
+  if (!records.length) throw new Error('Z.AI standard token pricing tables were not found');
+  return records;
+}
+
+// Alibaba's international Model Studio page prices text models in USD. Rows
+// carry a Deployment scope (only International is kept) or sit under a region
+// heading (China sections are skipped). Tiered rows ("32K<Token≤128K") follow
+// their model's first row via rowspan and become contextTiers.
+export function parseQwenPrices(html) {
+  const tierPattern = /^(\d+(?:\.\d+)?)\s*([KM]?)\s*<\s*Token\s*≤\s*(\d+(?:\.\d+)?)\s*([KM]?)/i;
+  const scale = (n, unit) => Number(n) * (unit.toUpperCase() === 'M' ? 1e6 : unit.toUpperCase() === 'K' ? 1e3 : 1);
+  const byName = new Map();
+  for (const section of cleanHtml(html).split(/(?=<h[2-4]\b)/i)) {
+    const heading = /<h[2-4]\b[^>]*>([\s\S]*?)<\/h[2-4]>/i.exec(section);
+    if (heading && /china/i.test(htmlText(heading[1]))) continue;
+    for (const table of section.matchAll(/<table\b[^>]*>([\s\S]*?)<\/table>/gi)) {
+      const rows = tableRows(table[1]);
+      const header = rows.find((row) => row.some((cell) => /input price \(per (1 )?million tokens\)/i.test(htmlText(cell))));
+      if (!header) continue;
+      const headers = header.map((cell) => htmlText(cell).toLowerCase());
+      const scopeIdx = headers.findIndex((h) => h === 'deployment scope');
+      const tierIdx = headers.findIndex((h) => /^input tokens? (range )?per request/.test(h));
+      const inputIdx = headers.findIndex((h) => /^input price/.test(h));
+      const readIdx = headers.findIndex((h) => /^cache-hit input price/.test(h));
+      const outputIdx = headers.findIndex((h) => /^output price/.test(h));
+      if (inputIdx < 0 || outputIdx < 0) continue;
+      let current = null;
+      for (const row of rows) {
+        if (row === header) continue;
+        const cells = row.map(htmlText);
+        const continuation = tierIdx >= 0 && tierPattern.test(cells[0] ?? '');
+        if (continuation) {
+          const tier = tierPattern.exec(cells[0]);
+          if (current && tier) {
+            const over = scale(tier[1], tier[2]), input = dollar(cells[1]), output = dollar(cells[2]);
+            if (over > 0 && input != null && output != null) current.tiers.push({ over, input, output });
+          }
+          continue;
+        }
+        const first = (cells[0] ?? '').split(/\s+/)[0] ?? '';
+        current = null;
+        if (!/^[a-z0-9][a-z0-9.-]*$/i.test(first)) continue;
+        const name = first.toLowerCase();
+        if (byName.has(name)) continue;
+        if (scopeIdx >= 0 && !/international/i.test(cells[scopeIdx] ?? '')) continue;
+        const input = dollar(cells[inputIdx]), output = dollar(cells[outputIdx]);
+        if (input == null || output == null) continue;
+        current = { input, output, cacheRead: readIdx >= 0 ? dollar(cells[readIdx]) : null, tiers: [] };
+        byName.set(name, current);
+      }
+    }
+  }
+  const records = [];
+  for (const [name, data] of byName) {
+    const tiers = [...new Map(data.tiers.map((tier) => [tier.over, tier])).values()].sort((a, b) => a.over - b.over);
+    const contextTiers = tiers.length ? tiers.map((tier) => ({ contextOver: tier.over, input: tier.input, output: tier.output,
+      cacheRead: data.cacheRead ?? tier.input, cacheWrite: tier.input, cacheReadFallback: data.cacheRead == null, cacheWriteFallback: true })) : null;
+    const price = record('qwen', name, data.input, data.output, data.cacheRead, null,
+      { contextTiers, official: { reference: true, channel: 'alibaba' } });
+    if (price) records.push(price);
+  }
+  if (!records.length) throw new Error('Qwen standard token pricing tables were not found');
+  return records;
+}
+
 function routerRates(pricing) {
   const numeric = (key) => {
     const value = pricing?.[key];
@@ -170,7 +334,9 @@ export function parseOpenRouterPrices(body, model = null) {
   const records = [];
   for (const item of models) {
     const id = model ?? item.id, rates = routerRates(item.pricing);
-    if (!rates || typeof id !== 'string' || !/^[a-z0-9_.:/-]+$/i.test(id)) continue;
+    // Batch variants (`model:batch`) are asynchronous half-price listings, not
+    // the interactive rate; agent sessions are billed at the standard model.
+    if (!rates || typeof id !== 'string' || !/^[a-z0-9_.:/-]+$/i.test(id) || /:batch$/i.test(id)) continue;
     const rules = [];
     for (const override of item.pricing.overrides ?? []) {
       const adjusted = routerRates({ ...item.pricing, ...override });
@@ -227,7 +393,8 @@ export async function getPublicPricing({ offline = false, now = Date.now, fetchI
     if (text.length > 12 * 1024 * 1024) throw new Error('price response exceeds 12 MB');
     return json ? JSON.parse(text) : text;
   };
-  const parsers = { openai: parseOpenAIPrices, anthropic: parseAnthropicPrices, google: parseGooglePrices, openrouter: parseOpenRouterPrices };
+  const parsers = { openai: parseOpenAIPrices, anthropic: parseAnthropicPrices, google: parseGooglePrices, openrouter: parseOpenRouterPrices,
+    deepseek: parseDeepSeekPrices, moonshot: parseMoonshotPrices, zai: parseZaiPrices, qwen: parseQwenPrices };
   const result = { records: [], sourceDetails: {}, sources: [], warnings: [] };
   const selected = Object.entries(PUBLIC_PRICE_SOURCES).filter(([source]) => selectedSources.includes(source) || source === 'openrouter' && selectedSources.includes('openrouter-native'));
   const fetched = await Promise.allSettled(selected.map(async ([source, url]) => {
@@ -235,7 +402,7 @@ export async function getPublicPricing({ offline = false, now = Date.now, fetchI
     if (source === 'openrouter' && (!Array.isArray(body?.data) || !body.data.length || body.data.length > 10000)) throw new Error('invalid OpenRouter model catalog');
     const records = source === 'openrouter' && !selectedSources.includes('openrouter') ? []
       : source === 'google' ? parseGooglePrices(body, now()) : parsers[source](body);
-    return { source, url, records, models: source === 'openrouter' ? body.data.map((row) => row.id).filter((id) => typeof id === 'string') : [] };
+    return { source, url, records, models: source === 'openrouter' ? body.data.map((row) => row.id).filter((id) => typeof id === 'string' && !/:batch$/i.test(id)) : [] };
   }));
   for (let i = 0; i < fetched.length; i++) {
     const source = selected[i][0], value = fetched[i];

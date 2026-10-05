@@ -44,6 +44,7 @@ toksight models       # grouped by model
 toksight sessions     # top sessions by cost
 toksight web          # local usage & cost report (heatmap, agents, models, image export)
 toksight refresh      # rescan agents and update the local SQLite database
+toksight reset-prices # clear saved prices/history/caches, then reopen Web to rebuild
 toksight export-db backup.sqlite  # export the complete committed usage database
 toksight import-db backup.sqlite  # merge a backup and deduplicate usage
 toksight env          # show detected data sources + pricing state
@@ -98,11 +99,12 @@ CLI day grouping and date filters use your **local** timezone. The web report ha
 
 The first Web launch guides you through creating a **local price database** in toksight's
 own `usage.sqlite`. This computer downloads public prices directly from OpenAI, Anthropic,
-Google and Cursor, with optional sources selected during setup or on the Prices page.
+Google, DeepSeek, Moonshot, Z.AI, Qwen (Alibaba Cloud international) and Cursor, with
+optional sources selected during setup or on the Prices page.
 LiteLLM and the full OpenRouter catalog are **off by default**. You can select only Google,
 for example. Disabling a source also excludes its cached, historical and imported prices
 from estimates in both Web and CLI; saved records remain available if re-enabled.
-Built-in fallback estimates and user overrides remain available. There is no remote toksight catalog to maintain.
+User overrides remain available. There is no remote toksight catalog to maintain.
 
 The default **Native endpoint references (via OpenRouter)** source discovers models from
 OpenAI, Anthropic, Google, xAI, DeepSeek, Moonshot, Alibaba/Qwen, Z.AI, MiniMax, Mistral,
@@ -110,10 +112,11 @@ Cohere and AI21. It checks both model authorship and the actual endpoint operato
 prefix alone is not enough. Only available original-provider endpoints contribute prices.
 Third-party-only models are skipped, as are models whose native endpoints have conflicting
 rates or conditions. These are token-price references from OpenRouter, not direct-provider
-bills. Original model IDs, endpoint names and source URLs stay visible. Official website
-prices take priority, followed by native endpoint references, optional LiteLLM and built-ins;
+bills; asynchronous `:batch` catalog variants are never used as interactive rates.
+Original model IDs, endpoint names and source URLs stay visible. Official website
+prices take priority, followed by native endpoint references and optional LiteLLM;
 user overrides always win. The directory supports separate source and provider filters.
-You can fetch prices now or continue with saved/offline estimates. Setup and the automatic
+You can fetch prices now or continue with saved prices and user overrides. Setup and the automatic
 update preference are saved in this database, independently of the browser.
 
 Changed public rates are recorded with the local observation time. Requests use the latest
@@ -123,15 +126,14 @@ older rates and reported amounts, and history travels with SQLite backups. These
 do not reconstruct price changes that occurred while this computer was not updating.
 
 User overrides remain highest priority, followed by locally saved public prices. Before a
-local public catalog exists, CLI reports use the following fallback layers (later wins):
+local public catalog exists, CLI reports use the following layers (later wins). Models with
+no fetched or configured price stay unpriced; token counts are still reported.
 
-1. **Built-in table** — best-effort USD-per-MTok estimates for explicitly listed models,
-   available offline. New versions and variants do not inherit a family's older price.
-2. **LiteLLM (optional, not recommended)** — only loaded after explicitly enabling it on the Prices page; fetched from the community
+1. **LiteLLM (optional, not recommended)** — only loaded after explicitly enabling it on the Prices page; fetched from the community
    [model prices](https://github.com/BerriAI/litellm/blob/main/model_prices_and_context_window.json)
    list with a 7-day disk cache at `<toksight-dir>/cache/litellm-pricing.json`. `--offline`
    uses an existing cache without a network request.
-3. **User overrides** — edit `<toksight-dir>/pricing.json` (per-MTok USD):
+2. **User overrides** — edit `<toksight-dir>/pricing.json` (per-MTok USD):
 
    ```json
    {
@@ -286,6 +288,21 @@ The web endpoints are `GET /api/export/db` (SQLite download) and `POST /api/impo
 bytes, merge statistics as JSON); both retain the local Host check and import requires a permitted
 origin. Transfers work offline and never write agent files.
 
+**Reset price database** beside **Update prices** at the top of the **Prices** page clears saved rates, observed price history,
+downloaded Cursor/LiteLLM caches and stored fallback rates, then returns to price setup.
+The confirmation dialog shows what will be cleared and keeps any error visible for retry.
+Confirm the reset and choose **Build price database** to fetch fresh prices, or continue locally
+with your custom pricing. Historical estimates will be recalculated;
+usage, reported costs, Cursor CSV/database imports, selected sources, `pricing.json` and
+`providers.json` are preserved. This resets the price data inside the shared `usage.sqlite`,
+not the usage database file. Export a database backup first if you want to retain price history.
+
+The CLI equivalent is `toksight reset-prices` (supports `--json` and works offline), followed
+by `toksight web` to rebuild. It accepts no date or client filters. Close other toksight
+processes before running the CLI reset. Web uses `POST /api/prices/reset`; it returns setup
+status with `completed: false` and rejects a reset with HTTP 409 while that server is refreshing,
+importing Cursor data or updating prices. Reset itself does not scan agents or access the network.
+
 The **Update prices** button calls `POST /api/prices/update` to download the public sources
 directly on this machine, bypassing the 7-day interval. **Prices** in the left navigation shows
 the saved catalog, source download times, and input/output/cache rates in USD per million tokens.
@@ -404,7 +421,7 @@ writes toksight's own SQLite database under its config directory; price fetches 
 cache files. toksight does not upload usage or write back to agent files. Cursor CSV imports are
 stored in that database. If you change `--host`, other clients on that network may read the
 report/API. The only external requests
-fetch official OpenAI, Anthropic and Google prices, OpenRouter models/endpoints, Cursor's official pricing
+fetch official OpenAI, Anthropic, Google, DeepSeek, Moonshot, Z.AI and Qwen prices, OpenRouter models/endpoints, Cursor's official pricing
 overview/index/model pages, OpenRouter native endpoint references, and LiteLLM only when explicitly enabled. Run `--offline`
 to disable network price requests. Report images are
 rendered in your browser and saved only where you download them.

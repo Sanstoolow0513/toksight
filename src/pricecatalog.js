@@ -9,7 +9,7 @@ import { applyOfficialRules, validOfficialPrice } from './pricehistory.js';
 import { NATIVE_CHANNELS, nativeChannel } from './nativeproviders.js';
 
 const EFFORT = new Set(['low', 'medium', 'high', 'xhigh']);
-const PRIORITY = { user: 5, openai: 4, anthropic: 4, google: 4, openrouter: 4, 'openrouter-native': 3, litellm: 2, builtin: 1, cursor: 1 };
+const PRIORITY = { user: 5, openai: 4, anthropic: 4, google: 4, deepseek: 4, moonshot: 4, zai: 4, qwen: 4, openrouter: 4, 'openrouter-native': 3, litellm: 2, cursor: 1 };
 
 export function modelIdentity(name, client = null, rate = null) {
   if (client === 'cursor') return cursorIdentityFor(name, rate);
@@ -83,7 +83,7 @@ export function priceRecord({ scope = 'default', source, name, provider = null, 
 // Keep billing keys separate from report identities. In particular, dated
 // snapshots and fine-tuned models must retain their own exact catalog entry.
 export const priceModelKey = (name) => String(name ?? '').trim().toLowerCase();
-const priceAlias = (name) => priceModelKey(name).replace(/^builtin:/, '').replace(/:latest$/, '')
+const priceAlias = (name) => priceModelKey(name).replace(/:latest$/, '')
   .replace(/[-_.]20\d{2}(?:-?\d{2}){2}$/, '').replace(/\s+/g, '');
 
 // Stable Kimi Code endpoints use Moonshot API prices as reference estimates.
@@ -106,9 +106,6 @@ export function storedPriceFor(model, record, entry = null) {
     if (record?.official?.channel === 'openrouter' && (record.official.endpoint ?? null) !== (entry.providerEndpoint ?? null)) return null;
     if (!record?.official && ![...NATIVE_CHANNELS, 'kimi-code'].includes(nativeChannel(provider))) return null;
   }
-  // Old snapshots may contain a family-prefix estimate for a newer variant.
-  // Reusing that estimate would bypass the stricter catalog matching below.
-  if (record?.source === 'builtin' && record.name && priceAlias(model) !== priceAlias(record.name)) return null;
   return applyOfficialRules(priceForContext(record, entry), entry) ?? null;
 }
 
@@ -151,7 +148,7 @@ export function createPriceLookup(records) {
     addAlias(normalized, priceAlias(key), record);
     for (const alias of record.official?.aliases ?? []) addAlias(aliases, priceModelKey(alias), record);
     const slash = key.lastIndexOf('/');
-    if (record.source !== 'builtin' && record.source !== 'openrouter' && slash >= 0) {
+    if (record.source !== 'openrouter' && slash >= 0) {
       addAlias(aliases, key.slice(slash + 1), record);
       addAlias(normalized, priceAlias(key.slice(slash + 1)), record);
     } else if (slash < 0 && record.provider) {

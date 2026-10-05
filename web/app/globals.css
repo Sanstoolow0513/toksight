@@ -1769,6 +1769,7 @@ body { background-image: none; }
 .settings-content { max-width: 860px; padding-top: 6px; }
 .settings-section { padding: 26px 0 30px; border-top: 1px solid var(--border-strong); background: var(--bg); }
 .prices-content { min-width: 0; background: var(--bg); }
+.price-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
 .price-update-button { min-height: 44px; flex-shrink: 0; background: var(--bg); border-radius: 8px; font-size: 12px; }
 .price-summary { display: grid; grid-template-columns: 1fr 1fr 1.5fr; gap: 24px; padding: 24px 0; border-block: 1px solid var(--border-strong); }
 .price-summary > div { display: flex; flex-direction: column; gap: 9px; }

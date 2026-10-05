@@ -16,18 +16,12 @@ test('normalizeModelName strips provider prefixes and snapshots', () => {
   assert.equal(normalizeModelName('GLM-4.5:latest'), 'glm-4.5');
 });
 
-test('builtin pricing accepts known models and snapshots without guessing family variants', async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'toksight-builtin-'));
-  const { priceFor } = await getPricing({ selectedSources: ['litellm'], offline: true, env: { TOKSIGHT_CONFIG_DIR: dir } });
-  const p = priceFor('GLM-5');
-  assert.equal(p.source, 'builtin');
-  assert.equal(p.input, 0.6e-6);
-  const sonnet = priceFor('claude-sonnet-4-20250514');
-  assert.equal(sonnet.input, 3e-6);
-  assert.equal(priceFor('gpt-5-2026-01-01').input, 1.25e-6);
-  for (const name of ['GLM-5.3', 'claude-opus-4-5', 'claude-opus-4-6', 'gpt-5.2', 'gpt-5-nano', 'gpt-4.1-mini', 'deepseek-unknown']) {
-    assert.equal(priceFor(name), null, name);
-  }
+test('without fetched prices or user overrides, models stay unpriced', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'toksight-unpriced-'));
+  const { priceFor, sources } = await getPricing({ selectedSources: ['litellm'], offline: true, env: { TOKSIGHT_CONFIG_DIR: dir } });
+  assert.equal(priceFor('GLM-5'), null);
+  assert.equal(priceFor('claude-sonnet-4-20250514'), null);
+  assert.equal(sources.user, false);
   fs.rmSync(dir, { recursive: true, force: true });
 });
 

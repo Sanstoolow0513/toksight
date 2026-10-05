@@ -4,7 +4,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import http from 'node:http';
-import { getPublicPricing, parseOpenAIPrices, parseAnthropicPrices, parseGooglePrices, parseOpenRouterPrices, PUBLIC_PRICE_SOURCES } from '../src/publicpricing.js';
+import { getPublicPricing, parseOpenAIPrices, parseAnthropicPrices, parseGooglePrices, parseOpenRouterPrices, parseDeepSeekPrices, parseMoonshotPrices, parseZaiPrices, parseQwenPrices, parseNativeRouterPrices, PUBLIC_PRICE_SOURCES } from '../src/publicpricing.js';
 import { createPriceLookup, priceRecord, storedPriceFor } from '../src/pricecatalog.js';
 import { computeCost } from '../src/pricing.js';
 import { createUsageDatabase } from '../src/database.js';
@@ -45,8 +45,8 @@ test('price catalog and history API read saved channels and revisions without sc
   const native = rate(), routerRate = parseOpenRouterPrices(router)[0];
   const cursor = priceRecord({ scope: 'cursor', source: 'cursor', name: 'gpt-example', provider: 'OpenAI', input: 3e-6, output: 12e-6, cacheRead: 0, cacheWrite: 0,
     cursor: { contextOver: 200000, aliases: ['gpt-example-max'], url: 'https://cursor.com/docs/models/example' } });
-  const builtin = priceRecord({ ...native, source: 'builtin', official: null });
-  database.updatePriceCatalog({ records: [native, routerRate, cursor, builtin], sources: ['openai','openrouter','cursor','builtin'], sourceDetails: {} }, '2026-10-01T00:00:00Z');
+  const userRate = priceRecord({ ...native, source: 'user', official: null });
+  database.updatePriceCatalog({ records: [native, routerRate, cursor, userRate], sources: ['openai','openrouter','cursor','user'], sourceDetails: {} }, '2026-10-01T00:00:00Z');
   database.updatePriceCatalog({ records: [rate(1e-6)], sources: ['openai'], sourceDetails: {} }, '2026-10-02T00:00:00Z');
   const response = await fetch(url + '/api/prices');
   assert.equal(response.headers.get('cache-control'), 'no-store');
@@ -61,7 +61,7 @@ test('price catalog and history API read saved channels and revisions without sc
   assert.equal(current.cacheReadFallback, false);
   assert.equal(body.records.find((row) => row.source === 'cursor').cursor.contextOver, 200000);
   assert.equal(body.records.find((row) => row.source === 'openrouter').official.rules.length, 2);
-  const fallback = body.records.find((row) => row.source === 'builtin');
+  const fallback = body.records.find((row) => row.source === 'user');
   assert.equal(fallback.revisions, 0);
   assert.notEqual(fallback.id, current.id, 'same model in different channels keeps separate IDs');
   const history = await (await fetch(url + '/api/prices?' + new URLSearchParams({ key: current.id }))).json();
@@ -100,6 +100,78 @@ test('official adapters read Standard rates, collapsed OpenAI rows, cache durati
   const promo=google.replace('$0.30 (text / image / video)<br>$1.00 (audio)','$0.30 through December 31, 2026<br>$0.60 starting January 1, 2027');
   assert.equal(parseGooglePrices(promo,Date.parse('2026-12-31T23:59:59Z'))[0].input,0.3e-6);
   assert.equal(parseGooglePrices(promo,Date.parse('2027-01-01T00:00:00Z'))[0].input,0.6e-6);
+});
+
+test('vendor adapters read DeepSeek peak rates, Moonshot MDX tables, Z.AI free rows and Qwen international tiers', () => {
+  const deepseek = table(['MODEL','deepseek-flash','deepseek-v4-pro'], [
+    ['1M INPUT TOKENS (CACHE HIT) OFF-PEAK','$0.003','$0.022'],
+    ['PEAK','$0.006','$0.044'],
+    ['1M INPUT TOKENS (CACHE MISS) OFF-PEAK','$0.15','$0.66'],
+    ['PEAK','$0.3','$1.32'],
+    ['1M OUTPUT TOKENS OFF-PEAK','$0.6','$1.98'],
+    ['PEAK','$1.2','$3.96'],
+  ]);
+  const ds = parseDeepSeekPrices(deepseek);
+  assert.equal(ds.length, 2);
+  assert.deepEqual([ds[0].input, ds[0].output, ds[0].cacheRead], [0.3e-6, 1.2e-6, 0.006e-6]);
+  assert.equal(ds[1].input, 1.32e-6);
+  assert.equal(ds[0].cacheWrite, ds[0].input); assert.equal(ds[0].cacheWriteFallback, true);
+  assert.throws(() => parseDeepSeekPrices('<p>changed page</p>'), /not found/);
+  const moonshot = `<DocTable\n  columns={[\n{ title: "Model" },\n{ title: "Cache Write Price (TTL 5min)" },\n{ title: "Cache Write Price (TTL 1h)" },\n{ title: "Cached Input Price" },\n{ title: "Input Price" },\n{ title: "Output Price" },\n]}\n  rows={[\n["kimi-k3", "1M tokens", <>{"$"}3.00</>, <>{"$"}6.00</>, <>{"$"}0.30</>, <>{"$"}3.00</>, <>{"$"}15.00</>],\n]}\n/>`
+    + `<DocTable\n  columns={[\n{ title: "Model" },\n{ title: "Input Price (Cache Hit)" },\n{ title: "Input Price (Cache Miss)" },\n{ title: "Output Price" },\n]}\n  rows={[\n["kimi-k2.6", "1M tokens", <>{"$"}0.16</>, <>{"$"}0.95</>, <>{"$"}4.00</>],\n]}\n/>`;
+  const moon = parseMoonshotPrices(moonshot);
+  assert.equal(moon.length, 2);
+  const k3 = moon.find((row) => row.name === 'kimi-k3');
+  assert.deepEqual([k3.input, k3.output, k3.cacheRead, k3.cacheWrite], [3e-6, 15e-6, 0.3e-6, 3e-6]);
+  assert.equal(k3.official.cacheWrite1h, 6e-6);
+  assert.equal(k3.cacheWriteFallback, false);
+  const k2 = moon.find((row) => row.name === 'kimi-k2.6');
+  assert.equal(k2.input, 0.95/1e6); assert.equal(k2.cacheRead, 0.16/1e6);
+  assert.equal(k2.cacheWrite, k2.input); assert.equal(k2.cacheWriteFallback, true);
+  assert.throws(() => parseMoonshotPrices('# no tables'), /not found/);
+  const zai = table(['Model','Input','Cached Input','Cached Input Storage','Output'], [
+    ['GLM-5.3','$1.4','$0.26','Limited-time Free','$4.4'],
+    ['GLM-4.7-Flash','Free','Free','Free','Free'],
+    ['GLM-4-32B-0414-128K','$0.1','-','-','$0.1'],
+  ]) + table(['Model','Price'], [['GLM-Image','$0.015']]);
+  const glm = parseZaiPrices(zai);
+  assert.equal(glm.length, 3);
+  assert.deepEqual([glm[0].input, glm[0].output, glm[0].cacheRead], [1.4e-6, 4.4e-6, 0.26e-6]);
+  assert.equal(glm[1].input, 0); assert.equal(glm[1].output, 0);
+  assert.equal(glm[2].cacheRead, glm[2].input); assert.equal(glm[2].cacheReadFallback, true);
+  assert.throws(() => parseZaiPrices('<p>changed page</p>'), /not found/);
+  const qwen = '<h3>Qwen-Max</h3><h4>Singapore</h4>'
+    + '<table><tr><th>Model ID</th><th>Deployment scope</th><th>Mode</th><th>Input tokens per request</th><th>Input price (per 1 million tokens)</th><th>Output price (per 1 million tokens)</th></tr>'
+    + '<tr><td rowspan="3">qwen3-max</td><td rowspan="3">International</td><td rowspan="3">Non-Thinking and Thinking modes</td><td>0&lt;Token≤32K</td><td>$1.2</td><td>$6</td></tr>'
+    + '<tr><td>32K&lt;Token≤128K</td><td>$2.4</td><td>$12</td></tr>'
+    + '<tr><td>128K&lt;Token≤256K</td><td>$3</td><td>$15</td></tr>'
+    + '<tr><td>qwen3-cn-only</td><td>China (Beijing)</td><td>Non-Thinking mode only</td><td>No tiered pricing</td><td>$1</td><td>$2</td></tr></table>'
+    + '<h4>China (Beijing)</h4>'
+    + table(['Model ID','Mode','Input tokens per request','Input price (per 1 million tokens)','Output price (per 1 million tokens)'], [['qwen3-domestic','Non-Thinking mode only','0<Token≤1M','$9','$9']])
+    + '<h4>Germany (Frankfurt)</h4>'
+    + table(['Model ID','Deployment scope','Input price (per million tokens)','Cache-hit input price (per million tokens)','Output price (per million tokens)'], [['qwen3-cached','International','$0.8','$0.08','$2']]);
+  const qw = parseQwenPrices(qwen);
+  const max = qw.find((row) => row.name === 'qwen3-max');
+  assert.deepEqual([max.input, max.output], [1.2e-6, 6e-6]);
+  assert.deepEqual(max.contextTiers.map((t) => [t.contextOver, t.input, t.output]), [[32000, 2.4e-6, 12e-6], [128000, 3e-6, 15e-6]]);
+  assert.equal(max.official.channel, 'alibaba');
+  assert.equal(qw.some((row) => row.name === 'qwen3-cn-only' || row.name === 'qwen3-domestic'), false);
+  const cached = qw.find((row) => row.name === 'qwen3-cached');
+  assert.equal(cached.cacheRead, 0.08e-6); assert.equal(cached.cacheReadFallback, false);
+  assert.throws(() => parseQwenPrices('<p>changed page</p>'), /not found/);
+});
+
+test('OpenRouter catalog skips :batch variants and still rejects invalid rows', () => {
+  const catalog = { data: [
+    { id: 'vendor/model', pricing: { prompt: '0.000002', completion: '0.00001' } },
+    { id: 'vendor/model:batch', pricing: { prompt: '0.000001', completion: '0.000005' } },
+    { id: 'vendor/model:free', pricing: { prompt: '0', completion: '0' } },
+  ] };
+  const records = parseOpenRouterPrices(catalog);
+  assert.deepEqual(records.map((row) => row.name), ['vendor/model', 'vendor/model:free']);
+  assert.equal(parseNativeRouterPrices({ data: { endpoints: [
+    { provider_name: 'Alibaba', tag: 'alibaba', pricing: { prompt: '0.000002', completion: '0.000004' } },
+  ] } }, 'qwen/qwen3-example')[0].input, 2e-6);
 });
 
 test('OpenRouter prices stay in their channel and apply discounts, context and UTC windows per key', () => {

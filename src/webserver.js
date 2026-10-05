@@ -262,7 +262,7 @@ export function createWebServer({
     // 127.0.0.1 is still remoteAddress-loopback, but its Host header is not.
     const localHostHeader = isLocalHostHeader(req.headers.host);
 
-    if (['/api/data', '/api/refresh', '/api/prices', '/api/prices/update', '/api/prices/status', '/api/setup', '/api/import/cursor', '/api/import/db', '/api/export/db'].includes(pathname)) {
+    if (['/api/data', '/api/refresh', '/api/prices', '/api/prices/update', '/api/prices/reset', '/api/prices/status', '/api/setup', '/api/import/cursor', '/api/import/db', '/api/export/db'].includes(pathname)) {
       // Loopback-bound servers (the default) reject foreign Host headers;
       // a user who deliberately binds --host 0.0.0.0 exposes the dashboard
       // to the LAN on purpose, so the Host check would only break that.
@@ -271,6 +271,7 @@ export function createWebServer({
         return;
       }
       const refresh = pathname === '/api/refresh';
+      const priceReset = pathname === '/api/prices/reset';
       const priceUpdate = pathname === '/api/prices/update';
       const priceStatus = pathname === '/api/prices/status';
       const prices = pathname === '/api/prices';
@@ -278,7 +279,7 @@ export function createWebServer({
       const importing = pathname === '/api/import/cursor';
       const importingDb = pathname === '/api/import/db';
       const exportingDb = pathname === '/api/export/db';
-      const writing = refresh || priceUpdate || setup || importing || importingDb;
+      const writing = refresh || priceUpdate || priceReset || setup || importing || importingDb;
       const allowed = writing ? req.method === 'POST' : req.method === 'GET' || req.method === 'HEAD';
       if (!allowed) {
         sendJson(res, 405, { error: 'method not allowed', code: 'METHOD_NOT_ALLOWED' }, req.method, { allow: writing ? 'POST' : 'GET, HEAD' });
@@ -289,7 +290,7 @@ export function createWebServer({
         return;
       }
       try {
-        if ((refresh && !getData.refresh) || (priceUpdate && !getData.updatePrices) || (importing && !getData.importCursor) ||
+        if ((priceReset && !getData.resetPrices) || (refresh && !getData.refresh) || (priceUpdate && !getData.updatePrices) || (importing && !getData.importCursor) ||
           (importingDb && !getData.importDatabase) || (exportingDb && !getData.exportDatabase) || (setup && !getData.setup) || (priceStatus && !getData.priceStatus) || (prices && !getData.prices)) {
           sendJson(res, 501, { error: 'operation is not configured', code: 'NOT_IMPLEMENTED' }, req.method);
           return;
@@ -301,13 +302,13 @@ export function createWebServer({
           res.end(req.method === 'HEAD' ? undefined : bytes);
           return;
         }
-        const payload = refresh ? await getData.refresh() : priceUpdate ? await getData.updatePrices()
+        const payload = priceReset ? await getData.resetPrices() : refresh ? await getData.refresh() : priceUpdate ? await getData.updatePrices()
           : setup ? await getData.setup(await readSetupBody(req)) : priceStatus ? await getData.priceStatus() : prices ? await getData.prices(url.searchParams)
           : importing ? await getData.importCursor(await readCsvBody(req))
           : importingDb ? await getData.importDatabase(await readDatabaseBody(req)) : await getData(url.searchParams);
         sendJson(res, 200, payload, req.method);
       } catch (err) {
-        const status = err?.status === 400 || err?.status === 413 ? err.status : 500;
+        const status = err?.status === 400 || err?.status === 409 || err?.status === 413 ? err.status : 500;
         if (status === 500) logger?.warn?.(`toksight web: ${pathname} failed: ${err?.message || err}`);
         sendJson(res, status, { error: String(err?.message || err), ...(err?.code ? { code: err.code } : {}) }, req.method);
       }
