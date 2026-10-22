@@ -44,12 +44,12 @@ export function applyOfficialRules(record, entry) {
   return result;
 }
 
-export const historyPriceKey = (row) => JSON.stringify([row.scope, row.source, priceModelKey(row.name), row.cursor?.contextOver ?? null]);
+export const historyPriceKey = (row) => JSON.stringify([row.scope, row.source, priceModelKey(row.name), null]);
 export function priceSignature(record) {
   // Fetch timestamps, labels and retained flags never create a rate revision.
-  const { cursor, official, ...rest } = record;
+  const { official, ...rest } = record;
   const { retained, ...officialRules } = official ?? {};
-  return JSON.stringify({ ...rest, ...(official ? { official: officialRules } : {}), ...(cursor ? { cursor: { aliases: cursor.aliases, contextOver: cursor.contextOver, url: cursor.url } } : {}) });
+  return JSON.stringify({ ...rest, ...(official ? { official: officialRules } : {}) });
 }
 
 export function createHistoricalPriceLookup(history, catalog) {

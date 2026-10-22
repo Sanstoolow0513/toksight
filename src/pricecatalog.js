@@ -1,44 +1,28 @@
-// All price sources use the same USD-per-token record shape and resolver.
-// `scope` is the billing application: Cursor never falls through to another
-// application's price for a model with the same name.
+// LiteLLM first-party prices and user overrides share one USD/token resolver.
 
-import { createCursorModelResolver, cursorIdentityFor, cursorModelId, decodeCursorPrice } from './cursormodels.js';
 import { priceForContext, validContextTiers } from './contextpricing.js';
 import { applyOfficialRules, validOfficialPrice } from './pricehistory.js';
 
 import { NATIVE_CHANNELS, nativeChannel } from './nativeproviders.js';
 
 const EFFORT = new Set(['low', 'medium', 'high', 'xhigh']);
-const PRIORITY = { user: 5, openai: 4, anthropic: 4, google: 4, deepseek: 4, moonshot: 4, zai: 4, qwen: 4, openrouter: 4, 'openrouter-native': 3, litellm: 2, cursor: 1 };
+const PRIORITY = { user: 2, litellm: 1 };
+const storedLookups = new WeakMap();
 
 export function modelIdentity(name, client = null, rate = null) {
-  if (client === 'cursor') return cursorIdentityFor(name, rate);
   let id = String(name ?? '').trim().toLowerCase();
   id = id.replace(/^[a-z0-9_-]+:/, '').replace(/:latest$/, '')
     .replace(/[-_.]?20\d{6,8}$/, '').replace(/\s+/g, '');
   return { id, effort: null };
 }
 
-// Existing non-Cursor report formatting is independent of Cursor's catalog.
 function displayIdentity(name) {
   let id = String(name ?? '').trim().toLowerCase();
-  id = id.replace(/^[a-z][a-z0-9_-]*\//, '').replace(/^cursor[-:]/, '');
+  id = id.replace(/^[a-z][a-z0-9_-]*\//, '');
   id = id.replace(/\bfast mode\b/g, 'fast');
   id = id.replace(/(\d)[.-](\d)/g, '$1.$2');
   const rawParts = id.replace(/[^a-z0-9.]+/g, '-').replace(/^-|-$/g, '').split('-').filter(Boolean);
-  // Usage Events also exports Claude shorthand such as "opus5.5-high".
-  // Expand it before rate lookup so it matches the official "Claude Opus 5.5"
-  // row. The original CSV model remains untouched for import deduplication.
-  const shorthand = rawParts[0] === 'claude' ? 1 : 0;
-  const compact = /^(opus|sonnet|haiku|fable)(\d+(?:\.\d+)*)$/.exec(rawParts[shorthand] ?? '');
-  if (compact) rawParts.splice(shorthand, 1, compact[1], compact[2]);
-  if (shorthand === 0 && /^(opus|sonnet|haiku|fable)$/.test(rawParts[0] ?? '') && /^\d+(?:\.\d+)*$/.test(rawParts[1] ?? '')) {
-    rawParts.unshift('claude');
-  }
-  // Cursor's Claude CSV appends "thinking" as an execution mode; the
-  // published table lists one token rate for the underlying Claude model.
-  const withoutThinking = rawParts[0] === 'claude' ? rawParts.filter((part) => part !== 'thinking') : rawParts;
-  const parts = withoutThinking;
+  const parts = rawParts;
   const effortIndex = parts.at(-1) === 'fast' ? parts.length - 2 : parts.length - 1;
   const effort = EFFORT.has(parts[effortIndex]) ? parts[effortIndex] : null;
   const modelParts = [...parts];
@@ -47,12 +31,9 @@ function displayIdentity(name) {
   return { id: modelId, effort };
 }
 
-// Report names describe the underlying model, while modelIdentity above
-// remains the reference-price key. Cursor effort/thinking/max are execution modes;
-// Fast and 500k are priced variants and stay visible as separate names.
+// Report names describe the underlying model without changing billing keys.
 export function reportModelName(name, client = null, rate = null) {
   const raw = String(name ?? '').trim();
-  if (client === 'cursor') return rate?.scope === 'cursor' && rate.name ? rate.name : /^auto$/i.test(raw) ? 'Auto' : raw;
   const id = displayIdentity(modelIdentity(raw).id).id;
   const claude = /^claude:(\d+(?:\.\d+)*)-(opus|sonnet|haiku|fable)$/.exec(id);
   if (claude) return `Claude ${claude[2][0].toUpperCase()}${claude[2].slice(1)} ${claude[1]}`;
@@ -70,13 +51,14 @@ export function reportModelName(name, client = null, rate = null) {
 }
 
 export function priceRecord({ scope = 'default', source, name, provider = null, pool = null, input, output,
-  cacheRead, cacheWrite, cacheReadFallback = false, cacheWriteFallback = false, cursor = null, contextTiers = null, official = null }) {
-  const modelId = scope === 'cursor' ? cursorModelId(name) : modelIdentity(name).id;
+  cacheRead, cacheWrite, cacheReadFallback = false, cacheWriteFallback = false, contextTiers = null, official = null }) {
+  if (scope !== 'default') return null;
+  const modelId = modelIdentity(name).id;
   if (!modelId || !Number.isFinite(input) || !Number.isFinite(output) ||
       !Number.isFinite(cacheRead) || !Number.isFinite(cacheWrite) ||
       [input, output, cacheRead, cacheWrite].some((n) => n < 0) || !validContextTiers(contextTiers) || !validOfficialPrice(official)) return null;
   return { scope, source, modelId, name, provider, pool, input, output, cacheRead, cacheWrite,
-    cacheReadFallback: Boolean(cacheReadFallback), cacheWriteFallback: Boolean(cacheWriteFallback), ...(cursor ? { cursor } : {}),
+    cacheReadFallback: Boolean(cacheReadFallback), cacheWriteFallback: Boolean(cacheWriteFallback),
     ...(contextTiers?.length ? { contextTiers } : {}), ...(official ? { official } : {}) };
 }
 
@@ -96,11 +78,20 @@ const KIMI_CODE_REFERENCE_MODELS = new Map([
 ]);
 
 function findPrice({ exact, aliases, normalized }, key, alias = priceAlias(key)) {
-  return exact.get(key) ?? aliases.get(key) ?? exact.get(alias) ?? aliases.get(alias) ?? normalized.get(alias);
+  const candidates = [exact.get(key), aliases.get(key), exact.get(alias), aliases.get(alias), normalized.get(alias)];
+  const index = candidates.findIndex(Boolean);
+  return index < 0 ? null : { record: candidates[index], priority: candidates.length - index };
 }
 
 export function storedPriceFor(model, record, entry = null) {
-  const provider = entry?.pricingProvider ?? entry?.providerId;
+  // Saved per-model estimates obey the same namespace and provider rules as
+  // the live catalog, including explicit Kimi Code reference aliases.
+  if (record?.source === 'litellm') {
+    if (!storedLookups.has(record)) storedLookups.set(record, createPriceLookup([record]));
+    return storedLookups.get(record)(model, null, entry);
+  }
+  const rawProvider = entry?.pricingProvider ?? entry?.providerId;
+  const provider = nativeChannel(rawProvider === 'kimi-code' && KIMI_CODE_REFERENCE_MODELS.has(priceModelKey(model)) ? 'moonshot' : rawProvider);
   if (record?.source !== 'user' && provider) {
     if (record?.official && record.official.channel !== nativeChannel(provider)) return null;
     if (record?.official?.channel === 'openrouter' && (record.official.endpoint ?? null) !== (entry.providerEndpoint ?? null)) return null;
@@ -110,7 +101,9 @@ export function storedPriceFor(model, record, entry = null) {
 }
 
 function sameAliasPrice(a, b) {
-  return priceAlias(a.name) === priceAlias(b.name) && a.provider === b.provider &&
+  const sameName = priceAlias(a.name) === priceAlias(b.name) || Boolean(a.provider && b.provider &&
+    priceAlias(a.name).split('/').at(-1) === priceAlias(b.name).split('/').at(-1));
+  return sameName && nativeChannel(a.provider) === nativeChannel(b.provider) &&
     ['input', 'output', 'cacheRead', 'cacheWrite', 'cacheReadFallback', 'cacheWriteFallback'].every((part) => a[part] === b[part]) &&
     JSON.stringify(a.contextTiers ?? []) === JSON.stringify(b.contextTiers ?? []);
 }
@@ -121,13 +114,13 @@ function addAlias(index, key, record) {
 }
 
 export function encodePriceMetadata(record) {
-  return JSON.stringify(record.scope === 'cursor' ? record.cursor ?? null
-    : record.contextTiers?.length || record.official ? { ...(record.contextTiers?.length ? { contextTiers: record.contextTiers } : {}),
+  return JSON.stringify(record.contextTiers?.length || record.official ? { ...(record.contextTiers?.length ? { contextTiers: record.contextTiers } : {}),
       ...(record.official ? { official: record.official } : {}) } : null);
 }
 
 export function decodePriceRecord({ metadataJson, ...record }) {
-  if (record.scope === 'cursor') return decodeCursorPrice({ ...record, cursorJson: metadataJson });
+  // Retired scopes in old databases are filtered before lookup.
+  if (record.scope !== 'default') return record;
   const metadata = JSON.parse(metadataJson ?? 'null');
   if (metadata != null && (typeof metadata !== 'object' || Array.isArray(metadata) || !validContextTiers(metadata.contextTiers) || !validOfficialPrice(metadata.official))) {
     throw new Error('invalid context price metadata');
@@ -136,21 +129,24 @@ export function decodePriceRecord({ metadataJson, ...record }) {
 }
 
 export function createPriceLookup(records) {
-  const cursorFor = createCursorModelResolver(records ?? []);
   const sources = new Map();
   for (const record of records ?? []) {
-    if (!record?.name || record.scope !== 'default') continue;
-    const sourceKey = `${record.source}\0${record.official?.channel ?? ''}\0${record.official?.endpoint ?? ''}`;
-    if (!sources.has(sourceKey)) sources.set(sourceKey, { source: record.source, official: record.official, exact: new Map(), aliases: new Map(), normalized: new Map() });
+    if (!record?.name || record.scope !== 'default' || !Object.hasOwn(PRIORITY, record.source)) continue;
+    const sourceKey = `${record.source}\0${nativeChannel(record.provider) ?? ''}`;
+    if (!sources.has(sourceKey)) sources.set(sourceKey, { source: record.source, provider: record.provider, official: record.official, exact: new Map(), aliases: new Map(), normalized: new Map() });
     const { exact, aliases, normalized } = sources.get(sourceKey);
     const key = priceModelKey(record.name);
     addAlias(exact, key, record);
     addAlias(normalized, priceAlias(key), record);
     for (const alias of record.official?.aliases ?? []) addAlias(aliases, priceModelKey(alias), record);
     const slash = key.lastIndexOf('/');
-    if (record.source !== 'openrouter' && slash >= 0) {
+    if (slash >= 0) {
       addAlias(aliases, key.slice(slash + 1), record);
       addAlias(normalized, priceAlias(key.slice(slash + 1)), record);
+      if (record.provider) {
+        addAlias(aliases, `${priceModelKey(record.provider)}/${key.slice(slash + 1)}`, record);
+        addAlias(normalized, `${priceModelKey(record.provider)}/${priceAlias(key.slice(slash + 1))}`, record);
+      }
     } else if (slash < 0 && record.provider) {
       // Only construct a provider-qualified alias from catalog metadata.
       addAlias(aliases, `${priceModelKey(record.provider)}/${key}`, record);
@@ -159,31 +155,25 @@ export function createPriceLookup(records) {
   }
   const ordered = [...sources.values()].sort((a, b) => PRIORITY[b.source] - PRIORITY[a.source]);
   return (name, client = null, entry = null) => {
-    if (client === 'cursor') return cursorFor(name, entry);
     const routerPrefix = /^openrouter\//i.test(name);
     const key = priceModelKey(routerPrefix ? name.slice(11) : name), alias = priceAlias(key);
     if (!key) return null;
     const reference = KIMI_CODE_REFERENCE_MODELS.get(key);
+    const matches = [];
     // Source priority comes first; within a source, exact names precede
     // normalized aliases. Ambiguous aliases never displace an exact entry.
     for (const index of ordered) {
       const rawProvider = entry?.pricingProvider ?? entry?.providerId;
       const provider = nativeChannel(rawProvider === 'kimi-code' && reference ? 'moonshot' : rawProvider);
-      if (index.official && provider && index.official.channel !== provider) continue;
-      if (index.source === 'openrouter') {
-        if (provider !== 'openrouter' && !routerPrefix) continue;
-        if ((index.official?.endpoint ?? null) !== (entry?.providerEndpoint ?? null)) continue;
-      } else if ((provider === 'openrouter' || routerPrefix) && index.source !== 'user') continue;
-      // Known custom providers do not silently inherit native API prices.
-      if (provider && ![...NATIVE_CHANNELS, 'kimi-code'].includes(provider) && index.source !== 'user' && index.source !== 'openrouter') continue;
-      if (index.source === 'openrouter-native' && !provider) {
-        const matches = ordered.filter((other) => other.source === index.source)
-          .map((other) => findPrice(other, key, alias) ?? (reference ? findPrice(other, reference) : null)).filter(Boolean);
-        if (matches.length > 1) continue;
-      }
-      const record = findPrice(index, key, alias) ?? (reference ? findPrice(index, reference) : null);
-      if (record) return applyOfficialRules(priceForContext(record, entry), entry);
+      if (index.source !== 'user' && (routerPrefix || provider && provider !== nativeChannel(index.provider))) continue;
+      const direct = findPrice(index, key, alias);
+      const fallback = !direct && reference ? findPrice(index, reference) : null;
+      const match = direct ?? (fallback ? { ...fallback, priority: 0 } : null);
+      if (match && index.source === 'user') return applyOfficialRules(priceForContext(match.record, entry), entry);
+      if (match) matches.push(match);
     }
-    return null;
+    const priority = Math.max(...matches.map((match) => match.priority));
+    const best = matches.filter((match) => match.priority === priority);
+    return best.length === 1 ? applyOfficialRules(priceForContext(best[0].record, entry), entry) : null;
   };
 }

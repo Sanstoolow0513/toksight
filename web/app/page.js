@@ -48,7 +48,6 @@ export default function Page() {
   const [priceUpdating, setPriceUpdating] = useState(false);
   const [priceResetOpen, setPriceResetOpen] = useState(false);
   const [priceResetError, setPriceResetError] = useState(null);
-  const [importing, setImporting] = useState(false);
   const [databaseBusy, setDatabaseBusy] = useState(null);
   const [databaseFile, setDatabaseFile] = useState(null);
   const [databaseError, setDatabaseError] = useState(null);
@@ -76,7 +75,7 @@ export default function Page() {
   const bounds = shown?.mode === 'custom' ? periodBounds(shown) : null;
   const selectedNav = calendarDay ? dayNav(calendarDay, { firstDay: bounds?.since ?? firstDay, today: bounds && bounds.until < today ? bounds.until : today }) : {};
   const updatingPrices = priceUpdating || Boolean(prices.status?.updating);
-  const busy = prices.busy || refreshing || updatingPrices || importing || Boolean(databaseBusy) || exporting;
+  const busy = prices.busy || refreshing || updatingPrices || Boolean(databaseBusy) || exporting;
   const hasData = Boolean(data && shown && (view !== 'today' || shown.preset === '1d'));
 
   useEffect(() => {
@@ -182,35 +181,6 @@ export default function Page() {
       pushToast({ key: 'prices', tone: 'success', message: ['priceResetSuccess'] });
     } catch (err) { setPriceResetError(String(err?.message || err)); }
   };
-  const onImportCursor = async (file) => {
-    setImporting(true);
-    try {
-      const res = await fetch('/api/import/cursor', {
-        method: 'POST', headers: { 'content-type': 'text/csv; charset=utf-8' },
-        body: file, cache: 'no-store',
-      });
-      const body = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(body.error || `HTTP ${res.status}`);
-      const warnings = body.warnings ?? [];
-      pushToast({
-        key: 'import',
-        tone: warnings.length ? 'warn' : 'success',
-        message: ['importSuccess', {
-          imported: fmtInt(body.imported), updated: fmtInt(body.updated),
-          duplicates: fmtInt(body.duplicates), skipped: fmtInt(body.skipped + body.zeroUsage),
-        }],
-        details: { summary: ['importWarnings', { n: warnings.length }], items: warnings },
-      });
-      if (body.latestAt != null) {
-        showLatest(body.latestAt);
-      }
-      setRefreshRevision((n) => n + 1);
-    } catch (err) {
-      pushToast({ key: 'import', tone: 'error', message: ['importFailed', { error: String(err?.message || err) }] });
-    } finally {
-      setImporting(false);
-    }
-  };
   const onSetup = async (options) => {
     try {
       const body = await prices.setup(options);
@@ -294,7 +264,7 @@ export default function Page() {
       revision={`${refreshRevision}:${prices.status.observedAt}`} onSources={(selectedSources) => void onSetup({ selectedSources, offline: prices.status.offline })} onAutoUpdate={(autoUpdate) => void onSetup({ offline: true, autoUpdate })} />;
   } else if (view === 'settings') {
     content = <Settings tx={tx} timezone={timezone} timezonePref={timezonePref} systemZone={systemZone} onTimezone={onTimezone} now={now}
-      loading={busy} databaseBusy={databaseBusy} onImportDatabase={onSelectDatabase} onExportDatabase={onExportDatabase} importing={importing} onImportCursor={onImportCursor} />;
+      loading={busy} databaseBusy={databaseBusy} onImportDatabase={onSelectDatabase} onExportDatabase={onExportDatabase} />;
   } else if (!hasData && report.error) {
     content = <section className="state-card"><TriangleAlert size={24} /><h2>{tx('errorTitle')}</h2><p>{coded(tx('errorBody', { error: report.error }))}</p>
       <button type="button" className="btn-secondary" onClick={() => void report.reload()}><RefreshCw size={15} />{tx('retry')}</button></section>;

@@ -48,7 +48,7 @@ test('an unambiguous user provider-suffix override wins over bare LiteLLM prices
   fs.mkdirSync(path.join(dir, 'cache'));
   fs.writeFileSync(path.join(dir, 'cache', 'litellm-pricing.json'), JSON.stringify({
     fetchedAt: Date.now(), data: { 'glm-5.3': {
-      mode: 'chat', input_cost_per_token: 2e-6, output_cost_per_token: 3e-6,
+      mode: 'chat', litellm_provider: 'openai', input_cost_per_token: 2e-6, output_cost_per_token: 3e-6,
     } },
   }));
   fs.writeFileSync(
@@ -74,7 +74,7 @@ test('LiteLLM price cache lasts a week and a forced update bypasses it', async (
   try {
     let calls = 0;
     const fetchImpl = async () => { calls++; return { ok: true, json: async () => ({
-      'unit-test-model': { mode: 'chat', input_cost_per_token: calls / 1e6, output_cost_per_token: 2e-6 },
+      'unit-test-model': { mode: 'chat', litellm_provider: 'openai', input_cost_per_token: calls / 1e6, output_cost_per_token: 2e-6 },
     }) }; };
     const env = { TOKSIGHT_CONFIG_DIR: dir };
     const first = await getPricing({ selectedSources: ['litellm'], env, now: () => 1_000_000, fetchImpl });

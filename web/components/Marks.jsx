@@ -1,7 +1,7 @@
 import { fmtCost, fmtPct } from '@/lib/format';
 
 const PART_KEYS = ['compInput', 'compCacheRead', 'compCacheWrite', 'compOutput'];
-const AGENT_COLORS = new Set(['claude', 'codex', 'cursor', 'opencode', 'kimi', 'zcode']);
+const AGENT_COLORS = new Set(['claude', 'codex', 'opencode', 'kimi', 'zcode']);
 
 // Each agent keeps one color on every period, card and export; unknown ids
 // share a neutral one.

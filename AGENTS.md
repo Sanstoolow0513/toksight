@@ -23,7 +23,7 @@
 - CLI 入口 `src/cli.js` 只负责分派；采集集中在 `src/collect.js`，JSON 契约集中在 `src/payload.js`，渲染集中在 `src/render.js`。不得改变已有 `--json` 字段语义；Web API 只能加字段。具体结构见[架构](doc/architecture.md)和[数据契约](doc/data-contract.md)。
 - 每个采集器接受注入的 `{ env, home }`，坏数据不应让采集失败；新客户端需注册 `clients`/`clientAliases`、补 fixture 与测试、更新双语 README。去重与来源优先级见[采集器](doc/collectors.md)。
 - 服务端本地日期算法放在 `src/dates.js`，前端日历算法放在 `web/lib/period.js`；按当地日历天运算，不能盲加 `24h` 或用 UTC ISO 字符串生成本地日期键。
-- 新鲜输入不含 cache read；缓存命中率分母不含 cache write。可信自报费用优先，Cursor `Included` 的官方价格只是参考估算。详见[数据契约](doc/data-contract.md)和[存储与定价](doc/storage-pricing.md)。
+- 新鲜输入不含 cache read；缓存命中率分母不含 cache write。可信自报费用优先；公开单价只使用 LiteLLM 的第一方提供商与自有模型，用户覆盖优先。详见[数据契约](doc/data-contract.md)和[存储与定价](doc/storage-pricing.md)。
 - Web GET 读取已提交快照，刷新事务替换；新增 API 要遵守回环 Host 和写请求 Origin 检查。不要添加 Agent 配置写路由。详见[Web 报告](doc/web-report.md)。
 - 根包不加运行时依赖；Web 依赖只放 `web/package.json`。保持 Windows 兼容，按改动范围运行 `npm test`、`npm run web:build`、`npm run check:package`。
 - CLI 选项、数据来源、定价、Web 或 JSON 变化要同步 `README.md` 和 `README.zh-CN.md`。保留 Next 生成的 `web/AGENTS.md` 规则块；发布流程见[开发与发布](doc/development-release.md)。

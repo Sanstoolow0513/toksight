@@ -1,8 +1,7 @@
 // Minimal zero-dependency HTTP server for `toksight web`.
 // Serves the prebuilt static dashboard and a SQLite-backed JSON API. GETs
 // read a committed snapshot; POST /api/refresh collects and writes,
-// POST /api/prices/update checks public rates, and POST /api/import/cursor
-// imports a local Cursor usage CSV.
+// POST /api/prices/update checks LiteLLM first-party rates.
 
 import http from 'node:http';
 import { isIP } from 'node:net';
@@ -37,8 +36,6 @@ const JSON_HEADERS = {
   'x-content-type-options': 'nosniff',
 };
 
-const MAX_CSV_BYTES = 20 * 1024 * 1024;
-
 async function readSetupBody(req) {
   let text = '';
   for await (const chunk of req) {
@@ -62,51 +59,21 @@ async function readDatabaseBody(req) {
   return Buffer.concat(chunks);
 }
 
-async function readCsvBody(req) {
-  const sizeHeader = Number(req.headers['content-length']);
-  if (Number.isFinite(sizeHeader) && sizeHeader > MAX_CSV_BYTES) {
-    req.resume();
-    const err = new Error('Cursor CSV is larger than 20 MB');
-    err.status = 413;
-    err.code = 'CSV_TOO_LARGE';
-    throw err;
-  }
-  const chunks = [];
-  let size = 0;
-  for await (const chunk of req) {
-    size += chunk.length;
-    if (size <= MAX_CSV_BYTES) chunks.push(chunk);
-  }
-  if (size > MAX_CSV_BYTES) {
-    const err = new Error('Cursor CSV is larger than 20 MB');
-    err.status = 413;
-    err.code = 'CSV_TOO_LARGE';
-    throw err;
-  }
-  try { return new TextDecoder('utf-8', { fatal: true }).decode(Buffer.concat(chunks)); }
-  catch {
-    const err = new Error('Cursor CSV must be UTF-8');
-    err.status = 400;
-    err.code = 'BAD_CSV';
-    throw err;
-  }
-}
-
 // Shown at / when web/out has not been built yet; the API keeps working so the
 // dashboard can be developed against live data.
 function setupPage() {
   return `<!doctype html>
 <html lang="zh-CN">
 <head><meta charset="utf-8"><title>toksight web — 仪表盘尚未构建</title></head>
-<body style="background:#f5f4ed radial-gradient(circle,rgba(20,20,19,.16) 1px,transparent 1.5px) 0 0/28px 28px;color:#141413;font:15px/1.7 system-ui,-apple-system,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif;display:grid;place-items:center;min-height:96vh;margin:0">
-  <main style="max-width:560px;padding:32px 36px;border:1px solid rgba(31,30,29,.14);border-radius:18px;background:#fffefb;box-shadow:0 8px 28px rgba(20,20,19,.06)">
-    <h1 style="font:500 24px/1.3 Georgia,'Times New Roman',serif;margin:0 0 16px"><span style="color:#d97757">toksight</span> web · 仪表盘尚未构建</h1>
-    <p style="color:#5e5d59">JSON API 已可用：<code style="color:#c6613f;background:#f0eee6;border-radius:6px;padding:1px 6px">/api/data</code>。要看到完整界面，请先构建静态资源（约需 1–2 分钟）：</p>
-    <p style="color:#5e5d59">从源码运行：在仓库根目录执行以下命令，完成后刷新本页。</p>
-    <pre style="background:#f0eee6;border-radius:10px;padding:14px 16px;overflow:auto"><code>npm run web:ci
+<body style="background:#edeef3;color:#1c1f23;font:14px/1.6 system-ui,-apple-system,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif;display:grid;place-items:center;min-height:96vh;margin:0">
+  <main style="max-width:560px;padding:28px 32px;border:1px solid rgba(0,0,0,.08);border-radius:12px;background:#fff">
+    <h1 style="font:600 20px/1.3 system-ui,sans-serif;margin:0 0 16px"><span style="color:#ff6900">toksight</span> web · 仪表盘尚未构建</h1>
+    <p style="color:rgba(0,0,0,.65)">JSON API 已可用：<code style="color:#0b7bab;background:rgba(0,0,0,.06);border-radius:6px;padding:1px 6px">/api/data</code>。要看到完整界面，请先构建静态资源（约需 1–2 分钟）：</p>
+    <p style="color:rgba(0,0,0,.65)">从源码运行：在仓库根目录执行以下命令，完成后刷新本页。</p>
+    <pre style="background:rgba(0,0,0,.04);border-radius:8px;padding:14px 16px;overflow:auto"><code>npm run web:ci
 npm run web:build</code></pre>
-    <p style="color:#5e5d59">开发页面可运行 <code>npm run web:dev</code>，它会同时启动前端和 API。</p>
-    <p style="color:#5e5d59">通过 npm 安装的版本应已包含页面。如果你使用的是安装包，请重新安装 <code>npm install -g toksight</code>，然后重新启动服务。</p>
+    <p style="color:rgba(0,0,0,.65)">开发页面可运行 <code>npm run web:dev</code>，它会同时启动前端和 API。</p>
+    <p style="color:rgba(0,0,0,.65)">通过 npm 安装的版本应已包含页面。如果你使用的是安装包，请重新安装 <code>npm install -g toksight</code>，然后重新启动服务。</p>
   </main>
 </body>
 </html>
@@ -262,7 +229,7 @@ export function createWebServer({
     // 127.0.0.1 is still remoteAddress-loopback, but its Host header is not.
     const localHostHeader = isLocalHostHeader(req.headers.host);
 
-    if (['/api/data', '/api/refresh', '/api/prices', '/api/prices/update', '/api/prices/reset', '/api/prices/status', '/api/setup', '/api/import/cursor', '/api/import/db', '/api/export/db'].includes(pathname)) {
+    if (['/api/data', '/api/refresh', '/api/prices', '/api/prices/update', '/api/prices/reset', '/api/prices/status', '/api/setup', '/api/import/db', '/api/export/db'].includes(pathname)) {
       // Loopback-bound servers (the default) reject foreign Host headers;
       // a user who deliberately binds --host 0.0.0.0 exposes the dashboard
       // to the LAN on purpose, so the Host check would only break that.
@@ -276,10 +243,9 @@ export function createWebServer({
       const priceStatus = pathname === '/api/prices/status';
       const prices = pathname === '/api/prices';
       const setup = pathname === '/api/setup';
-      const importing = pathname === '/api/import/cursor';
       const importingDb = pathname === '/api/import/db';
       const exportingDb = pathname === '/api/export/db';
-      const writing = refresh || priceUpdate || priceReset || setup || importing || importingDb;
+      const writing = refresh || priceUpdate || priceReset || setup || importingDb;
       const allowed = writing ? req.method === 'POST' : req.method === 'GET' || req.method === 'HEAD';
       if (!allowed) {
         sendJson(res, 405, { error: 'method not allowed', code: 'METHOD_NOT_ALLOWED' }, req.method, { allow: writing ? 'POST' : 'GET, HEAD' });
@@ -290,7 +256,7 @@ export function createWebServer({
         return;
       }
       try {
-        if ((priceReset && !getData.resetPrices) || (refresh && !getData.refresh) || (priceUpdate && !getData.updatePrices) || (importing && !getData.importCursor) ||
+        if ((priceReset && !getData.resetPrices) || (refresh && !getData.refresh) || (priceUpdate && !getData.updatePrices) ||
           (importingDb && !getData.importDatabase) || (exportingDb && !getData.exportDatabase) || (setup && !getData.setup) || (priceStatus && !getData.priceStatus) || (prices && !getData.prices)) {
           sendJson(res, 501, { error: 'operation is not configured', code: 'NOT_IMPLEMENTED' }, req.method);
           return;
@@ -304,7 +270,6 @@ export function createWebServer({
         }
         const payload = priceReset ? await getData.resetPrices() : refresh ? await getData.refresh() : priceUpdate ? await getData.updatePrices()
           : setup ? await getData.setup(await readSetupBody(req)) : priceStatus ? await getData.priceStatus() : prices ? await getData.prices(url.searchParams)
-          : importing ? await getData.importCursor(await readCsvBody(req))
           : importingDb ? await getData.importDatabase(await readDatabaseBody(req)) : await getData(url.searchParams);
         sendJson(res, 200, payload, req.method);
       } catch (err) {

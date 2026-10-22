@@ -1,6 +1,6 @@
 // Explain the reference cost without changing normalized entries or their cost.
 export function buildCostCoverage(entries, { pricing, reportedCosts }) {
-  const sources = Object.fromEntries(['reported', 'cursor', 'user', 'litellm', 'unknown', 'openai', 'anthropic', 'google', 'deepseek', 'moonshot', 'zai', 'qwen', 'openrouter', 'openrouter-native'].map((id) => [id, { requests: 0, costUsd: 0 }]));
+  const sources = Object.fromEntries(['reported', 'user', 'litellm', 'unknown'].map((id) => [id, { requests: 0, costUsd: 0 }]));
   let unpricedRequests = 0, cacheFallbackRequests = 0;
   for (const entry of entries) {
     if (entry.costUsd == null) { unpricedRequests++; continue; }

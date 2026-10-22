@@ -5,16 +5,10 @@ import { AgentDot, CacheRing, CostValue, PartsBar, PartsLegend, agentStyle } fro
 import { TOKEN_PARTS, agentRows, modelsByAgent } from '@/lib/report';
 import { fmtCost, fmtInt, fmtPct, fmtTokens } from '@/lib/format';
 import { useTableColumns } from '@/lib/useTableColumns';
+import { priceSourceLabel } from '@/lib/prices';
 
 const RATE_PARTS = ['input', 'cacheRead', 'cacheWrite', 'output'];
 const PART_LABELS = ['compInput', 'compCacheRead', 'compCacheWrite', 'compOutput'];
-const SOURCE_NAMES = { litellm: 'LiteLLM', cursor: 'Cursor', openai: 'OpenAI', anthropic: 'Anthropic', google: 'Google', deepseek: 'DeepSeek', moonshot: 'Moonshot', zai: 'Z.AI', qwen: 'Qwen', openrouter: 'OpenRouter', 'openrouter-native': 'OpenRouter (native reference)' };
-
-function sourceLabel(source, tx) {
-  if (source === 'openrouter-native') return tx('priceNativeRouter');
-  if (source === 'user') return tx('sourceUser');
-  return SOURCE_NAMES[source] ?? source;
-}
 
 function commonRate(row, rates) {
   const variants = row.modelIds?.length ? row.modelIds : [row.model];
@@ -83,7 +77,7 @@ export function RowTip({ tip, tx }) {
       ))}
       <div className="tip-row"><span>{tx('tipCache')}</span><b>{fmtPct(row.cacheHitRate)}</b></div>
       <div className="tip-row"><span>{tx('tipRequests')}</span><b>{fmtInt(row.requests)} / {row.sessions ? fmtInt(row.sessions) : '—'}</b></div>
-      {rate ? <div className="tip-note">{tx('tipRates', { source: sourceLabel(rate.source, tx) })}</div> : null}
+      {rate ? <div className="tip-note">{tx('tipRates', { source: priceSourceLabel(rate.source, tx) })}</div> : null}
       {ids.length && (ids.length > 1 || ids[0] !== row.model) ? <div className="tip-note is-mono">{ids.join(', ')}</div> : null}
     </>
   );

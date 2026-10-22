@@ -100,6 +100,17 @@ async function main() {
     await writeFile(path.join(fixture, 'pricing', 'pricing.json'), JSON.stringify({
       'claude-sonnet-4': { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 },
     }));
+    await mkdir(path.join(fixture, 'pricing', 'cache'));
+    await writeFile(path.join(fixture, 'pricing', 'cache', 'litellm-pricing.json'), JSON.stringify({
+      fetchedAt: Date.now(), data: {
+        'claude-sonnet-4': { mode: 'chat', litellm_provider: 'anthropic', input_cost_per_token: 3e-6, output_cost_per_token: 15e-6 },
+        'dashscope/qwen-smoke': { mode: 'chat', litellm_provider: 'dashscope', tiered_pricing: [
+          { range: [0, 32000], input_cost_per_token: 1e-6, output_cost_per_token: 5e-6 },
+          { range: [32000, 128000], input_cost_per_token: 2e-6, output_cost_per_token: 10e-6 },
+        ] },
+        'mistral/glm-resold': { mode: 'chat', litellm_provider: 'mistral', input_cost_per_token: 1e-6, output_cost_per_token: 2e-6 },
+      },
+    }));
     const port = await freePort();
     const url = `http://127.0.0.1:${port}`;
     child = startNode([path.join(installed, 'bin', 'toksight.js'), 'web', '--offline', '--no-open', '--port', String(port)], {
@@ -140,11 +151,13 @@ async function main() {
     const data = await dataResponse.json();
     assert.equal(data.version, pkg.version);
     assert.equal(data.totals.totalTokens, 120);
-    assert.equal(data.pricing.sources.litellm, 'disabled');
+    assert.equal(data.pricing.sources.litellm, 'fresh');
     const priceStatus = await (await fetch(url + '/api/prices/status')).json();
-    assert.ok(priceStatus.selectedSources.includes('openrouter-native'));
-    assert.equal(priceStatus.selectedSources.includes('litellm'), false);
-    assert.equal(priceStatus.selectedSources.includes('openrouter'), false);
+    assert.deepEqual(priceStatus.selectedSources, ['litellm']);
+    const prices = await (await fetch(url + '/api/prices')).json();
+    assert.ok(prices.records.some((row) => row.source === 'litellm' && row.provider === 'anthropic'));
+    assert.equal(prices.records.find((row) => row.name === 'dashscope/qwen-smoke').contextTiers[0].contextOver, 32000);
+    assert.ok(prices.records.every((row) => row.name !== 'mistral/glm-resold'));
     const filteredResponse = await fetch(url + '/api/data?client=claude&since=2026-08-29&until=2026-08-29');
     assert.equal(filteredResponse.status, 200);
     const filteredData = await filteredResponse.json();
@@ -168,29 +181,8 @@ async function main() {
     assert.equal((await fetch(url + '/api/config')).status, 404);
     console.log('OK report periods and scope range: isolated fixtures');
 
-    const cursorCsv = await readFile(path.join(root, 'test', 'fixtures', 'cursor', 'usage.csv'), 'utf8');
-    const importResponse = await fetch(url + '/api/import/cursor', {
-      method: 'POST', headers: { 'content-type': 'text/csv; charset=utf-8' }, body: cursorCsv,
-    });
-    assert.equal(importResponse.status, 200);
-    assert.equal((await importResponse.json()).imported, 2);
-    const repeatImport = await fetch(url + '/api/import/cursor', {
-      method: 'POST', headers: { 'content-type': 'text/csv; charset=utf-8' }, body: cursorCsv,
-    });
-    assert.equal((await repeatImport.json()).duplicates, 2);
-    const rebilledCsv = cursorCsv
-      .replace('"Included","cursor-test-model","No"', '"User API Key","cursor-test-model","Yes"')
-      .replace('"49","Included"', '"49","$0.75"');
-    const rebilledImport = await fetch(url + '/api/import/cursor', {
-      method: 'POST', headers: { 'content-type': 'text/csv; charset=utf-8' }, body: rebilledCsv,
-    });
-    assert.equal((await rebilledImport.json()).updated, 1);
-    const cursorData = await (await fetch(url + '/api/data?client=cursor&since=2026-08-31&until=2026-08-31')).json();
-    assert.equal(cursorData.totals.totalTokens, 94);
-    assert.equal(cursorData.totals.sessions, 0);
-    assert.equal(cursorData.costCoverage.unpricedRequests, 0);
-    assert.equal(cursorData.totals.costUsd, 1);
-    console.log('OK installed Cursor CSV import, deduplication and report filters');
+    assert.equal((await fetch(url + '/api/import/cursor', { method: 'POST' })).status, 404);
+    assert.equal((await fetch(url + '/api/data?client=cursor')).status, 400);
 
     const databaseFile = path.join(env.TOKSIGHT_CONFIG_DIR, 'usage.sqlite');
     assert.equal((await readFile(databaseFile)).subarray(0, 16).toString(), 'SQLite format 3\0');
@@ -198,11 +190,11 @@ async function main() {
       type: 'assistant', sessionId: 'package-smoke', timestamp: '2026-08-29T10:00:00Z',
       message: { id: 'package-smoke', model: 'claude-sonnet-4', usage: { input_tokens: 200, output_tokens: 20 } },
     }) + '\n');
-    assert.equal((await (await fetch(url + '/api/data')).json()).totals.totalTokens, 214);
+    assert.equal((await (await fetch(url + '/api/data')).json()).totals.totalTokens, 120);
     const refreshed = await fetch(url + '/api/refresh', { method: 'POST' });
     assert.equal(refreshed.status, 200);
-    assert.equal((await refreshed.json()).entries, 3);
-    assert.equal((await (await fetch(url + '/api/data')).json()).totals.totalTokens, 314);
+    assert.equal((await refreshed.json()).entries, 1);
+    assert.equal((await (await fetch(url + '/api/data')).json()).totals.totalTokens, 220);
     console.log('OK SQLite preload, explicit refresh and committed report reads');
     const backupResponse = await fetch(url + '/api/export/db');
     assert.equal(backupResponse.status, 200);
@@ -210,27 +202,27 @@ async function main() {
     assert.equal(backup.subarray(0, 16).toString(), 'SQLite format 3\0');
     const merge = await fetch(url + '/api/import/db', { method: 'POST', body: backup });
     assert.equal(merge.status, 200);
-    assert.equal((await merge.json()).duplicates, 3);
+    assert.equal((await merge.json()).duplicates, 1);
     const backupFile = path.join(temp, 'portable backup.sqlite');
     const run = promisify(execFile);
     const cli = path.join(installed, 'bin', 'toksight.js');
     const exported = await run(process.execPath, [cli, 'export-db', backupFile, '--json'], { env });
-    assert.equal(JSON.parse(exported.stdout).entries, 3);
+    assert.equal(JSON.parse(exported.stdout).entries, 1);
     const imported = await run(process.execPath, [cli, 'import-db', backupFile, '--json'], { env });
-    assert.equal(JSON.parse(imported.stdout).duplicates, 3);
-    assert.equal((await (await fetch(url + '/api/data')).json()).totals.totalTokens, 314);
+    assert.equal(JSON.parse(imported.stdout).duplicates, 1);
+    assert.equal((await (await fetch(url + '/api/data')).json()).totals.totalTokens, 220);
     console.log('OK installed database export/import through HTTP and CLI');
     const reset = await fetch(url + '/api/prices/reset', { method: 'POST' });
     assert.equal(reset.status, 200);
     assert.equal((await reset.json()).completed, false);
     assert.deepEqual((await (await fetch(url + '/api/prices')).json()).records, []);
-    assert.equal((await (await fetch(url + '/api/data')).json()).totals.totalTokens, 314);
+    assert.equal((await (await fetch(url + '/api/data')).json()).totals.totalTokens, 220);
     const localSetup = await fetch(url + '/api/setup', { method: 'POST', body: JSON.stringify({ offline: true }) });
     assert.equal(localSetup.status, 200);
     assert.equal((await localSetup.json()).completed, true);
-    const afterReset = await (await fetch(url + '/api/data?client=cursor')).json();
-    assert.equal(afterReset.totals.costUsd, 1);
-    console.log('OK installed price reset and local rebuild preserve usage and Cursor charges');
+    const afterReset = await (await fetch(url + '/api/data')).json();
+    assert.ok(afterReset.totals.costUsd > 0);
+    console.log('OK installed price reset and local rebuild preserve usage');
     console.log(`Package check passed: toksight ${pkg.version}`);
   } catch (err) {
     if (output) console.error(output);

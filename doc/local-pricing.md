@@ -2,96 +2,88 @@
 
 ## 初始化与更新
 
-Web 首次启动离线建立用量快照，主内容区的 `PriceSetup` 引导获取公开价格或使用本地价格继续。
-`web_setup` 保存引导完成时间、`auto_update` 偏好；`price_preferences.sources_json` 独立保存来源选择，
-不依赖浏览器。`POST /api/setup` 接受布尔 `offline` / `autoUpdate` 和无重复的 `selectedSources` 数组；
-缺省保持原偏好，空数组关闭所有可选来源。允许值为 openai、anthropic、google、deepseek、moonshot、zai、qwen、openrouter-native、
-cursor、openrouter、litellm。后两项默认关闭，已有库无偏好时也使用此默认值。用户覆盖不受开关影响。
-状态 API 增加 selectedSources、availableSources。价格页先勾选，再一次保存；在线保存按所选来源更新，
-离线保存仅切换本地查询。首次本地继续会推迟第一次自动检查一小时；`--offline` 始终禁止网络更新。
-`src/priceselection.js` 统一筛选价格目录、历史和快照/导入的逐模型回退；关闭来源清除派生估价，保留自报费用。
-备份带走价格记录，但导入不覆盖目的库的来源偏好。
-`GET /api/prices/status` 返回 completed、completedAt、autoUpdate、prices、revisions、observedAt、offline、updating、warnings。
+Web 首次启动离线建立用量快照，`PriceSetup` 引导下载 LiteLLM 价格或使用本地价格继续。
+`web_setup` 保存引导完成时间和 `auto_update`；`price_preferences.sources_json` 保存来源选择，不依赖浏览器。
+公开来源只有默认启用的 `litellm`；`selectedSources` 仅接受 `['litellm']` 或 `[]`。旧多来源选择迁移到默认值，
+明确的空选择仍关闭下载价格。用户 `pricing.json` 不受开关影响。
 
-左侧价格页集中展示目录、来源获取时间、四类 token 单价、历史和自动更新偏好。
-`GET /api/prices` 返回 records、updates、status、offline、updating、warnings；records 保存原始的美元/token
-单价和条件元数据，额外附加稳定 id、revisions、observedAt。id 按历史键区分范围、来源、原名及 Cursor 档位。
-单个 `key=<id>` 参数改为返回该项 history（observedAt / record），从新到旧；未知 key 返回空历史。
-未知、重复或空查询参数返回 400。目录和历史 GET 不初始化引导、不采集、不联网，只读已提交事务。
-界面转换为美元/百万 token，并明确标注本机观察时间；用户覆盖没有观察历史。
+`POST /api/setup` 接受布尔 `offline` / `autoUpdate` 与可选 `selectedSources`；缺省保持原偏好。
+在线保存按选择更新，离线保存仅改变本地查询。首次本地继续推迟第一次自动检查一小时；`--offline` 始终禁止网络更新。
+`src/priceselection.js` 将同一筛选用于当前目录、历史、快照和导入回退。关闭来源清除派生估价，保留自报费用。
+备份不会覆盖目的库的来源和自动更新偏好。
 
-服务开启自动更新后，用可清理、unref 的小时定时器检查价格，也保留启动/报告读取检查。
-成功价格七天到期，失败一小时后重试。手动更新强制检查；并发自动/手动更新共享一个任务，关闭
-服务停止定时器并防止未完成下载写入已关闭数据库。更新不扫描 Agent 文件，结果在 SQLite 事务中提交。
+`GET /api/prices/status` 返回 completed、completedAt、autoUpdate、selectedSources、availableSources、prices、
+revisions、observedAt、offline、updating 和 warnings。`GET /api/prices` 返回 records、updates、status、offline、
+updating、warnings。价格保留 USD/token 四类单价、上下文元数据及稳定 id、revisions、observedAt。
+单个 `key=<id>` 返回该项 history（observedAt / record），从新到旧；未知 key 返回空历史。
+未知、重复或空参数返回 400。目录和历史 GET 只读已提交事务，不初始化引导、采集或联网。
+页面显示美元/百万 token，并明确标注本机观察时间；用户覆盖没有观察历史。
 
-## 重置价格库
+自动更新使用可清理、unref 的小时定时器，也在启动和报告读取时检查。成功价格七天到期，失败一小时后重试。
+手动更新强制检查；并发自动/手动更新共享任务。关闭服务停止定时器，并防止未完成下载写入已关闭数据库。
+更新不扫描 Agent 文件，结果在 SQLite 事务中提交。
 
-价格页确认后调用 `POST /api/prices/reset`；CLI 提供 `reset-prices`，支持 JSON 输出和离线使用，拒绝日期/客户端筛选。
-`src/pricereset.js` 仅删除下载缓存 `cache/litellm-pricing.json`、`cache/cursor-pricing.json`，保留用户配置和其他文件。
-`database.resetPrices()` 在一个事务中清空 `model_prices`、`price_updates`、`price_history`、`web_setup`，
-同时清空快照的 `model_prices_json` / `pricing_sources_json` 和 `usage_imports.price_json`，避免旧回退价格复活。
-用量、导入、自报费用、来源选择、快照刷新时间保持不变；SQLite 文件仍保留，因为它还存放用量。
-数据库失败回滚价格和引导状态；缓存文件删除在事务前完成，失败时已删除的缓存可由下次下载恢复。
+## 第一方 LiteLLM 目录
 
-服务重置拒绝本进程仍在执行的刷新、价格更新、引导和 Cursor 导入（409），停止自动检查并返回未完成引导的状态。
-CLI 重置需先关闭其他 toksight 进程，避免其他进程中的采集/下载重新写入旧价格。其他连接通过 `data_version` 发现已提交重置。
-重置本身不联网、不采集；旧估算在新价格建立前为空，自报费用不变。重新在线引导会下载全新价格历史；
-离线继续重新加载用户定价，未知单价保留为空。来源选择保留，自动更新由重新引导选择。
+`src/pricing.js` 下载 LiteLLM 的 `model_prices_and_context_window.json`，使用七天缓存。
+`src/firstparty.js` 检查提供商及模型归属，输出以下统一渠道：
 
-## 本地来源
+| LiteLLM 提供商 | 计价渠道 | 收录范围 |
+| --- | --- | --- |
+| openai、anthropic、deepseek、moonshot、zai、xai、minimax、ai21 | 同名 | 该提供商的直接 API 表 |
+| gemini | google | Gemini API 表，不混入 Vertex 市场 |
+| mistral、codestral | mistral | Mistral 自有模型，排除 GLM 等托管模型 |
+| dashscope、qwen_ai_platform | alibaba | 仅 Qwen / QwQ，排除 DeepSeek、GLM、Kimi |
+| cohere_chat | cohere | Cohere 直接 API 表 |
 
-`src/publicpricing.js` 直接访问 OpenAI、Anthropic、Google、DeepSeek、Moonshot、Z.AI、Qwen 官方价格页
-（Moonshot 走文档站的 `.md` 接口，Qwen 取阿里云国际站 USD 分区并保留上下文档位）
-和 OpenRouter `/api/v1/models`。
-OpenAI 的折叠模型行从限定组件的序列化表格数据解码，不运行页面脚本。其他页面从可见 Standard
-价格表读取。Cursor 继续使用现有官方目录抓取器。仅下载勾选的来源；LiteLLM 必须显式启用，
-开启后 Web 更新可下载，CLI 使用同一数据库偏好，有本地公开历史时优先读取本地价格。
+LiteLLM 的 Qwen `tiered_pricing` 数组可独立提供价格，不要求顶层重复 input/output 字段。
+`normalizeLitellmPrice` 将首段转换为基础价，后续段转换为 contextTiers；范围须从 0 开始、边界为安全整数，
+排序后严格连续。使用 LiteLLM 的 `(start, end]` 规则：32,000 token 留在第一档，32,001 进入第二档；
+请求的全部新鲜输入、缓存读和缓存写共同选档，整次输入和输出使用同一档价格。超过最终范围沿用最后一档。
+每档缺少缓存价时按该档输入价回退；输出可沿用明确的顶层输出价。空表、重叠、缺口或无效费率不推断。
+标准 `*_above_N_tokens` 字段仍沿用各自的基础价和缓存回退规则。
 
-`openrouter-native` 与完整 `openrouter` 是两个独立来源，前者默认启用，后者默认关闭。
-`src/nativeproviders.js` 声明模型作者与原厂运营商名称/端点 tag 的对应关系，覆盖 OpenAI、Anthropic、
-Google、xAI、DeepSeek、Moonshot、Alibaba/Qwen、Z.AI、MiniMax、Mistral、Cohere、AI21；未知关系不猜。
-从模型总表发现这些作者的模型，以最多四个并发读取端点；只有作者、provider_name、tag 同时匹配才接纳。
-`parseNativeRouterPrices` 不使用模型总表的聚合报价；原厂端点缺失时跳过，多端点四类单价、缓存回退、
-1h 缓存或条件不一致时报警并跳过。等价端点合并成一条参考记录，保留 routerModel、routerEndpoints、
-providerName 与端点 API URL；source 为 openrouter-native，official.channel/provider 为原厂计价渠道。
-匹配优先级低于官网、高于 LiteLLM；历史和备份保留原始出处。已知自定义中转商仍需显式绑定，
-不能因模型同名套用原厂价。原厂 API 参考值不代表直连实付，也不代替 OpenRouter 实际路由报价。
+同一提供商的不同直接 API 表可能保留不同价格，例如 `codestral/codestral-latest` 与
+`mistral/codestral-latest`。这类原始目录 ID 分别保留；裸名存在价格歧义时不自动选择，需使用完整 ID 或用户覆盖。
 
-完整 OpenRouter 来源启用后，为使用过的路由模型获取端点详情，最多四个并发，保留默认模型报价
-和端点单价。价格不能跨渠道套用；未知供应端点的模型报价是参考估算，明确端点缺失时不回退猜测。
-支持折扣及明确的上下文/UTC 时间窗口、星期条件，按各价格键依序应用匹配规则。
-OpenAI 未明确阈值的长上下文报价保留基础价参考；Google 明确日期促销按本次获取时刻取价，后续
-变化在下次更新时观察。Google 文本估算不包含音频、缓存存储及工具费用。
-Anthropic 的 1h 缓存写入价格在 Claude 日志明确给出 1h token 数时使用，否则按默认缓存写入参考。
-
-单个来源下载/解析失败保留已提交价格，不影响其他来源。格式或价格单位无法可靠解析时跳过；
-新下载目录缺少旧原名时保留该原名并标记 retained，不能靠一次页面变化删除已知价格。
+未知提供商、聚合商、转售商和不匹配的模型前缀不参与估算；source URL 不能代替提供商归属验证。
+仅接收 chat / responses 与有效的非负 token 单价。Google 不混合 Vertex 的另一套费率，Qwen 不收录 qwencloud。
+不再抓取厂商 HTML/Markdown，不访问 OpenRouter 目录或端点。磁盘中的旧价格不能绕过第一方筛选。
+下载失败保留可用缓存和已提交价格，警告通过现有状态和报告返回。
 
 ## 历史与重算
 
-`price_history` 保存 price_key、observed_at、signature、record_json。键区分计价范围、来源、原始
-目录名/端点和 Cursor 上下文档位。仅价格、条件或匹配信息改变才新增版本；刷新时间和 retained
-标志不创建版本。历史机制用于直接获取的公开价格、原厂端点参考价与 Cursor；可选 LiteLLM 回退和用户覆盖仍按当前值计算。
+price_history 保存 price_key、observed_at、signature、record_json；键区分范围、来源和原始目录名。
+LiteLLM 价格、上下文档位或匹配信息变化才新增版本；获取时间变化本身不创建版本。用户覆盖使用当前值。
+src/pricehistory.js 按请求时间选择最后一次已观察价格；早于首次观察的记录使用最早已知价格作参考。
+本机观察时间不是官方生效时间，不能补全错过的调价。选择历史版本后逐请求应用上下文档位；时区不影响费用。
+自报金额保持优先。
 
-`src/pricehistory.js` 按请求时间选择最后一次已观察价格；早于首次观察的记录使用最早已知价格
-作为参考。本机观察时间不是官方生效时间，不能补全未更新期间错过的调价。选定历史版本后再逐
-请求应用上下文与 UTC 时间条件；改变报告时区不会改变费用。自报金额保持优先。
-
-快照、当前价格和历史在同一读事务加载，查价器按历史时间区间缓存。价格更新失效快照缓存后
-重新计算估算，旧请求保留旧费率，新请求获得适用费率。无需写回每条原始 Agent 用量。
-SQLite 备份包含价格历史；导入先验证签名、时间和价格元数据，冲突的同键同时间记录保留目的库
-版本。首次引导/自动更新偏好不从备份覆盖目的库。
+快照、当前目录和历史在同一读事务加载，查价器按历史区间缓存。价格更新失效快照缓存后重算估价，
+无需写回原始 Agent 用量。SQLite 备份保留符合第一方规则的目录与历史；同键同时间冲突保留目的库版本。
+旧官网、聚合商和已移除客户端的价格不作为回退使用。
 
 ## 提供商映射
 
 采集器保留 Codex session_meta.model_provider、OpenCode providerID、ZCode rollout providerId。
-Kimi 同一 agent 文件中按 agentId/kind/model 关联 llm.request 和 usage.record，不能确认时不推断。
-Claude 日志的缓存 1h token 数保存为 cacheWrite1hTokens（cacheWriteTokens 的子集）。这些字段可选，
-不改变原有 token/JSON 语义；新增 providerId、pricingProvider、providerEndpoint、cacheWrite1hTokens
-均经备份导入验证，不参与用量去重身份。
+Kimi 按同一 agent 文件的 agentId/kind/model 关联 llm.request 和 usage.record，不能确认时不推断。
+Claude 的 1h 缓存写入子集仍保存为可选 cacheWrite1hTokens，但不从 LiteLLM 标准上下文价推断缓存时长费用。
+providerId、pricingProvider、providerEndpoint、cacheWrite1hTokens 均经备份验证，不参与去重身份。
 
-`src/providerbindings.js` 读取 `<toksight-dir>/providers.json` 数组。每项声明 client、providerId、provider
-（openai/anthropic/google/xai/deepseek/moonshot/alibaba/zai/minimax/mistral/cohere/ai21/openrouter），可选 endpoint、model、since、until。时间为带时区的准确
-ISO 时刻，区间包含 since、不包含 until。模型精确绑定优先；同等具体程度的重叠不猜测。
-派生绑定在刷新或价格更新后重算，删除绑定会恢复原始 providerId。`pricing.json` 仍为最高优先级
-的 USD/百万 token 覆盖。未知自定义提供商不自动使用原生厂商价，不读取今天的 Agent 配置倒推历史。
+src/providerbindings.js 读取 `<toksight-dir>/providers.json`。每项声明 client、providerId、provider，可选
+model、endpoint、since、until。使用原厂参考价的渠道为 openai、anthropic、google、xai、deepseek、moonshot、
+alibaba、zai、minimax、mistral、cohere、ai21。时间必须为带时区 ISO 时刻，包含 since、不包含 until。
+模型精确绑定优先；同等具体程度的重叠不推断。刷新或价格更新后重算绑定；删除绑定恢复原始 providerId。
+未知自定义提供商不自动使用原厂价；pricing.json 的 USD/百万 token 覆盖仍优先。
+
+## 重置价格库
+
+价格页确认后调用 POST /api/prices/reset；CLI reset-prices 支持 JSON 和离线使用，拒绝日期/客户端筛选。
+src/pricereset.js 清理 toksight 下载的价格缓存，保留用户配置。database.resetPrices() 在事务内清空
+model_prices、price_updates、price_history、web_setup，以及快照和导入的价格回退值。
+用量、导入、自报费用、来源选择和快照刷新时间保留；SQLite 文件仍用于存放用量。
+数据库失败回滚价格和引导状态；缓存删除先于事务，已删除缓存可在下次下载恢复。
+
+服务重置拒绝本进程执行中的刷新、更新和引导（409），停止自动检查并返回未完成引导状态。
+CLI 重置前需关闭其他 toksight 进程，避免旧任务重新写价；其他连接用 data_version 发现已提交重置。
+重置本身不联网或采集。新价格建立前旧估价为空，自报费用不变；离线继续重新加载用户覆盖。

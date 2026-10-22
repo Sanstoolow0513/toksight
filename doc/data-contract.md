@@ -13,9 +13,7 @@
 | `costUsd` | 美元费用或 `null`；除可信自报费用外，由 `src/collect.js` 调用 `computeCost` 计算 |
 | `directory`, `title` | 可空会话上下文 |
 
-Cursor 记录可额外包含 `cursorMaxMode`，保存 CSV `Max Mode` 列的布尔值，空白/未知值为 `null`；旧记录允许缺失。该字段不参与事件身份，重导可补齐或更正而不覆盖已知费用；数据库备份会保留它，并严格拒绝非布尔、非 null 的值以及其他未知字段。它与模型名中识别出的 Max 模式独立保存，不能用来推断历史套餐。
-
-新鲜输入不包含缓存读取。缓存命中率是 `cacheReadTokens / (inputTokens + cacheReadTokens)`；缓存写入不进入分母。token、费用和模型按每条请求归属；同一会话换模型时会拆到对应模型。`reasoningTokens` 是输出的一部分，不再额外计价。Cursor 的 `sessionId` 为 `null`，会话聚合略过它。
+新鲜输入不包含缓存读取。缓存命中率是 `cacheReadTokens / (inputTokens + cacheReadTokens)`；缓存写入不进入分母。token、费用和模型按每条请求归属；同一会话换模型时会拆到对应模型。`reasoningTokens` 是输出的一部分，不再额外计价。可空的 sessionId 不产生会话明细。
 
 ## 日期与范围
 
@@ -30,9 +28,7 @@ Web 查询 `period` 接受 `all`、`today`、`7d`、`30d`、`month`、`custom`�
 
 ## JSON 形状
 
-Cursor 的 `pricing.modelRates` 额外包含 `maxMode`（目录匹配后多出的模式词）、`variableRates`、`priceFetchedAt`、`retained`。同一原始模型 ID 的请求跨多个上下文价格时，`variableRates` 为 true，`source` 为 null，省略四种单价，避免把一档价格当作整行价格；各请求费用仍按实际匹配档位计算。模型展示名及 `modelId` 来自匹配目录，无法匹配时保留原模型名。目录别名与价格元数据随 SQLite 备份保存。
-
-非 Cursor 的 LiteLLM 长上下文估价也逐请求选档；同一原始 ID 跨多个实际单价时，`pricing.modelRates` 同样增加 `variableRates: true`、返回 `source: null` 并省略四种单价。只含同一档位的过滤结果输出该档实际单价。模型原始 ID、展示归并和已有字段的单位保持不变，不给标准用量记录增加缓存时长或服务档位字段。
+LiteLLM 长上下文估价逐请求选档；同一原始 ID 跨多个实际单价时，`pricing.modelRates` 同样增加 `variableRates: true`、返回 `source: null` 并省略四种单价。只含同一档位的过滤结果输出该档实际单价。模型原始 ID、展示归并和已有字段的单位保持不变，不给标准用量记录增加缓存时长或服务档位字段。
 
 报告命令的 `--json` 由 `src/payload.js` 构造：元信息 `tool`、`version`、`generatedAt`、`range`、`clientsFilter`，以及 `totals`、`cacheHitRate`、`clients`、`models`、`daily`、`monthly`、`sessions`、`pricing`、`warnings`。`pricing` 有 `sources`、`configDir`、`unpricedModels`、`updates`、`modelRates`。`clients` 每项的总量和命中率都从过滤后的记录计算。`models` 按客户端和展示名聚合，并保留原始 `modelIds`；价格细节仍在 `modelRates` 按原始 ID 输出。`refresh --json` 返回数据库刷新状态，不是报告载荷。
 
@@ -40,14 +36,14 @@ Cursor 的 `pricing.modelRates` 额外包含 `maxMode`（目录匹配后多出�
 
 - 基础 Web 聚合：`heatmap`、`trend`、`trend7`、`trend90`、`trendByAgent`、`hourly`、`today`、`last7Days`、`last30Days`、`thisMonth`、`activeDays`、`streaks`、`peakDay`、`topSessions`、`longestSession`、`activityRange`、`timezone`。
 - 快照/选择：`snapshot`、`view`、`scopeRange`、`selection`。`selection` 的趋势/热力图最多呈现最后 366 天，`totals` 与 `comparison` 仍用完整请求范围。
-- 本机价格：`priceDatabase` 给出引导、自动更新、价格/历史版本数与离线状态；`costCoverage.sources` 新增 openai、anthropic、google、deepseek、moonshot、zai、qwen、openrouter。
-- 费用说明：`costCoverage` 按 `reported`、`cursor`、`user`、`litellm`、`unknown` 分来源统计请求和金额，并给出未定价与使用缓存价格回退的请求数。
+- 本机价格：`priceDatabase` 给出引导、自动更新、价格/历史版本数与离线状态；目录来源仅为 litellm，provider 标明原厂计价渠道。
+- 费用说明：`costCoverage` 按 `reported`、`user`、`litellm`、`unknown` 分来源统计请求和金额，并给出未定价与使用缓存价格回退的请求数。
 - 相邻周期：`comparison` 用等日历天数的前一段作为基准，给出贡献和覆盖情况；没有起始日期时默认比较截至选定终点/今天的七天。前段越过启动范围时返回不可比较状态。
 
 本期、上期的费用覆盖统计使用同一份价格快照；无基准、范围不完整等情况由比较结果显式表达，不能靠空数组推断。
 
 价格目录独立由 `GET /api/prices` 返回，不并入报告载荷。`records` 保持 USD/token 的四项基础单价、缓存回退
-布尔值与 official / cursor / contextTiers 元数据，附加来源隔离的 `id`、本机 `observedAt` 和 `revisions`。
+布尔值与 contextTiers 元数据，附加来源隔离的 `id`、本机 `observedAt` 和 `revisions`。
 `updates` 保留每个来源的获取/检查时间及状态，`status` 给出本地建库状态。传单个 `key=<id>` 时改为返回
 `history`（从新到旧的 observedAt / record）；页面仅在展示时转换为美元/百万 token。这些字段不改变 CLI JSON。
 

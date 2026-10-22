@@ -8,7 +8,7 @@ export default function PriceSources({ tx, status, selected, disabled, onChange 
     {(status.availableSources ?? []).map((source) => <label className="setup-auto" key={source}>
       <input type="checkbox" checked={selected.includes(source)} onChange={(event) => onChange(event.target.checked
         ? [...selected, source] : selected.filter((item) => item !== source))} />
-      <span>{priceSourceLabel(source, tx)}{source === 'litellm' ? ` · ${tx('priceNotRecommended')}` : ''}</span>
+      <span>{priceSourceLabel(source, tx)}</span>
     </label>)}
   </fieldset>;
 }

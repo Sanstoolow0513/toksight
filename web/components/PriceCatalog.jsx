@@ -20,7 +20,6 @@ function Conditions({ record, tx, locale }) {
   const tiers = record.contextTiers ?? [], rules = record.official?.rules ?? [];
   return <div className="price-conditions">
     {record.official?.unresolvedLongContext ? <p>{tx('priceLongContextUnknown')}</p> : null}
-    {record.cursor?.contextOver != null ? <p>{tx('priceContextOver', { n: fmtInt(record.cursor.contextOver) })}</p> : null}
     {record.official?.cacheWrite1h != null ? <p>{tx('priceCache1h', { rate: fmtUnitPrice(record.official.cacheWrite1h) })}</p> : null}
     {tiers.map((tier) => <p key={tier.contextOver}>{tx(tier.inclusive ? 'priceContextAtLeast' : 'priceContextOver', { n: fmtInt(tier.contextOver) })}{' · '}
       <span className="price-condition-rates">{parts.map(([part, label]) => <span key={part}>{tx(label)} <Rate record={tier} part={part} tx={tx} /></span>)}</span></p>)}
@@ -52,19 +51,17 @@ function History({ record, revision, tx, timezone, locale }) {
 }
 
 function Details({ record, update, revision, tx, timezone, locale }) {
-  const url = priceSourceUrl(record, update), aliases = record.official?.aliases ?? record.cursor?.aliases ?? [];
+  const url = priceSourceUrl(record, update), aliases = record.official?.aliases ?? [];
   return <div className="price-details">
     <dl>
       <div><dt>{tx('priceCatalogId')}</dt><dd><code>{record.name}</code></dd></div>
-      <div><dt>{tx('priceChannel')}</dt><dd>{record.scope === 'cursor' ? 'Cursor' : record.official?.channel ? priceSourceLabel(record.official.channel, tx) : tx('priceGeneral')}</dd></div>
-      {record.provider ? <div><dt>{tx('priceProvider')}</dt><dd>{record.provider}</dd></div> : null}
-      {record.official?.routerEndpoints ? <div><dt>{tx('priceEndpoint')}</dt><dd>{record.official.providerName} · {record.official.routerEndpoints.join(', ')}</dd></div> : null}
+      <div><dt>{tx('priceChannel')}</dt><dd>{record.official?.channel || record.provider ? priceSourceLabel(record.official?.channel ?? record.provider, tx) : tx('priceGeneral')}</dd></div>
+      {record.provider ? <div><dt>{tx('priceProvider')}</dt><dd>{priceSourceLabel(record.provider, tx)}</dd></div> : null}
       {record.official?.endpoint ? <div><dt>{tx('priceEndpoint')}</dt><dd>{record.official.endpoint}</dd></div> : null}
       {aliases.length ? <div><dt>{tx('priceAliases')}</dt><dd>{aliases.join(', ')}</dd></div> : null}
       {url ? <div><dt>{tx('priceSource')}</dt><dd><a href={url} target="_blank" rel="noreferrer">{tx('priceViewSource')} <ExternalLink size={12} aria-hidden="true" /></a></dd></div> : null}
     </dl>
-    {record.official?.retained || record.cursor?.retained ? <p className="price-note">{tx('priceRetainedNote')}</p> : null}
-    {record.source === 'openrouter-native' ? <p className="price-note">{tx('priceNativeReferenceNote')}</p> : null}
+    {record.official?.retained ? <p className="price-note">{tx('priceRetainedNote')}</p> : null}
     {record.official?.reference ? <p className="price-note">{tx('priceReferenceNote')}</p> : null}
     <Conditions record={record} tx={tx} locale={locale} />
     {record.revisions ? <History record={record} revision={revision} tx={tx} timezone={timezone} locale={locale} /> : <p className="price-note">{tx('priceNoHistory')}</p>}
@@ -81,7 +78,7 @@ export default function PriceCatalog({ tx, timezone, locale, status, busy, error
   const filtered = useMemo(() => {
     const words = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
     return (records ?? []).filter((row) => (!source || row.source === source) && (!provider || row.provider === provider) && words.every((word) =>
-      [row.name, row.modelId, row.provider, row.official?.endpoint, row.official?.providerName, ...(row.official?.routerEndpoints ?? []), ...(row.official?.aliases ?? row.cursor?.aliases ?? [])].join(' ').toLowerCase().includes(word)))
+      [row.name, row.modelId, row.provider, row.official?.endpoint, ...(row.official?.aliases ?? [])].join(' ').toLowerCase().includes(word)))
       .sort((a, b) => a.name.localeCompare(b.name) || a.source.localeCompare(b.source));
   }, [records, query, source, provider]);
   const pages = Math.max(1, Math.ceil(filtered.length / pageSize)), current = Math.min(page, pages - 1);
@@ -107,7 +104,7 @@ export default function PriceCatalog({ tx, timezone, locale, status, busy, error
     <section className="price-list" aria-busy={catalog.loading}>
       <div className="price-list-heading"><h2>{tx('priceDatabaseTitle')}</h2><p>{tx('priceUnits')}</p></div>
       <div className="price-filters">
-        <label className="price-source-filter"><span>{tx('priceProvider')}</span><select value={provider} onChange={(e) => { setProvider(e.target.value); setPage(0); setExpanded(null); }}><option value="">{tx('priceAllProviders')}</option>{[...new Set((records ?? []).map((row) => row.provider).filter(Boolean))].sort().map((id) => <option key={id} value={id}>{id}</option>)}</select></label>
+        <label className="price-source-filter"><span>{tx('priceProvider')}</span><select value={provider} onChange={(e) => { setProvider(e.target.value); setPage(0); setExpanded(null); }}><option value="">{tx('priceAllProviders')}</option>{[...new Set((records ?? []).map((row) => row.provider).filter(Boolean))].sort().map((id) => <option key={id} value={id}>{priceSourceLabel(id, tx)}</option>)}</select></label>
         <label className="price-search"><Search size={17} aria-hidden="true" /><span className="visually-hidden">{tx('priceSearch')}</span><input type="search" value={query} placeholder={tx('priceSearch')} onChange={(e) => { setQuery(e.target.value); setPage(0); setExpanded(null); }} /></label>
         <label className="price-source-filter"><span>{tx('priceSource')}</span><select value={source} onChange={(e) => { setSource(e.target.value); setPage(0); setExpanded(null); }}><option value="">{tx('priceAllSources')}</option>{sources.map((id) => <option key={id} value={id}>{priceSourceLabel(id, tx)}</option>)}</select></label>
       </div>
@@ -120,8 +117,7 @@ export default function PriceCatalog({ tx, timezone, locale, status, busy, error
             return <Fragment key={record.id}><tr className={open ? 'is-expanded' : undefined}>
               <th scope="row"><button type="button" className="price-model" aria-expanded={open} aria-controls={open ? detailId : undefined} onClick={() => setExpanded(open ? null : record.id)}><ChevronRight size={15} className={open ? 'is-open' : undefined} aria-hidden="true" /><span>{record.name}</span></button>
                 {record.official?.endpoint ? <span className="price-model-note">{record.official.endpoint}</span> : null}
-                {record.cursor?.contextOver != null ? <span className="price-model-note">{tx('priceContextOver', { n: fmtInt(record.cursor.contextOver) })}</span> : null}
-                {record.official?.retained || record.cursor?.retained ? <span className="price-model-note">{tx('priceRetained')}</span> : null}</th>
+                {record.official?.retained ? <span className="price-model-note">{tx('priceRetained')}</span> : null}</th>
               <td>{priceSourceLabel(record.source, tx)}</td>{parts.map(([part]) => <td className="price-number" key={part}><Rate record={record} part={part} tx={tx} /></td>)}
               <td className="price-observed">{record.observedAt ? <time dateTime={record.observedAt}>{fmtDateTime(record.observedAt, timezone)}</time> : '—'}{record.revisions > 0 ? <span>{tx('priceVersionCount', { n: record.revisions })}</span> : null}</td>
             </tr>{open ? <tr><td colSpan={7} id={detailId}><Details record={record} update={catalog.data.updates[record.source]} revision={revision} tx={tx} timezone={timezone} locale={locale} /></td></tr> : null}</Fragment>;

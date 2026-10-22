@@ -3,9 +3,10 @@ import os from 'node:os';
 import path from 'node:path';
 import { savedPriceSources } from './priceselection.js';
 import { createPriceLookup, modelIdentity, priceRecord } from './pricecatalog.js';
-import { litellmContextTiers } from './contextpricing.js';
+import { normalizeLitellmPrice } from './contextpricing.js';
+import { firstPartyProvider } from './firstparty.js';
 
-const LITELLM_URL =
+export const LITELLM_URL =
   'https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json';
 export const PRICE_REFRESH_MS = 7 * 24 * 60 * 60 * 1000;
 const FETCH_TIMEOUT_MS = 4000;
@@ -90,6 +91,8 @@ async function loadLitellmPricing(cacheFile, { offline = false, force = false, n
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       if (!data || typeof data !== 'object' || Array.isArray(data)) throw new Error('invalid LiteLLM price map');
+      const map = buildLitellmMap(data);
+      if (!map?.records.length) throw new Error('LiteLLM price map contains no usable first-party chat prices');
       cached = { fetchedAt: time, data };
       await fs.mkdir(path.dirname(cacheFile), { recursive: true });
       await fs.writeFile(cacheFile, JSON.stringify(cached)).catch(() => {});
@@ -105,31 +108,17 @@ async function loadLitellmPricing(cacheFile, { offline = false, force = false, n
     fetchedAt: cached?.fetchedAt ?? null };
 }
 
-function buildLitellmMap(data) {
+export function buildLitellmMap(data) {
   if (!data || typeof data !== 'object') return null;
   const entries = [];
   for (const [key, v] of Object.entries(data)) {
     if (!v || typeof v !== 'object') continue;
-    if (v.mode && v.mode !== 'chat' && v.mode !== 'responses') continue;
-    if (typeof v.input_cost_per_token !== 'number' || typeof v.output_cost_per_token !== 'number') continue;
-    entries.push([
-      key,
-      {
-        input: v.input_cost_per_token,
-        output: v.output_cost_per_token,
-        // When LiteLLM lacks cache prices, fall back to the input price. This
-        // may overestimate cache reads when their actual rate is lower;
-        // models with separate cache prices use those rates. The fallback is
-        // exposed through costCoverage so reports can explain the estimate.
-        cacheRead: v.cache_read_input_token_cost ?? v.input_cost_per_token,
-        cacheWrite: v.cache_creation_input_token_cost ?? v.input_cost_per_token,
-        source: 'litellm',
-        provider: v.litellm_provider ?? null,
-        cacheReadFallback: v.cache_read_input_token_cost == null,
-        cacheWriteFallback: v.cache_creation_input_token_cost == null,
-        contextTiers: litellmContextTiers(v),
-      },
-    ]);
+    if (v.mode !== 'chat' && v.mode !== 'responses') continue;
+    const provider = firstPartyProvider(key, v.litellm_provider);
+    if (!provider) continue;
+    const rates = normalizeLitellmPrice(v);
+    if (!rates) continue;
+    entries.push([key, { ...rates, source: 'litellm', provider }]);
   }
   return { records: recordsFromEntries(entries) };
 }

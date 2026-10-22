@@ -9,7 +9,6 @@ import { clients } from './clients/index.js';
 import { computeCost, getPricing } from './pricing.js';
 import { priceEnabled } from './priceselection.js';
 import { storedPriceFor } from './pricecatalog.js';
-import { createCursorPriceLookup, cursorPriceRecords, CURSOR_PRICING_URL, getCursorPricing } from './cursorpricing.js';
 import { databasePath } from './database.js';
 import { mergeUsageRows, readUsageImports, readStoredPriceFor } from './usageimports.js';
 import { bindProvider, readProviderBindings } from './providerbindings.js';
@@ -44,23 +43,17 @@ export async function collectAll(opts, { env = process.env, home = os.homedir() 
 
   const perClient = [];
   const all = [];
-  const includedCursorCosts = new WeakSet();
   ids.forEach((id, i) => {
     const r = results[i];
     let entries = [];
     if (r.status === 'fulfilled') {
       entries = r.value.entries;
       warnings.push(...r.value.warnings);
-      if (id === 'cursor') {
-        for (const entry of entries) {
-          if (r.value.includedCosts?.has(entry)) includedCursorCosts.add(entry);
-        }
-      }
     } else {
       const reason = r.reason instanceof Error ? r.reason.message : String(r.reason);
       warnings.push(`${id}: collection failed (${reason})`);
     }
-    if (id !== 'cursor' && imported.some((row) => row.entry.client === id)) {
+    if (imported.some((row) => row.entry.client === id)) {
       entries = mergeUsageRows(entries.map((entry) => ({ entry, reported_cost: entry.costUsd == null ? 0 : 1 })),
         imported.filter((row) => row.entry.client === id)).map((row) => {
         let entry = row.entry;
@@ -83,40 +76,16 @@ export async function collectAll(opts, { env = process.env, home = os.homedir() 
     return bound;
   }), opts);
   warnings.push(...filteredResult.warnings);
-  let cursorPriceFor = () => null;
-  let cursorState = 'skipped (no Cursor usage)';
-  let cursorRecords = [];
-  let cursorSourceDetails = null;
-  let savedCursorPriceFor = () => null;
-  if ((savedPriceFor.selectedSources ?? ['cursor']).includes('cursor') && filteredResult.entries.some((e) => e.client === 'cursor')) {
-    savedCursorPriceFor = readStoredPriceFor(databasePath({ env, home }), warnings);
-    try {
-      const cursorPricing = await getCursorPricing({ offline: opts.offline || savedPriceFor.hasLocalPrices, env, home });
-      cursorPriceFor = createCursorPriceLookup(cursorPricing.models);
-      cursorRecords = cursorPriceRecords(cursorPricing.models);
-      cursorSourceDetails = { fetchedAt: cursorPricing.fetchedAt, url: cursorPricing.source, state: cursorPricing.state };
-      cursorState = cursorPricing.state;
-      warnings.push(...cursorPricing.warnings);
-    } catch (err) {
-      cursorState = 'unavailable';
-      cursorSourceDetails = { fetchedAt: null, url: CURSOR_PRICING_URL, state: 'unavailable' };
-      warnings.push(`Cursor pricing unavailable; Included usage may remain unpriced (${err.message})`);
-    }
-  }
   const pricing = {
     ...basePricing,
-    priceFor: (model, client, entry = null) => client === 'cursor' ? savedCursorPriceFor(model, client, entry) ?? cursorPriceFor(model, entry)
-      : currentPriceFor(model, client, entry) ?? storedPriceFor(model, importedPrices.get(model), entry),
-    records: [...basePricing.records, ...cursorRecords],
-    sourceDetails: { ...basePricing.sourceDetails, ...savedPriceFor.sourceDetails, ...(cursorSourceDetails ? { cursor: cursorSourceDetails } : {}) },
-    sources: { ...basePricing.sources, ...Object.fromEntries(Object.entries(savedPriceFor.sourceDetails ?? {}).map(([source,detail])=>[source,detail.state])), cursor: cursorState },
+    priceFor: (model, client, entry = null) => currentPriceFor(model, client, entry) ?? storedPriceFor(model, importedPrices.get(model), entry),
+    sourceDetails: { ...basePricing.sourceDetails, ...savedPriceFor.sourceDetails },
+    sources: { ...basePricing.sources, ...Object.fromEntries(Object.entries(savedPriceFor.sourceDetails ?? {}).map(([source, detail]) => [source, detail.state])) },
   };
   const reportedCosts = new WeakSet();
   const entries = filteredResult.entries.map((e) => {
     if (e.costUsd != null && !estimatedImports.has(e)) reportedCosts.add(e);
-    // A CSV charge wins. An Included row uses Cursor's current public rate as
-    // a reference estimate and retains its non-reported provenance.
-    const price = e.client === 'cursor' && !includedCursorCosts.has(e) ? null : pricing.priceFor(e.model, e.client, e);
+    const price = pricing.priceFor(e.model, e.client, e);
     const costUsd = computeCost(e, price);
     return costUsd === e.costUsd ? e : { ...e, costUsd };
   });

@@ -2,8 +2,7 @@
 
 **Track token usage, cost and cache hit rate of AI coding agents — right from your terminal.**
 
-toksight reads the local session files your AI coding agents already write, plus imported Cursor
-usage CSVs, and turns them into
+toksight reads the local session files your AI coding agents already write and turns them into
 totals, per-model / per-day / per-session breakdowns and cost estimates. It is a Node.js CLI with
 zero runtime dependencies, plus a local web report (`toksight web`) with heatmaps, agent and model
 breakdowns, and one-click image export.
@@ -21,7 +20,6 @@ Inspired by [tokscale](https://github.com/junhoyeo/tokscale) (and in the same sp
 | Codex CLI | `~/.codex/sessions/**/*.jsonl` | `CODEX_HOME` |
 | OpenCode | `~/.local/share/opencode/opencode.db`; if absent or unreadable, fallback `~/.local/share/opencode/storage/message/**/*.json` | `OPENCODE_PATH` |
 | Kimi Code | `~/.kimi-code/sessions/**/agents/*/wire.jsonl` | `KIMI_CODE_HOME` |
-| Cursor | Usage CSV exported from Cursor, imported through `toksight web` | `TOKSIGHT_CONFIG_DIR` (import storage) |
 
 ## Install
 
@@ -76,7 +74,7 @@ zcode   GLM-5.3             41   116K    1.99M        0   43.3K  94.5%   $0.870
 ### Options
 
 ```
---client <a,b>   only include these clients (zcode, claude, codex, opencode, kimi, cursor)
+--client <a,b>   only include these clients (zcode, claude, codex, opencode, kimi)
 --since <date>   local date (YYYY-MM-DD), inclusive
 --until <date>   local date (YYYY-MM-DD), inclusive
 --today --week --month   date shortcuts
@@ -98,153 +96,86 @@ CLI day grouping and date filters use your **local** timezone. The web report ha
 ## Pricing
 
 The first Web launch guides you through creating a **local price database** in toksight's
-own `usage.sqlite`. This computer downloads public prices directly from OpenAI, Anthropic,
-Google, DeepSeek, Moonshot, Z.AI, Qwen (Alibaba Cloud international) and Cursor, with
-optional sources selected during setup or on the Prices page.
-LiteLLM and the full OpenRouter catalog are **off by default**. You can select only Google,
-for example. Disabling a source also excludes its cached, historical and imported prices
-from estimates in both Web and CLI; saved records remain available if re-enabled.
-User overrides remain available. There is no remote toksight catalog to maintain.
+own `usage.sqlite`. LiteLLM is the public price source and is enabled by default. This
+computer downloads its [model price table](https://github.com/BerriAI/litellm/blob/main/model_prices_and_context_window.json)
+and imports only first-party model providers: OpenAI, Anthropic, Google, DeepSeek, Moonshot,
+Z.AI, Mistral/Codestral, xAI, MiniMax, Alibaba/Qwen, Cohere and AI21.
 
-The default **Native endpoint references (via OpenRouter)** source discovers models from
-OpenAI, Anthropic, Google, xAI, DeepSeek, Moonshot, Alibaba/Qwen, Z.AI, MiniMax, Mistral,
-Cohere and AI21. It checks both model authorship and the actual endpoint operator; a model's
-prefix alone is not enough. Only available original-provider endpoints contribute prices.
-Third-party-only models are skipped, as are models whose native endpoints have conflicting
-rates or conditions. These are token-price references from OpenRouter, not direct-provider
-bills; asynchronous `:batch` catalog variants are never used as interactive rates.
-Original model IDs, endpoint names and source URLs stay visible. Official website
-prices take priority, followed by native endpoint references and optional LiteLLM;
-user overrides always win. The directory supports separate source and provider filters.
-You can fetch prices now or continue with saved prices and user overrides. Setup and the automatic
-update preference are saved in this database, independently of the browser.
+The filter checks both provider metadata and model ownership. Google uses the Gemini API
+price table; marketplace and reseller entries are excluded, including third-party models
+hosted by Mistral or Alibaba. Provider aliases are normalized to one native billing channel.
+Unknown providers and models without usable token rates stay unpriced.
 
-Changed public rates are recorded with the local observation time. Requests use the latest
-rate observed on or before their timestamp; requests before the first observation use the
-earliest known rate as a reference. Unchanged prices do not create revisions. Updates keep
-older rates and reported amounts, and history travels with SQLite backups. These observations
-do not reconstruct price changes that occurred while this computer was not updating.
+You can build the database now or continue with saved prices and user overrides. Prices
+are cached for 7 days at `<toksight-dir>/cache/litellm-pricing.json`; `--offline` reads saved
+prices without making a network request. Setup and automatic-update preferences are saved
+in the database, independently of the browser. Updating prices does not scan agent files.
 
-User overrides remain highest priority, followed by locally saved public prices. Before a
-local public catalog exists, CLI reports use the following layers (later wins). Models with
-no fetched or configured price stay unpriced; token counts are still reported.
+Changed rates are recorded with the local observation time. Requests use the latest rate
+observed on or before their timestamp; requests before the first observation use the earliest
+known rate as a reference. Unchanged prices do not create revisions. History travels with
+SQLite backups, but cannot reconstruct price changes missed between local updates.
 
-1. **LiteLLM (optional, not recommended)** — only loaded after explicitly enabling it on the Prices page; fetched from the community
-   [model prices](https://github.com/BerriAI/litellm/blob/main/model_prices_and_context_window.json)
-   list with a 7-day disk cache at `<toksight-dir>/cache/litellm-pricing.json`. `--offline`
-   uses an existing cache without a network request.
-2. **User overrides** — edit `<toksight-dir>/pricing.json` (per-MTok USD):
+**User overrides** have the highest priority. Edit `<toksight-dir>/pricing.json` (USD per
+million tokens):
 
-   ```json
-   {
-     "my-model": { "input": 3, "output": 15, "cacheRead": 0.3, "cacheWrite": 3.75 }
-   }
-   ```
+```json
+{
+  "my-model": { "input": 3, "output": 15, "cacheRead": 0.3, "cacheWrite": 3.75 }
+}
+```
 
-   Model names match exactly or by an unambiguous provider suffix (`zhipuai/glm-5.3` can also cover `GLM-5.3`).
-
-Within each price source, the original catalog ID is matched before normalized aliases.
-Dated snapshots retain their exact prices; date-free aliases are accepted only when they
-resolve to a catalog name or equivalent rates for the same model and provider. Provider
-prefixes are resolved from catalog metadata, and fine-tuned model prefixes remain distinct.
+Names match exactly or by an unambiguous provider suffix (`zhipuai/glm-5.3` can also cover
+`GLM-5.3`). The original catalog ID is matched before normalized aliases. Dated snapshots
+retain their own prices; date-free aliases require a catalog name or equivalent prices for
+the same model and provider. Fine-tuning prefixes remain distinct.
 
 Codex session provider IDs, OpenCode message providers, Kimi request providers (when safely
-associated with usage) and ZCode rollout providers are retained. Full-catalog OpenRouter prices are used
-only for OpenRouter usage or an explicit `openrouter/` model prefix when the full catalog is enabled; a platform model quote
-is a reference when its actual supplying endpoint is unknown. For detected router models,
-the local updater also downloads endpoint prices, including discounts and explicit context
-or UTC time-window rules. OpenAI long-context prices with an unresolved threshold remain
-base-rate reference estimates. Google text prices exclude audio, cache storage and tool fees.
-
-To map a custom agent provider to a known billing channel, create `<toksight-dir>/providers.json`:
+associated with usage) and ZCode rollout providers are retained. To map a custom agent
+provider to a native API reference, create `<toksight-dir>/providers.json`:
 
 ```json
 [
-  { "client": "codex", "providerId": "myproxy", "provider": "openrouter", "endpoint": "openai", "since": "2026-10-01T00:00:00Z" }
+  { "client": "codex", "providerId": "myproxy", "provider": "openai", "since": "2026-10-01T00:00:00Z" }
 ]
 ```
 
 Bindings optionally filter `model` and use inclusive `since` / exclusive `until` instants
 with an explicit timezone. Overlapping equally specific bindings stay unresolved. Refresh
-usage or update prices after editing. Unknown custom providers need a binding or
-`pricing.json` override; today's agent configuration is never assigned to all past sessions.
+usage or update prices after editing. Unknown custom providers require a binding or a
+`pricing.json` override; today's agent configuration is never applied to all past sessions.
+A binding requests the native API reference price, rather than a quote for the proxy.
 
 Kimi Code's versioned IDs `kimi-code/k3` and `kimi-code/k3-256k` resolve to the
 `moonshot/kimi-k3` reference price, following the official
 [model mapping](https://www.kimi.com/code/docs/en/kimi-code/models.html). Original usage IDs
 are preserved. Exact endpoint prices take precedence within a source, and user overrides
-remain highest priority. This requires a Moonshot catalog rate (an existing cache works
-offline) or a user override. The resulting cost is an API reference estimate, not Kimi Code
-subscription spending or quota consumption. Rolling IDs such as `kimi-code/kimi-for-coding`
-stay unpriced unless explicitly priced: their underlying model can change over time.
+remain highest priority. This requires a Moonshot catalog rate or a user override. The cost
+is an API reference estimate, not Kimi Code subscription spending or quota consumption.
+Rolling IDs such as `kimi-code/kimi-for-coding` stay unpriced unless explicitly priced.
 
-LiteLLM's standard long-context fields (`*_above_200k_tokens`, for example) apply per request
+LiteLLM's standard long-context fields (`*_above_200k_tokens`, for example) and Qwen
+`tiered_pricing` range tables apply per request
 using fresh input + cache read + cache write tokens, excluding output. The highest crossed
-threshold selects the rates for the whole request; xAI's direct API uses inclusive thresholds.
-Missing tier output/cache prices retain published base rates; a missing cache rate at both
-levels falls back to the selected input rate. Cache duration and service-tier adjustments
-are not inferred. User overrides and reported costs keep their priority.
-If a model ID spans different rates, `pricing.modelRates` marks `variableRates` and omits
-a single unit price. Context prices survive SQLite backups and offline imports. Existing
-Web snapshots gain the context metadata on the next price update or usage refresh.
+threshold selects the rates for the whole request; xAI uses inclusive thresholds. Missing
+tier output/cache prices retain published base rates; a missing cache rate at both levels
+falls back to the selected input rate. Cache duration and service-tier adjustments are not
+inferred. Range tables keep an exact upper boundary in the lower tier (32,000 stays in
+`(0, 32000]`); their missing cache prices use that tier's input rate. Reported costs and user
+overrides keep their priority.
+
+If a model ID spans different rates, `pricing.modelRates` marks `variableRates` and omits a
+single unit price. Requests use their original model IDs for pricing before display grouping.
+The saved catalog retains provider, original names, USD-per-token rates and context tiers;
+`price_updates` records fetch/check status. Backups retain accepted prices and history.
 
 `<toksight-dir>` is `TOKSIGHT_CONFIG_DIR` when set; otherwise it is
-`$XDG_CONFIG_HOME/toksight` when that variable is set, or `~/.config/toksight`.
-Models without a price are still counted; their cost shows as `—` and they are listed under
-`pricing.unpricedModels` in JSON output. OpenCode's SQLite `cost: 0` is a placeholder, so only
-nonzero reported database costs win; numeric costs in legacy JSON are kept as reported.
-For Cursor CSV `Included` rows, toksight fetches the official
-[Models & Pricing](https://cursor.com/docs/models-and-pricing) Markdown table, discovers model
-pages through the official [documentation index](https://cursor.com/docs/llms.txt), and reads
-their HTML price tables and model IDs. The downloaded catalog supplies model names, aliases,
-Fast variants and explicitly labeled long-context tiers without a model-family allowlist.
-toksight estimates a
-**reference cost** from that model's input, cache-write, cache-read and output rates. These
-estimates appear in cost totals and rankings but are not charges on your Cursor bill. Numeric CSV
-costs and `Free` remain authoritative. An `Included` row without a matching Cursor rate (such as
-`Auto` without a routed model) stays unpriced. Cursor rates are cached for 7 days at
-`<toksight-dir>/cache/cursor-pricing.json`;
-`--offline` uses a cached copy, if available. `pricing.sources.cursor` reports the cache state,
-and dashboard `costCoverage.sources.cursor` separates these estimates from reported charges.
-Explicit `Long Context (>N)` table tiers are selected per request using fresh input + cache
-read + cache write tokens. If one raw model ID spans multiple rates, its tooltip omits a single
-unit price and JSON marks `variableRates`. Failed detail fetches keep usable overview/cached
-rates with warnings. Previously fetched models absent from an update keep their last known
-rates and original fetch dates (`retained` / `priceFetchedAt` in `pricing.modelRates`).
-The cached published rate is applied to historical rows; past plan rates, unpublished context rules,
-regional uplift, plan-specific fees and other billing terms can make the reference estimate
-differ from actual usage value.
-Older imports did not save the CSV Cost label, so their unknown costs are treated as `Included`
-when the database is upgraded.
-The web snapshot stores normalized rates from all available sources in `model_prices` in toksight's own
-`usage.sqlite`, retaining source, billing scope, original catalog names, USD-per-token rates
-and context-price metadata. `price_updates` records each source's
-last successful fetch and check. Cursor's billing scope uses only Cursor rates. CSV IDs such as
-`cursor-grok-4.6-xhigh-fast` resolve to `grok-4.6-fast`, with `xhigh` retained as an effort level;
-`opus5.5-high` resolves to the official Claude Opus 5.5 rate. Matching prefers the most specific
-catalog name/ID before removing leftover execution-mode words (`low`, `medium`, `high`,
-`xhigh`, `thinking`, `max`). Unique brand-free shorthand is accepted; ambiguous or unknown
-names stay unpriced and retain their original display names. Thus Max modes group with the
-base model, while a published Max model remains distinct automatically. Fast and 500k require
-their own catalog prices. New catalog models work after a price update without code edits.
-Existing imports benefit without re-uploading the CSV; names in Cursor report rows come from
-the matched official catalog, including rows with reported charges.
-CSV imports preserve the `Max Mode` column as optional `cursorMaxMode` metadata in stored
-records (true/false, or null when unknown); re-importing can fill or correct this metadata
-without duplicating events or erasing reported charges. Older records lack the column until
-re-imported. A Max mode suffix is kept separately from reasoning effort internally; it does
-not imply a known historical plan or automatically add a legacy-plan surcharge.
-Other agents use the generic source priority
-above. A locally observed price applied to older usage is a reference estimate, not a
-historical bill. Requests are priced using their original model ID, then grouped for display by
-agent and normalized model name. A model row's hover tooltip shows the rates used when every
-ID in that row has the same rate; JSON `pricing.modelRates` retains raw IDs, effort and rates.
-When Cursor lists `-` for a cache rate, those tokens use the listed input rate as a fallback;
-`costCoverage.cacheFallbackRequests` counts affected requests.
-
-When a LiteLLM entry has no separate cache prices, toksight estimates cached tokens at that
-model's input rate and marks affected requests in `costCoverage.cacheFallbackRequests`. This can
-overestimate cache-read costs when their actual rate is lower. Models with separate cache prices use them.
+`$XDG_CONFIG_HOME/toksight` when set, or `~/.config/toksight`. Models without a price still
+count toward tokens; their cost shows as `—` and they appear in `pricing.unpricedModels`.
+OpenCode SQLite `cost: 0` is a placeholder; only nonzero database costs are treated as reported,
+while numeric legacy JSON costs are preserved. Missing LiteLLM cache prices fall back to the
+input rate and are counted in `costCoverage.cacheFallbackRequests`; this can overestimate
+cache-read costs. Reference estimates do not represent historical or subscription bills.
 
 ## Web dashboard
 
@@ -266,18 +197,18 @@ refreshed. `toksight refresh --offline` skips pricing fetches.
 
 **Export database** in **Settings** downloads a standalone `.sqlite` backup of all
 committed usage, across every agent and date, regardless of the displayed period or startup
-filters. It includes session titles/directories, Cursor imports, prices and cost provenance;
+filters. It includes session titles/directories, imported usage, prices and cost provenance;
 agent files, credentials and browser preferences are not included. Run refresh first if you
 want to collect new sessions before exporting. **Import database** accepts a toksight `.sqlite`
 or `.db` file (up to 256 MB), shows the merge behavior, then imports transactionally. Invalid or
 unsupported databases leave existing data intact. Results show added, updated and duplicate
 records; the report moves to the backup's latest usage period.
 
-Imports **merge and deduplicate**; they never replace the destination database. Non-Cursor
+Imports **merge and deduplicate**; they never replace the destination database. Usage
 records match on agent, session ID, timestamp, model and token counts, preserving the largest
 occurrence count of identical requests across backups. Paths and titles do not affect matching.
 Existing reported costs and conflicting price records win; a reported cost can fill an estimate.
-Cursor retains its CSV event matching. Changed usage fields cannot be recognized as the same
+Changed usage fields cannot be recognized as the same
 request and may count again. Imported history survives refresh, appears in CLI reports and can
 be exported again. Estimates can change when local prices update.
 
@@ -289,25 +220,24 @@ bytes, merge statistics as JSON); both retain the local Host check and import re
 origin. Transfers work offline and never write agent files.
 
 **Reset price database** beside **Update prices** at the top of the **Prices** page clears saved rates, observed price history,
-downloaded Cursor/LiteLLM caches and stored fallback rates, then returns to price setup.
+the downloaded LiteLLM cache and stored fallback rates, then returns to price setup.
 The confirmation dialog shows what will be cleared and keeps any error visible for retry.
 Confirm the reset and choose **Build price database** to fetch fresh prices, or continue locally
 with your custom pricing. Historical estimates will be recalculated;
-usage, reported costs, Cursor CSV/database imports, selected sources, `pricing.json` and
+usage, reported costs, database imports, selected sources, `pricing.json` and
 `providers.json` are preserved. This resets the price data inside the shared `usage.sqlite`,
 not the usage database file. Export a database backup first if you want to retain price history.
 
 The CLI equivalent is `toksight reset-prices` (supports `--json` and works offline), followed
 by `toksight web` to rebuild. It accepts no date or client filters. Close other toksight
 processes before running the CLI reset. Web uses `POST /api/prices/reset`; it returns setup
-status with `completed: false` and rejects a reset with HTTP 409 while that server is refreshing,
-importing Cursor data or updating prices. Reset itself does not scan agents or access the network.
+status with `completed: false` and rejects a reset with HTTP 409 while that server is refreshing or updating prices. Reset itself does not scan agents or access the network.
 
-The **Update prices** button calls `POST /api/prices/update` to download the public sources
-directly on this machine, bypassing the 7-day interval. **Prices** in the left navigation shows
+The **Update prices** button calls `POST /api/prices/update` to download LiteLLM prices
+on this machine, bypassing the 7-day interval. **Prices** in the left navigation shows
 the saved catalog, source download times, and input/output/cache rates in USD per million tokens.
-Search by model/provider/endpoint, filter by source, and select a model to inspect its billing
-channel, conditions and locally observed price history. This page also controls automatic updates.
+Search or filter by provider and select a model to inspect its original ID, context
+tiers and locally observed price history. This page also controls automatic updates.
 Browsing prices reads only the local database. When automatic updates are enabled, the server
 checks hourly as well as on startup/report requests; expired sources refresh and failed checks
 retry after an hour. Checks stop when the server closes. Price changes revalue the applicable
@@ -318,23 +248,11 @@ the automatic-update preference. `GET /api/prices` reads the catalog; add `key=<
 read a model's revisions, newest first. API token rates remain USD per token. These endpoints
 use the existing Host/Origin checks.
 
-To add Cursor history, export **Usage Events** as CSV in Cursor, open `toksight web`, and choose
-**Import Cursor CSV** in **Settings**. The file is sent only to the local toksight server and its
-usage rows are saved in `usage.sqlite`; repeat or overlapping exports are matched by timestamp,
-model and token counts, so changes to billing labels or charges do not add tokens twice. Imports
-remain available after refresh and in CLI reports (`--client cursor`). Rows with zero tokens are
-skipped. Cursor's CSV has no session ID, so Cursor session counts and session details are omitted.
-Its `Cache Read` column allows the same cache hit rate calculation as other agents.
-Cursor exports no event ID, so two truly distinct events with identical timestamp, model and
-token counts cannot be distinguished from one event repeated across files; if Cursor later revises
-a model name or token counts, that event may be counted again. The import reports what it matched.
-
 The dashboard opens on **Today**, with **Calendar**, **Prices** and **Settings** in the sidebar.
 The full-height sidebar sits beside the report, with the logo at the top, vertically centered
-navigation, and theme and 中文 / EN controls at the bottom. Navigation and preference buttons
-have generous click targets. On small screens, the sidebar becomes a compact area above the report
-with navigation and an **Appearance** menu for theme and language. The sidebar uses a solid gray background;
-the report keeps a faint dot grid, clear chart/table backgrounds and a warm light/dark palette (visual spec: `design-spec.md`).
+navigation, and theme and 中文 / EN controls at the bottom. On small screens, the sidebar becomes a compact area above the report
+with navigation and an **Appearance** menu for theme and language. The page uses a cool gray background;
+the report sits on a white panel with black and gray controls (visual spec: `design-spec.md`).
 **Refresh**, **Update prices**, and **Export image** are above the report.
 
 - **Today** emphasizes tokens and reference cost, with cache hit rate and requests alongside, followed by hourly
@@ -351,7 +269,7 @@ the report keeps a faint dot grid, clear chart/table backgrounds and a warm ligh
   A range-trend shortcut remains available. Short ranges use a
   calendar; long ranges use week grids grouped by year. Trends use hours for a single day,
   days up to 62 elapsed dates, and months for longer ranges, with missing dates filled as zero.
-- **Settings** contains the reporting time zone, database import/export and Cursor CSV import.
+- **Settings** contains the reporting time zone, database import/export.
 
 The time zone defaults to the browser's detected zone and can be set explicitly, for example
 `Asia/Shanghai` when the operating system is set to US time. Today, date boundaries, hourly
@@ -386,9 +304,8 @@ an IANA reporting zone for filters and all calendar/hour aggregates; omission pr
 server-local default. Unknown, duplicate or invalid parameters
 return HTTP 400. `POST /api/refresh` updates the database and returns its refresh time and entry
 count and collection warnings. The web API's additive `snapshot` field exposes the refresh time
-and count. `POST /api/prices/update` refreshes the public price sources locally without rescanning
-usage. `POST /api/import/cursor` accepts a UTF-8 Cursor usage CSV (up to 20 MB) and returns
-imported, updated-charge, duplicate and skipped row counts. Cross-origin write requests are rejected.
+and count. `POST /api/prices/update` refreshes LiteLLM prices locally without rescanning
+usage. Cross-origin write requests are rejected.
 
 ### Dashboard bundle
 
@@ -411,19 +328,15 @@ after editing the frontend. `npm pack` and `npm publish` rebuild the dashboard a
 request, so a session that switched models splits cleanly across the per-agent / per-model views —
 a model's cache can only ever hit for that same model, so request-level attribution is exact.
 ZCode reports `input_tokens` as the whole prompt with cache reads included, so toksight subtracts
-them to expose fresh input and keep this formula meaningful across agents. Cursor's CSV already
-separates fresh input, cache reads and cache writes.
+them to expose fresh input and keep this formula meaningful across agents.
 
 ## Privacy
 
 toksight is local-first: the CLI and web report only **read** your agents' session files. Refresh
 writes toksight's own SQLite database under its config directory; price fetches may update local
-cache files. toksight does not upload usage or write back to agent files. Cursor CSV imports are
-stored in that database. If you change `--host`, other clients on that network may read the
-report/API. The only external requests
-fetch official OpenAI, Anthropic, Google, DeepSeek, Moonshot, Z.AI and Qwen prices, OpenRouter models/endpoints, Cursor's official pricing
-overview/index/model pages, OpenRouter native endpoint references, and LiteLLM only when explicitly enabled. Run `--offline`
-to disable network price requests. Report images are
+cache files. toksight does not upload usage or write back to agent files. If you change
+`--host`, other clients on that network may read the report/API. External requests download
+the LiteLLM price table; `--offline` disables these requests. Report images are
 rendered in your browser and saved only where you download them.
 
 ## JSON output

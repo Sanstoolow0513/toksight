@@ -6,19 +6,14 @@
 export async function exportReportImage(node, filename) {
   const { domToPng } = await import('modern-screenshot');
   const root = getComputedStyle(document.documentElement);
-  const bg = root.getPropertyValue('--bg').trim();
-  const dot = root.getPropertyValue('--dot').trim();
+  const bg = root.getPropertyValue('--surface').trim();
   node.classList.add('is-exporting');
   let url;
   try {
     url = await domToPng(node, {
       scale: Math.max(2, window.devicePixelRatio || 1),
       backgroundColor: bg,
-      style: {
-        backgroundImage: `radial-gradient(circle, ${dot} .8px, transparent 1.1px)`,
-        backgroundSize: '28px 28px',
-        backgroundPosition: '14px 14px',
-      },
+      style: { backgroundImage: 'none' },
       filter: (el) => !(el instanceof Element && el.classList.contains('no-export')),
     });
   } finally {

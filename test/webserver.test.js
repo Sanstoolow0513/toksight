@@ -130,30 +130,6 @@ test('POST /api/prices/update is same-origin and invokes only price refresh', as
   });
 });
 
-test('POST /api/import/cursor accepts local CSV and rejects foreign origins and Hosts', async () => {
-  let imports = 0;
-  const getData = async () => payload;
-  getData.importCursor = async (csv) => ({ imported: ++imports, bytes: Buffer.byteLength(csv) });
-  await withServer({ getData }, async (url) => {
-    const good = await fetch(`${url}/api/import/cursor`, { method: 'POST', headers: { 'content-type': 'text/csv' }, body: 'Date,Model\n' });
-    assert.equal(good.status, 200);
-    assert.deepEqual(await good.json(), { imported: 1, bytes: 11 });
-    const get = await fetch(`${url}/api/import/cursor`);
-    assert.equal(get.status, 405);
-    const foreign = await fetch(`${url}/api/import/cursor`, { method: 'POST', headers: { Origin: 'https://evil.example' }, body: 'csv' });
-    assert.equal(foreign.status, 403);
-    assert.equal((await foreign.json()).code, 'ORIGIN_NOT_ALLOWED');
-    const invalidUtf8 = await fetch(`${url}/api/import/cursor`, { method: 'POST', body: new Uint8Array([0xff]) });
-    assert.equal(invalidUtf8.status, 400);
-    assert.equal((await invalidUtf8.json()).code, 'BAD_CSV');
-    assert.equal(imports, 1);
-    const port = Number(new URL(url).port);
-    const forged = await rawRequest(port, `POST /api/import/cursor HTTP/1.1\r\nHost: evil.example\r\nContent-Length: 0\r\nConnection: close\r\n\r\n`);
-    assert.ok(forged.startsWith('HTTP/1.1 403'));
-    assert.match(forged, /HOST_NOT_ALLOWED/);
-  });
-});
-
 test('database download and upload enforce methods, Host, origin and size limits', async () => {
   const bytes = Buffer.from('SQLite format 3\0fixture');
   let imports = 0;
@@ -339,5 +315,15 @@ test('start() rejects with a friendly error when the port is taken', async () =>
     const port = Number(new URL(url).port);
     const second = createWebServer({ port, outDir: os.tmpdir(), getData: async () => payload });
     await assert.rejects(() => second.start(), /already in use/);
+  });
+});
+
+test('retired Cursor import endpoint is unavailable', async () => {
+  await withServer({}, async (url) => {
+    for (const method of ['GET', 'POST']) {
+      const response = await fetch(url + '/api/import/cursor', { method });
+      assert.equal(response.status, 404);
+      assert.equal((await response.json()).code, 'NOT_FOUND');
+    }
   });
 });

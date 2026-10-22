@@ -6,6 +6,42 @@ const RATE_KEYS = {
 };
 const nonnegative = (value) => Number.isFinite(value) && value >= 0;
 
+// LiteLLM's range tables choose one rate for the entire request, including its
+// output: start < prompt tokens <= end. The last rate also covers longer input.
+// See litellm_core_utils/llm_cost_calc/tiered_pricing.py in the upstream project.
+export function normalizeLitellmPrice(model) {
+  if (!model || typeof model !== 'object' || Array.isArray(model)) return null;
+  if (model.tiered_pricing != null) {
+    const raw = model.tiered_pricing;
+    if (!Array.isArray(raw) || !raw.length || raw.some((tier) => !tier ||
+      typeof tier !== 'object' || Array.isArray(tier) || !Array.isArray(tier.range) || tier.range.length !== 2 ||
+      !tier.range.every(Number.isSafeInteger) || tier.range[0] < 0 || tier.range[1] <= tier.range[0])) return null;
+    const sorted = [...raw].sort((a, b) => a.range[0] - b.range[0]);
+    if (sorted[0].range[0] !== 0 || sorted.some((tier, i) => i > 0 && tier.range[0] !== sorted[i - 1].range[1])) return null;
+    const rates = sorted.map((tier) => ({
+      input: tier.input_cost_per_token,
+      output: tier.output_cost_per_token ?? model.output_cost_per_token,
+      // Unlike above_N fields, a range tier's cache fallback is its own input
+      // rate, even when the top-level model publishes a different cache rate.
+      cacheRead: tier.cache_read_input_token_cost ?? tier.input_cost_per_token,
+      cacheWrite: tier.cache_creation_input_token_cost ?? tier.input_cost_per_token,
+      cacheReadFallback: tier.cache_read_input_token_cost == null,
+      cacheWriteFallback: tier.cache_creation_input_token_cost == null,
+    }));
+    if (rates.some((tier) => Object.keys(RATE_KEYS).some((part) => !nonnegative(tier[part])))) return null;
+    return { ...rates[0], contextTiers: rates.slice(1).map((tier, i) => ({ contextOver: sorted[i + 1].range[0], ...tier })) };
+  }
+  const base = {
+    input: model.input_cost_per_token, output: model.output_cost_per_token,
+    cacheRead: model.cache_read_input_token_cost ?? model.input_cost_per_token,
+    cacheWrite: model.cache_creation_input_token_cost ?? model.input_cost_per_token,
+    cacheReadFallback: model.cache_read_input_token_cost == null,
+    cacheWriteFallback: model.cache_creation_input_token_cost == null,
+  };
+  if (Object.keys(RATE_KEYS).some((part) => !nonnegative(base[part]))) return null;
+  return { ...base, contextTiers: litellmContextTiers(model) };
+}
+
 export function litellmContextTiers(model) {
   const tiers = new Map();
   for (const key of Object.keys(model)) {

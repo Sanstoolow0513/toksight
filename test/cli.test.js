@@ -104,7 +104,7 @@ test('collectAll collects fixtures, prices entries without mutating them', async
     assert.ok(raw.every((e) => e.costUsd == null));
 
     // Offline pricing state is surfaced.
-    assert.equal(ctx.pricing.sources.litellm, 'disabled');
+    assert.equal(ctx.pricing.sources.litellm, 'skipped (offline)');
     assert.equal(ctx.pricing.sources.user, true);
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true });
@@ -174,7 +174,7 @@ test('client filters restrict entries and perClient stays complete', async () =>
     const ctx = await collectAll({ ...BASE_OPTS, clients: ['codex'] }, { env, home });
     assert.equal(ctx.entries.length, 0);
     // perClient reports every client regardless of the filter.
-    assert.equal(ctx.perClient.length, 6);
+    assert.equal(ctx.perClient.length, 5);
     const claude = ctx.perClient.find((c) => c.id === 'claude');
     assert.equal(claude.entries.length, 3);
   } finally {

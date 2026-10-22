@@ -40,8 +40,8 @@ export function readUsageImports(file, warnings = []) {
     db = new DatabaseSync(file, { readOnly: true });
     if (!db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'usage_imports'").get()) return [];
     return db.prepare('SELECT * FROM usage_imports ORDER BY rowid').all().map((row) => ({
-      ...row, entry: JSON.parse(row.data_json), price: JSON.parse(row.price_json),
-    }));
+      ...row, entry: JSON.parse(row.data_json),
+    })).filter((row) => row.entry.client !== 'cursor').map((row) => ({ ...row, price: JSON.parse(row.price_json) }));
   } catch (err) {
     warnings.push(`toksight: cannot read imported usage (${err.message})`);
     return [];
@@ -62,11 +62,12 @@ export function readStoredPriceFor(file, warnings = []) {
       input_usd_per_token AS input, cache_read_usd_per_token AS cacheRead,
       cache_write_usd_per_token AS cacheWrite, output_usd_per_token AS output,
       cache_read_fallback AS cacheReadFallback, cache_write_fallback AS cacheWriteFallback,
-      ${hasMetadata ? 'metadata_json' : "'null'"} AS metadataJson FROM model_prices ORDER BY id`).all().map(decodePriceRecord).filter((row) => priceEnabled(row, selectedSources)) : [];
+      ${hasMetadata ? 'metadata_json' : "'null'"} AS metadataJson FROM model_prices ORDER BY id`).all()
+      .filter((row) => row.scope === 'default' && priceEnabled(row, selectedSources)).map(decodePriceRecord) : [];
     const history = tables.has('price_history') ? db.prepare('SELECT * FROM price_history').all().filter((row) => priceEnabled(JSON.parse(row.record_json), selectedSources)) : [];
     const lookup = createHistoricalPriceLookup(history, catalog);
     const priceFor = (model, client, entry = null) => {
-      const fallback = prices.get(client === 'cursor' ? `cursor\u0000${model}` : model);
+      const fallback = prices.get(model);
       return lookup(model, client, entry) ?? (priceEnabled(fallback, selectedSources) ? storedPriceFor(model, fallback, entry) : null);
     };
     priceFor.selectedSources = selectedSources;

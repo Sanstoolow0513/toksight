@@ -26,7 +26,7 @@ Next 生产构建始终静态导出，不受 `TOKSIGHT_DEV_API` 影响。源码�
 | Web 布局或交互 | 对照 `design-spec.md`，运行 `npm run web:build`；用户可见改动同步两份 README |
 | CLI 选项、来源、价格或 JSON 形状 | 同步 `README.md` 与 `README.zh-CN.md`，保持两份文档结构大体一致 |
 
-`npm run check:package` 会先准备网页构建依赖，再打包到临时目录，用 fixture 检查安装包的页面、资源、`/api/data` 查询范围/周期、Cursor 导入和 SQLite 刷新。`scripts/` 不进入 npm 包。Windows 路径和 `C:\\...` fixture 是测试范围的一部分。
+`npm run check:package` 会先准备网页构建依赖，再打包到临时目录，用 fixture 检查安装包的页面、资源、`/api/data` 查询范围/周期、SQLite 备份合并和刷新。`scripts/` 不进入 npm 包。Windows 路径和 `C:\\...` fixture 是测试范围的一部分。
 
 ## 分支与推送
 

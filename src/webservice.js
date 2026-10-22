@@ -8,20 +8,16 @@ import { calendarDaysBetween, endOfDay, startOfDay, stepDay, weekday } from './d
 import { localDate } from './aggregate.js';
 import { createUsageDatabase } from './database.js';
 import { getPricing, PRICE_REFRESH_MS } from './pricing.js';
-import { parseCursorCsv } from './cursorcsv.js';
-import { createCursorPriceLookup, cursorPriceRecords, getCursorPricing } from './cursorpricing.js';
 import { PRICE_SOURCES, validPriceSources } from './priceselection.js';
-import { getPublicPricing, PUBLIC_PRICE_SOURCES } from './publicpricing.js';
 import { resetPriceDatabase } from './pricereset.js';
 
 // The database is loaded before serving. Requests reuse its in-memory snapshot;
 // refreshes share a single collection/write and swap only after commit.
-export function createWebDataService(base, { collect = collectAll, env, home, database = createUsageDatabase({ env, home }), now = Date.now, cursorPricing = getCursorPricing, genericPricing = getPricing, publicPricing = getPublicPricing,
+export function createWebDataService(base, { collect = collectAll, env, home, database = createUsageDatabase({ env, home }), now = Date.now, genericPricing = getPricing,
   setIntervalImpl = setInterval, clearIntervalImpl = clearInterval } = {}) {
   let inflightRefresh = null;
   let inflightPrices = null;
   let initialized = false;
-  let cursorImports = 0;
   let startupPricingWarnings = [];
   let timer = null, closed = false, inflightSetup = null;
   const assertOpen = () => { if (closed) throw new Error('web service is closed'); };
@@ -43,7 +39,7 @@ export function createWebDataService(base, { collect = collectAll, env, home, da
         .then(() => collect({ ...base, offline: true, clients: null, since: null, until: null }, { env, home }))
         .then((raw) => { assertOpen(); return database.replace(raw); })
         .then((current) => {
-          if (current.pricing.sources.cursor !== 'unavailable') startupPricingWarnings = [];
+          if (!String(current.pricing.sources.litellm).startsWith('unavailable')) startupPricingWarnings = [];
           return current;
         });
       inflightRefresh = run;
@@ -72,40 +68,17 @@ export function createWebDataService(base, { collect = collectAll, env, home, da
         return !Number.isFinite(fetched) || time - fetched >= PRICE_REFRESH_MS;
       };
       if (!force && !selectedSources.some(due)) return { updated: false, updates, warnings: [] };
-      const [generic, cursor, publicRates] = await Promise.allSettled([
-        genericPricing({ offline: base.offline, force, env, home, now, selectedSources }),
-        selectedSources.includes('cursor') ? cursorPricing({ offline: base.offline, force, env, home, now }) : Promise.resolve({ models: [], warnings: [], state: 'disabled' }),
-        publicPricing({ offline: base.offline, now, selectedSources, routerModels: current.entries.filter((e) => e.providerId === 'openrouter' || e.pricingProvider === 'openrouter' || e.model.startsWith('openrouter/'))
-          .map((e) => e.model.replace(/^openrouter\//, '')) }),
-      ]);
       const records = [], sources = [], details = {}, warnings = [];
-      if (generic.status === 'fulfilled') {
-        records.push(...(generic.value.records ?? []));
+      try {
+        const generic = await genericPricing({ offline: base.offline, force, env, home, now, selectedSources });
+        records.push(...(generic.records ?? []));
         sources.push('user');
         if (records.some((record) => record.source === 'litellm')) sources.push('litellm');
-        Object.assign(details, generic.value.sourceDetails);
-        warnings.push(...(generic.value.warnings ?? []));
-      } else {
-        warnings.push(`Fallback pricing unavailable (${generic.reason?.message || generic.reason})`);
+        Object.assign(details, generic.sourceDetails);
+        warnings.push(...(generic.warnings ?? []));
+      } catch (err) {
+        warnings.push(`LiteLLM pricing unavailable; keeping saved prices (${err?.message || err})`);
         details.litellm = { fetchedAt: null, url: null, state: 'unavailable' };
-      }
-      if (cursor.status === 'fulfilled') {
-        const cursorRecords = cursorPriceRecords(cursor.value.models);
-        records.push(...cursorRecords);
-        if (cursorRecords.length) sources.push('cursor');
-        details.cursor = { fetchedAt: cursor.value.fetchedAt, url: cursor.value.source, state: cursor.value.state };
-        warnings.push(...(cursor.value.warnings ?? []));
-      } else {
-        if (!base.offline) warnings.push(`Cursor pricing unavailable (${cursor.reason?.message || cursor.reason})`);
-        details.cursor = { fetchedAt: null, url: null, state: base.offline ? 'skipped (offline)' : 'unavailable' };
-      }
-      if (publicRates.status === 'fulfilled') {
-        records.push(...publicRates.value.records); sources.push(...publicRates.value.sources);
-        Object.assign(details, publicRates.value.sourceDetails);
-        warnings.push(...publicRates.value.warnings);
-      } else {
-        warnings.push(`Public pricing unavailable; keeping saved prices (${publicRates.reason?.message || publicRates.reason})`);
-        for (const [source, url] of [...Object.entries(PUBLIC_PRICE_SOURCES), ['openrouter-native', PUBLIC_PRICE_SOURCES.openrouter]].filter(([source]) => selectedSources.includes(source))) details[source] = { fetchedAt: null, state: 'unavailable', url };
       }
       assertOpen();
       const latest = database.updatePriceCatalog({ records, sourceDetails: details, sources }, new Date(time).toISOString());
@@ -177,7 +150,7 @@ export function createWebDataService(base, { collect = collectAll, env, home, da
   getData.updatePrices = () => updatePrices(true);
   getData.resetPrices = () => {
     assertOpen();
-    if (inflightRefresh || inflightPrices || inflightSetup || cursorImports) {
+    if (inflightRefresh || inflightPrices || inflightSetup) {
       const err = new Error('Wait for the current refresh, import or price update before resetting prices');
       err.status = 409; err.code = 'PRICE_BUSY'; throw err;
     }
@@ -212,9 +185,9 @@ export function createWebDataService(base, { collect = collectAll, env, home, da
       else if (!database.priceStatus().completed && !base.offline) {
         // Continuing locally must not trigger an immediate download on the
         // very next report GET. Automatic checks can start after one hour.
-        database.updatePriceCatalog({ records: [], sources: [], sourceDetails: Object.fromEntries([
-          ...Object.entries(PUBLIC_PRICE_SOURCES), ['openrouter-native', PUBLIC_PRICE_SOURCES.openrouter], ['litellm', null], ['cursor', 'https://cursor.com/docs/models-and-pricing.md'],
-        ].map(([source,url]) => [source,{fetchedAt:null,state:'deferred',url}])) }, new Date(now()).toISOString());
+        database.updatePriceCatalog({ records: [], sources: [], sourceDetails: {
+          litellm: { fetchedAt: null, state: 'deferred', url: null },
+        } }, new Date(now()).toISOString());
       }
       if (options.offline || base.offline) {
         const local = await genericPricing({ offline: true, env, home, selectedSources: [] });
@@ -241,35 +214,6 @@ export function createWebDataService(base, { collect = collectAll, env, home, da
     // all later scans through its own durable table.
     if (inflightRefresh) await inflightRefresh;
     return database.importDatabase(bytes);
-  };
-  getData.importCursor = async (csv) => {
-    cursorImports++;
-    try {
-      const parsed = parseCursorCsv(csv);
-      await snapshot();
-      let cursorRates = null;
-      const warnings = [...parsed.warnings];
-      if (database.priceStatus().selectedSources.includes('cursor') && parsed.records.some((record) => record.included)) {
-        try {
-          const result = await cursorPricing({ offline: base.offline, env, home });
-          cursorRates = { priceFor: createCursorPriceLookup(result.models), records: cursorPriceRecords(result.models),
-            sourceDetails: { cursor: { fetchedAt: result.fetchedAt, url: result.source, state: result.state } }, state: result.state };
-          warnings.push(...result.warnings);
-          startupPricingWarnings = [];
-        } catch (err) {
-          warnings.push(`Cursor pricing unavailable; Included usage may remain unpriced (${err.message})`);
-        }
-      }
-      const { imported, duplicates, updated, snapshot: current } = database.importCursor(parsed.records, undefined, cursorRates);
-      let latestAt = null;
-      for (const { entry } of parsed.records) {
-        if (latestAt == null || entry.timestamp > latestAt) latestAt = entry.timestamp;
-      }
-      return {
-        imported, duplicates, updated, skipped: parsed.skipped, zeroUsage: parsed.zeroUsage,
-        rows: parsed.rows, latestAt, entries: current.entries.length, warnings,
-      };
-    } finally { cursorImports--; }
   };
   getData.close = () => { closed = true; if (timer) clearIntervalImpl(timer); timer = null; database.close(); };
   return getData;

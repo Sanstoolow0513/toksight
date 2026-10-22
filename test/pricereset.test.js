@@ -10,13 +10,12 @@ import path from 'node:path';
 import http from 'node:http';
 import { createUsageDatabase } from '../src/database.js';
 import { createPriceLookup, priceRecord } from '../src/pricecatalog.js';
-import { parseCursorCsv } from '../src/cursorcsv.js';
 import { parseArgs } from '../src/args.js';
 import { createWebDataService } from '../src/webservice.js';
 import { createWebServer } from '../src/webserver.js';
 import { resetPriceDatabase } from '../src/pricereset.js';
 
-const rate = (input = 2e-6) => priceRecord({ source: 'openai', name: 'gpt-example', input,
+const rate = (input = 2e-6) => priceRecord({ source: 'litellm', provider: 'openai', name: 'gpt-example', input,
   output: 0, cacheRead: 0, cacheWrite: 0 });
 const entry = (sessionId, costUsd = null) => ({ client: 'codex', sessionId, model: 'gpt-example',
   timestamp: Date.parse('2026-10-01T12:00:00Z'), inputTokens: 1e6, outputTokens: 0,
@@ -40,12 +39,7 @@ test('reset removes price history and every fallback, preserves imports and char
   db.replace(raw([entry('local')]));
   db.importDatabase(source.exportDatabase());
   source.close();
-  const csv = 'Date,Cloud Agent ID,Automation ID,Kind,Model,Max Mode,Input (w/ Cache Write),Input (w/o Cache Write),Cache Read,Output Tokens,Total Tokens,Cost\n' +
-    '2026-10-01T12:00:00Z,,,Included,cursor-example,No,0,100,0,0,100,Included\n' +
-    '2026-10-02T12:00:00Z,,,Usage,cursor-example,No,0,100,0,0,100,0.5\n';
-  db.importCursor(parseCursorCsv(csv).records);
-  db.updateCursorPricing({ state: 'fresh', priceFor: () => ({ ...rate(), source: 'cursor' }) });
-  db.selectPriceSources(['openai', 'cursor']);
+  db.selectPriceSources(['litellm']);
   db.completeSetup({ autoUpdate: false });
   const reader = createUsageDatabase({ env });
   connections.push(reader);
@@ -54,22 +48,22 @@ test('reset removes price history and every fallback, preserves imports and char
   const status = resetPriceDatabase(db, { env });
   assert.equal(status.completed, false);
   assert.equal(status.revisions, 0);
-  assert.deepEqual(status.selectedSources, ['openai', 'cursor']);
+  assert.deepEqual(status.selectedSources, ['litellm']);
   assert.deepEqual(db.priceCatalog().records, []);
   assert.deepEqual(db.priceCatalog().updates, {});
   const after = reader.read();
-  assert.equal(after.entries.length, 5);
+  assert.equal(after.entries.length, 3);
   assert.equal(after.refreshedAt, before.refreshedAt);
-  assert.deepEqual(after.entries.map(e => e.costUsd), [null, null, 7, null, 0.5]);
+  assert.deepEqual(after.entries.map(e => e.costUsd), [null, null, 7]);
   assert.equal(after.reportedCosts.has(after.entries[2]), true);
   const reopened = createUsageDatabase({ env });
   const restored = createUsageDatabase({ file: ':memory:' });
   try {
-    assert.deepEqual(reopened.read().entries.map(e => e.costUsd), [null, null, 7, null, 0.5]);
+    assert.deepEqual(reopened.read().entries.map(e => e.costUsd), [null, null, 7]);
     restored.importDatabase(db.exportDatabase());
-    assert.deepEqual(restored.read().entries.map(e => e.costUsd), [null, null, 7, null, 0.5]);
-    db.updatePriceCatalog({ records: [rate(3e-6)], sources: ['openai'], sourceDetails: {} });
-    assert.deepEqual(db.read().entries.map(e => e.costUsd), [3, 3, 7, null, 0.5]);
+    assert.deepEqual(restored.read().entries.map(e => e.costUsd), [null, null, 7]);
+    db.updatePriceCatalog({ records: [rate(3e-6)], sources: ['litellm'], sourceDetails: {} });
+    assert.deepEqual(db.read().entries.map(e => e.costUsd), [3, 3, 7]);
     assert.equal(db.priceStatus().revisions, 1);
   } finally { reopened.close(); restored.close(); }
 });
@@ -115,14 +109,13 @@ test('CLI reset removes only downloaded caches and rejects usage filters', async
 test('Web reset validates Host, Origin and method, blocks active updates, then rebuilds without scanning', async (t) => {
   const { db, env } = await fixture(t);
   db.replace(raw([entry('local')]));
-  db.selectPriceSources(['openai']);
+  db.selectPriceSources(['litellm']);
   db.completeSetup({ autoUpdate: false });
   let release, fetches = 0;
   const pending = new Promise(resolve => { release = resolve; });
   const get = createWebDataService(parseArgs([]), { database: db, env,
     collect: async () => { throw new Error('must not scan'); },
-    genericPricing: async () => ({ records: [], warnings: [], sourceDetails: {} }),
-    publicPricing: async () => { fetches++; await pending; return { records: [rate(3e-6)], sources: ['openai'], sourceDetails: {}, warnings: [] }; },
+    genericPricing: async () => { fetches++; await pending; return { records: [rate(3e-6)], sourceDetails: {}, warnings: [] }; },
   });
   const server = createWebServer({ port: 0, outDir: '.', getData: get });
   t.after(() => server.close());
@@ -150,13 +143,12 @@ test('Web reset validates Host, Origin and method, blocks active updates, then r
   assert.equal(db.read().entries[0].costUsd, 3);
 });
 
-test('offline reset and local setup rebuild built-in/custom rates without network or collection', async (t) => {
+test('offline reset and local setup rebuild custom rates without network or collection', async (t) => {
   const { db, dir, env } = await fixture(t);
   db.replace(raw([entry('local'), entry('reported', 7)]));
   await writeFile(path.join(dir, 'pricing.json'), JSON.stringify({ 'gpt-example': { input: 4, output: 0 } }));
   const get = createWebDataService(parseArgs(['--offline']), { database: db, env,
     collect: async () => { throw new Error('must not scan'); },
-    publicPricing: async () => { throw new Error('must not fetch'); },
   });
   t.after(() => get.close());
   get.resetPrices();

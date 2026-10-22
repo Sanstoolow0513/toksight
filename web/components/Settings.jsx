@@ -1,12 +1,11 @@
 import { useMemo, useRef } from 'react';
-import { DatabaseBackup, DatabaseZap, Globe2, Import, LoaderCircle } from 'lucide-react';
+import { DatabaseBackup, DatabaseZap, Globe2, LoaderCircle } from 'lucide-react';
 import { timezoneOptions } from '@/lib/period';
 import { fmtDateTime } from '@/lib/format';
 
 export default function Settings({ tx, timezone, timezonePref, systemZone, onTimezone, now, loading,
-  databaseBusy, onImportDatabase, onExportDatabase, importing, onImportCursor }) {
+  databaseBusy, onImportDatabase, onExportDatabase }) {
   const databaseInput = useRef(null);
-  const csvInput = useRef(null);
   const zones = useMemo(() => timezoneOptions(timezone), [timezone]);
   return <div className="settings-content">
     <section className="settings-section">
@@ -34,14 +33,6 @@ export default function Settings({ tx, timezone, timezonePref, systemZone, onTim
           {databaseBusy === 'import' ? <LoaderCircle size={16} className="spin" /> : <DatabaseZap size={16} />}{tx(databaseBusy === 'import' ? 'importingDatabase' : 'importDatabase')}
         </button>
       </div>
-    </section>
-    <section className="settings-section">
-      <div className="settings-heading"><Import size={20} aria-hidden="true" /><div><h2>{tx('importCursor')}</h2><p>{tx('cursorDescription')}</p></div></div>
-      <input ref={csvInput} type="file" className="visually-hidden" tabIndex={-1} accept=".csv,text/csv" aria-label={tx('importCursor')}
-        onChange={(e) => { const file = e.target.files?.[0]; e.target.value = ''; if (file) void onImportCursor(file); }} />
-      <button type="button" className="btn-secondary" disabled={loading} onClick={() => csvInput.current?.click()}>
-        {importing ? <LoaderCircle size={16} className="spin" /> : <Import size={16} />}{tx(importing ? 'importingCursor' : 'chooseCsv')}
-      </button>
     </section>
   </div>;
 }
