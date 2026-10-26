@@ -277,9 +277,9 @@ the automatic-update preference. `GET /api/prices` reads the catalog; add `key=<
 read a model's revisions, newest first. API token rates remain USD per token. These endpoints
 use the existing Host/Origin checks.
 
-The UI lives in `frontend/` and follows its own "Instrument Ledger" design language: a graph-paper ground, hairline
-plates with registration ticks, serif readouts with monospace tabular figures, hatching for missing data and a single
-signal orange, in warm-paper light and carbon dark themes with a collapsible index sidebar.
+The UI lives in `frontend/` and follows a plain, dense "Plain Workbench" design language: one sans-serif family (bundled
+Geist with a Chinese sans fallback) and tabular figures throughout, flat panels on a plain page, one accent colour, and
+light and dark themes with a collapsible sidebar.
 The dashboard opens on **Today**, with **Calendar**, **Prices** and **Settings** in the sidebar.
 There are no page banners: content starts right under the top bar, which holds the current page name, the page
 actions (**Export image** and **Refresh database** on reports; **Reset price database** and **Update prices** on Prices)
@@ -287,7 +287,7 @@ and the theme (light / dark / system) and 中文 / EN controls. On phones, the a
 horizontal navigation keeps all four views within reach. See `design-spec.md` for the visual specification.
 
 - **Today** emphasizes tokens and reference cost, with cache hit rate and requests alongside, followed by hourly
-  activity with Tokens / Cost controls, a token-mix spectrum bar, expandable agents and models, and up to ten sessions
+  activity with Tokens / Cost controls, a token-mix bar, expandable agents and models, and up to ten sessions
   (five initially, with an expand control). Token/cost changes compare with the previous full day when a baseline exists. Single-model agents show the model name directly;
   a separate model ranking appears when an agent uses multiple models. Charts show quantity scales and the hourly peak.
   Pick all agents or a single agent. Session details include title, usage, cost, time span,

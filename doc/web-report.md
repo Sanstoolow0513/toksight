@@ -31,7 +31,7 @@ Next App Router 从 `frontend/` 静态导出为 `frontend/out/`，生产由 CLI 
 `app/page.js` 挂载 `Workspace`，`lib/useWorkspace.js` 集中管理筛选、时区、刷新、图片导出、价格初始化和数据库传输状态。
 `AppHeader` 为固定顶部工具栏，提供品牌、当前页名（页面唯一 `h1`，正文不再有大标题、眉标和介绍行）、`PageActions` 页面操作、配色和语言；配色菜单支持 Escape 关闭和焦点返回。
 `Sidebar` 分为数据洞察和工作台管理两组，支持折叠，底部提供本机说明与时区入口；≤700px 改为吸附横向导航。
-视觉为“刻度账本”设计语言（令牌见 `frontend/app/styles/tokens.css`）：坐标纸底面上的发丝边读数板（2px 圆角、四角套准角标、无投影），56px 读数条顶栏与 232px 索引侧栏；根字号 16px、正文 15px，任何文字不小于 12px；导航和分段选中为墨底反白加信号橙方块，信号橙只用于选中标记、峰值、输入 token 与焦点，缺失 / 未来 / 剩余额度用阴影线，热图为五档墨色浓度。样式按 `@layer` 分为 tokens / base / primitives / shell / components / pages / utilities。
+视觉为“素面工作台”设计语言（令牌见 `frontend/app/styles/tokens.css`）：纯色底面上无外框的平面面板（统一圆角、内部发丝线分隔、无投影），52px 顶栏与 220px 侧栏；全站一种无衬线字体（Geist + 中文无衬线回退）与 tabular 数字，Mono 仅用于模型 ID 与路径；根字号 16px、正文 15px，任何文字不小于 13px；强调橙只用于选中、峰值、输入 token、今天与焦点，缺失 / 未来 / 剩余额度为浅色平涂，热图为五档灰度。今日把额度与 Token 构成并排、时段分布整行。样式按 `@layer` 分为 tokens / base / primitives / shell / components / pages / utilities。
 `PageActions` 在顶栏提供刷新和图片导出，价格页换为更新单价与重置，≤760px 收为图标按钮；卡片专属操作（刷新 Kimi 额度）留在卡片内。`Settings` 提供外观、语言、时区、SQLite 备份 / 合并。
 共享原语位于 `components/ui/`：`Segmented`（配色、语言、指标、月 / 年、快捷范围与 Agent 标签共用，支持方向键、Home / End 与单一 Tab 焦点）、`Button` / `IconButton`、`Panel`、`Stat`、`Meter`（额度窗口，`role="meter"`）、`Badge`、`Field` 与 `Tooltip` + `useTip`（小时柱、热图格和账表行共用的指针 / 焦点定位）。视觉与交互以 `design-spec.md` 为准。
 
@@ -42,12 +42,12 @@ Next App Router 从 `frontend/` 静态导出为 `frontend/out/`，生产由 CLI 
 旧请求并检查序号，页面关闭清理轮询；目录每分钟及回到前台重读，单项历史按需读取。手机表格在自己的
 可聚焦滚动区横向查看，不扩大页面宽度。切到价格或设置会停止用量报告请求。
 
-今日概览 KPI 下方的 `QuotaCard`（`useQuota`）显示 Codex / Kimi Code 订阅额度，只有“刷新 Kimi 额度”按钮会联网；卡片不进入 PNG 导出，细节见[订阅额度](quota.md)。
+今日指标下方、与 Token 构成并排的 `QuotaCard`（`useQuota`，经 `DayBody` 的 `quota` 插槽放入）显示 Codex / Kimi Code 订阅额度，只有“刷新 Kimi 额度”按钮会联网；卡片不进入 PNG 导出，细节见[订阅额度](quota.md)。
 
 Today 请求 `period=custom&since=<今天>&until=<今天>&timezone=<IANA>`，`TodayDashboard` 展示四项统一 KPI；每张卡由标题区与灰色内嵌数值区组成。
 Tokens 与费用在昨日有非零基数时展示相对变化，文案明确比较昨日全天；费用比较要求两期请求均已定价。
-`DayBody` 复用于概览和日历详情：`ActivityChart` 提供 Tokens / 费用切换，24 个本地小时柱、刻度尺、数量轴、键盘提示和带数值标签的信号色峰值；
-`TokenBreakdown` 以光谱条（单条堆叠）和点引线账目同时显示四种 token 的数量与占比。Agent / 模型仍可排序、展开和查看明细。
+`DayBody` 复用于概览和日历详情：`ActivityChart` 提供 Tokens / 费用切换，24 个本地小时柱、数量轴、键盘提示和带数值标签的强调色峰值；
+`TokenBreakdown` 以单条堆叠条和点引线图例同时显示四种 token 的数量与占比。Agent / 模型仍可排序、展开和查看明细。
 `hasModelComparison` 仅在任一 Agent 有多个模型时保留独立模型排行，单模型名称直接显示在 Agent 行。
 会话初始五条，可展开 API 返回的前十条，显示当前数量和总会话数；PNG 捕获当前展开状态。
 
@@ -61,4 +61,4 @@ Tokens 与费用在昨日有非零基数时展示相对变化，文案明确比�
 
 `frontend/lib/period.js` 负责时区检测与日期标签运算，每 30 秒及窗口重新获得焦点时更新当前日期。系统模式重新检测浏览器时区；手动时区不随系统变化。切时区后未来的自定义结束日收拢到今天。日期算法详见[数据契约](data-contract.md)。`prefs.js` 管全部 localStorage key：语言、配色、日历模式、表格排序和时区；不再读取旧卡片顺序。`format.js` 按载荷的时区显示会话与页脚时间。
 
-PNG 由 `modern-screenshot` 捕获 `.report`，`.is-exporting` 绘制同色不透明坐标纸底承接读数板，包含 Today 全部详情或日历范围与单日详情、筛选摘要和页脚；导航、筛选操作、设置、toast、导入对话框不在捕获范围。`.no-export` 排除内嵌控件和临时行内明细，`.is-exporting` 关闭日期选中环过渡并隐藏明细按钮列；Agent 表格采用固定布局，保持模型展开状态和其余数值列宽。
+PNG 由 `modern-screenshot` 捕获 `.report`，`.is-exporting` 以不透明底面色承接面板，包含 Today 全部详情或日历范围与单日详情、筛选摘要和页脚；导航、筛选操作、设置、toast、导入对话框不在捕获范围。`.no-export` 排除内嵌控件和临时行内明细，`.is-exporting` 关闭日期选中环过渡并隐藏明细按钮列；Agent 表格采用固定布局，保持模型展开状态和其余数值列宽。
