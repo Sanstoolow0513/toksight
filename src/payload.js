@@ -93,3 +93,8 @@ export function buildPayload(ctx) {
     warnings,
   };
 }
+
+// `quota --json` and GET /api/quota. Separate from the report payload.
+export function buildQuotaPayload(quotas, now = Date.now()) {
+  return { tool: 'toksight', version: pkg.version, generatedAt: new Date(now).toISOString(), quotas };
+}

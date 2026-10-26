@@ -16,7 +16,8 @@ import { createUsageDatabase } from './database.js';
 import { resetPriceDatabase } from './pricereset.js';
 import { parseArgs } from './args.js';
 import { runDatabaseTransfer } from './dbcommand.js';
-import { printEmpty, printWarnings, renderCommand, renderJson } from './render.js';
+import { printEmpty, printWarnings, renderCommand, renderJson, renderQuota } from './render.js';
+import { collectQuotas } from './quota.js';
 
 const require = createRequire(import.meta.url);
 const pkg = require('../package.json');
@@ -34,6 +35,7 @@ Commands
   sessions      Top sessions by cost
   web           Launch the local dashboard (token usage & cost report)
   refresh       Rebuild the local SQLite usage database
+  quota         Subscription quota windows (Codex from local logs; Kimi Code via its API)
   reset-prices  Clear saved prices and history; reopen Web to rebuild the price database
   export-db <file>  Export the complete committed database to a new SQLite file
   import-db <file>  Merge a toksight SQLite backup, deduplicating usage
@@ -41,7 +43,7 @@ Commands
   help          Show this help
 
 Options
-  --client <a,b>   Only include these clients (${Object.keys(clients).join(', ')})
+  --client <a,b>   Only include these clients (${Object.keys(clients).join(', ')}; quota: codex, kimi)
   --since <date>   Only include entries on/after a local date (YYYY-MM-DD)
   --until <date>   Only include entries on/before a local date (YYYY-MM-DD)
   --today          Shortcut for today only
@@ -54,7 +56,7 @@ Options
   --open           Open the printed URL in a browser (web only)
   --no-open        Leave the browser closed (web only; default)
   --api-only       Web: serve only the JSON API, no static dashboard
-  --offline        Skip all network pricing fetches; use saved local prices
+  --offline        Skip all network pricing fetches; use saved local prices (quota: skip the Kimi request)
   --no-color       Disable ANSI colors
   --version        Print version
   --help           Print this help
@@ -149,6 +151,13 @@ export async function main(argv = process.argv.slice(2)) {
     }
     if (opts.command === 'web') {
       await runWeb(opts);
+      return 0;
+    }
+
+    if (opts.command === 'quota') {
+      // The only CLI path that may call the Kimi Code API, and only without --offline.
+      const quotas = await collectQuotas({ clients: opts.clients, offline: opts.offline });
+      renderQuota(quotas, { json: opts.json }, fmt);
       return 0;
     }
 
