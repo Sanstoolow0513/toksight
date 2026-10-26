@@ -12,7 +12,7 @@ export default function TokenBreakdown({ data, tx }) {
     const count = data.totals?.[key] || 0;
     return { key, i, count, share: total ? count / total : 0 };
   });
-  return <Panel className="day-section section-breakdown" index="02" icon={<ChartPie size={16} aria-hidden="true" />} title={tx('tokenMix')} note={tx('tokenMixNote')}>
+  return <Panel className="day-section section-breakdown" icon={<ChartPie size={16} aria-hidden="true" />} title={tx('tokenMix')}>
     <div className="token-breakdown">
       <div className="token-total"><strong>{fmtTokens(total)}</strong><span className="label">Tokens</span></div>
       <div className="spectrum" role="img" aria-label={`${tx('tokenMix')} · ${parts.map((part) => `${tx(labels[part.i])} ${fmtPct(part.share)}`).join(' · ')}`}>

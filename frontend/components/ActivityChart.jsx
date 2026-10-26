@@ -16,7 +16,7 @@ export default function ActivityChart({ data, tx }) {
   const max = Math.max(0, ...bars.map(value));
   const peak = max > 0 ? bars.find((bar) => value(bar) === max) : null;
   const current = tip ? bars[tip.key] : null;
-  return <Panel className="day-section section-hourly" index="01" icon={<Activity size={16} aria-hidden="true" />} title={tx('secHourly')} note={tx('activityNote')}
+  return <Panel className="day-section section-hourly" icon={<Activity size={16} aria-hidden="true" />} title={tx('secHourly')}
     actions={<div className="no-export"><Segmented size="sm" label={tx('metricLabel')} value={metric} onChange={setMetric} options={[{ value: 'tokens', label: 'Tokens' }, { value: 'cost', label: tx('kpiCost') }]} /></div>}>
     <div className="activity-chart" role="group" aria-label={tx('secHourly')} onMouseLeave={hide}>
       <div className="chart-scale" aria-hidden="true"><span>{format(max)}</span><span>{format(max / 2)}</span><span>{format(0)}</span></div>

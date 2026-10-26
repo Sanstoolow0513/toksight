@@ -20,7 +20,7 @@ npm run check:package
 
 `frontend:build` 导出到 `frontend/out/`。根包零运行时依赖，网页依赖仅在本目录。`web:*` 命令为兼容入口，也使用本目录；旧 `web/` 已移除。
 
-- `components/Workspace.jsx`：顶部工具栏、侧栏与四个页面。
+- `components/Workspace.jsx`：顶部工具栏（含 `PageActions` 页面操作）、侧栏与四个页面。
 - `lib/useWorkspace.js`：筛选、时区、刷新、价格状态和导入 / 导出流程。
 - `components/ActivityChart.jsx`、`TokenBreakdown.jsx`：本地小时用量与 Token 构成。
 - `components/CalendarView.jsx`：日历、日期详情与趋势。

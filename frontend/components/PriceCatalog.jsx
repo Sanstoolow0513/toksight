@@ -90,7 +90,7 @@ export default function PriceCatalog({ tx, timezone, locale, status, busy, error
       <Stat label={tx('priceRevisions')} value={fmtInt(catalog.data?.status.revisions ?? status.revisions)} />
       <Stat label={tx('priceLastChange')} value={fmtDateTime(catalog.data?.status.observedAt ?? status.observedAt, timezone)} className="price-summary-time" />
     </dl>
-    <Panel className="price-update-settings" index="01" title={tx('priceUpdateSettings')}>
+    <Panel className="price-update-settings" title={tx('priceUpdateSettings')}>
       <div className="plate-body">
         <PriceSourceSettings key={JSON.stringify(status.selectedSources)} tx={tx} status={status} busy={busy} onSave={onSources} />
         <label className="check"><input type="checkbox" checked={status.autoUpdate} disabled={busy} onChange={(e) => onAutoUpdate(e.target.checked)} />{tx('priceAutoUpdate')}</label>
@@ -104,7 +104,7 @@ export default function PriceCatalog({ tx, timezone, locale, status, busy, error
         })}</div> : null}
       </div>
     </Panel>
-    <Panel className="price-list" aria-busy={catalog.loading} index="02" level={2} title={tx('priceDatabaseTitle')} note={tx('priceUnits')}
+    <Panel className="price-list" aria-busy={catalog.loading} level={2} title={tx('priceDatabaseTitle')} note={tx('priceUnits')}
       count={records ? fmtInt(filtered.length) : null}>
       <div className="plate-body">
       <div className="price-filters">
@@ -112,7 +112,7 @@ export default function PriceCatalog({ tx, timezone, locale, status, busy, error
         <label className="price-search"><Search size={17} aria-hidden="true" /><span className="visually-hidden">{tx('priceSearch')}</span><input type="search" value={query} placeholder={tx('priceSearch')} onChange={(e) => { setQuery(e.target.value); setPage(0); setExpanded(null); }} /></label>
         <Field inline label={tx('priceSource')} className="price-source-filter"><select value={source} onChange={(e) => { setSource(e.target.value); setPage(0); setExpanded(null); }}><option value="">{tx('priceAllSources')}</option>{sources.map((id) => <option key={id} value={id}>{priceSourceLabel(id, tx)}</option>)}</select></Field>
       </div>
-      <div className="price-result-status" role="status">{catalog.loading ? <><LoaderCircle size={14} className="spin" />{tx('priceLoading')}</> : tx('priceResults', { n: fmtInt(filtered.length) })}</div>
+      <div className="price-result-status" role="status">{catalog.loading ? <><LoaderCircle size={14} className="spin" />{tx('priceLoading')}</> : null}</div>
       {catalog.error ? <p className="error-text" role="alert">{catalog.error} <Button variant="text" onClick={() => void catalog.reload()}>{tx('retry')}</Button></p> : null}
       <div className="price-table-scroll" role="region" aria-label={tx('priceDatabaseTitle')} tabIndex={0}>
         <table className="price-table ledger"><caption className="visually-hidden">{tx('priceUnits')}</caption><thead><tr><th scope="col">{tx('colModel')}</th><th scope="col">{tx('priceSource')}</th>{parts.map(([part, label]) => <th key={part} scope="col" className="num">{tx(label)}</th>)}<th scope="col">{tx('priceObserved')}</th></tr></thead>

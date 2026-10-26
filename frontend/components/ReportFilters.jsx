@@ -1,7 +1,6 @@
 'use client';
 
 import { useState } from 'react';
-import { SlidersHorizontal } from 'lucide-react';
 import { periodBounds, periodOf, QUICK_RANGES, quickPeriod, validDay, validRange } from '@/lib/period';
 import { Button, Field, Segmented } from './ui';
 
@@ -28,7 +27,6 @@ export default function ReportFilters({ period, today, agent, clients, onAgent, 
   return (
     <section className="report-filters plate plate--inset no-export" aria-label={tx('filterTitle')}>
       <div className="filter-row">
-        <span className="filter-heading label"><SlidersHorizontal size={14} aria-hidden="true" />{tx('filterTitle')}</span>
         <Segmented size="sm" mono label={tx('filterQuick')} value={period.preset} onChange={(preset) => onPeriod(quickPeriod(preset, today))}
           className="quick-ranges" options={QUICK_RANGES.map((preset) => ({ value: preset, label: preset.toUpperCase(), title: tx(`range${preset}`) }))} />
         <Field inline label="Agent" className="agent-filter">
@@ -37,9 +35,6 @@ export default function ReportFilters({ period, today, agent, clients, onAgent, 
             {clients.map((client) => <option key={client.id} value={client.id}>{client.label}</option>)}
           </select>
         </Field>
-        <Button variant="text" className="filter-reset" onClick={onReset}>{tx('filterReset')}</Button>
-      </div>
-      <div className="filter-row filter-dates">
         <Field inline label={tx('filterJump')} className="month-jump">
           <input type="month" min="1000-01" max={today.slice(0, 7)} value={until.slice(0, 7)} onChange={(e) => {
             const date = `${e.target.value}-01`;
@@ -50,6 +45,7 @@ export default function ReportFilters({ period, today, agent, clients, onAgent, 
           <summary className="btn btn--text">{tx('filterCustom')}</summary>
           <DateFields key={`${since}/${until}`} period={period} today={today} onPeriod={onPeriod} tx={tx} />
         </details>
+        <Button variant="text" className="filter-reset" onClick={onReset}>{tx('filterReset')}</Button>
       </div>
     </section>
   );

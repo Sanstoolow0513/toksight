@@ -56,16 +56,14 @@ export function DayBody({ data, day, sortBy, onSort, locale, tx, agentLabel, ope
   return <div className={'day-sections' + (overview ? ' is-overview' : '')}>
     <div className="analysis-grid"><ActivityChart data={data} tx={tx} /><TokenBreakdown data={data} tx={tx} /></div>
     {!data.totals?.requests ? <div className="day-empty plate plate--inset"><h3>{tx('noSessions')}</h3><p>{tx('noSessionsNote')}</p></div> : null}
-    {Object.keys(data.clients ?? {}).length ? <Panel className="day-section section-agents" index="03" title={tx('cardAgents')} count={`${Object.keys(data.clients).length} AGENTS`}
-      note={tx(sortBy === 'cost' ? 'subAgentsCost' : 'subAgentsTokens', { period: dayLabel(locale, day) })}>
+    {Object.keys(data.clients ?? {}).length ? <Panel className="day-section section-agents" title={tx('cardAgents')} count={`${Object.keys(data.clients).length} AGENTS`}>
       <AgentTable clients={data.clients} models={data.models} pricing={data.pricing} sortBy={sortBy} onSort={onSort} agentLabel={agentLabel} tx={tx} open={open} onToggle={onToggle} />
     </Panel> : null}
-    {hasModelComparison(data.models) ? <Panel className="day-section section-models" index="04" title={tx('cardModels')} count={`${data.models.length} MODELS`}
-      note={tx(sortBy === 'cost' ? 'subAgentsCost' : 'subAgentsTokens', { period: dayLabel(locale, day) })}>
+    {hasModelComparison(data.models) ? <Panel className="day-section section-models" title={tx('cardModels')} count={`${data.models.length} MODELS`}>
       <ModelTable models={data.models} pricing={data.pricing} sortBy={sortBy} onSort={onSort} agentLabel={agentLabel} tx={tx} />
     </Panel> : null}
-    {sessions.length ? <Panel className="day-section section-sessions" index="05" title={tx('secSessions')}
-      note={`${tx('shownSessions', { shown: visible.length, total: fmtInt(data.totals.sessions ?? sessions.length) })} · ${tx('topSessionsNote')}`}
+    {sessions.length ? <Panel className="day-section section-sessions" title={tx('secSessions')}
+      count={`${visible.length} / ${fmtInt(data.totals.sessions ?? sessions.length)}`}
       actions={sessions.length > 5 ? <Button variant="text" className="no-export" aria-expanded={expanded} onClick={() => setExpanded(!expanded)}>{tx(expanded ? 'hideSessions' : 'viewSessions')}</Button> : null}>
       <ol className="session-list">{visible.map((row, index) => <SessionRow key={row.client + '/' + row.sessionId} row={row} index={index} agentLabel={agentLabel} locale={locale} tx={tx} timezone={data.timezone} />)}</ol>
     </Panel> : null}
@@ -103,7 +101,6 @@ export default function DayDetail({ day, report, nav, today, sortBy, onSort, onS
     <section className="xday" aria-label={dayLabel(locale, displayDay, true)}>
       <header className="xday-head">
         <div>
-          <span className="label">{displayDay}</span>
           <h3 className="xday-title" aria-live="polite" tabIndex={-1}>
             {dayLabel(locale, displayDay)}
           </h3>

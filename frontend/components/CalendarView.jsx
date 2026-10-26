@@ -41,7 +41,7 @@ export default function CalendarView({ data, period, today, firstDay, day, onPic
     </section>
     <section ref={calendarRef} className="calendar-overview plate">
       <header className="calendar-head">
-        <div><span className="label">{period.mode === 'year' ? tx('modeYear') : period.mode === 'month' ? tx('modeMonth') : tx('filterCustom')}</span><h2>{periodLabel(locale, period)}</h2></div>
+        <div><h2>{periodLabel(locale, period)}</h2></div>
         <div className="calendar-controls no-export">
           <Segmented size="sm" label={tx('modeGroup')} value={period.mode} onChange={(mode) => { writeMode(mode); onPeriod(withMode(period, mode, today)); }}
             options={[{ value: 'month', label: tx('modeMonth') }, { value: 'year', label: tx('modeYear') }]} />

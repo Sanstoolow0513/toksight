@@ -23,5 +23,5 @@ export default function Kpis({ data, tx, size = 'md', grid = false }) {
   return <dl className={'kpis readouts plate' + (grid ? ' is-grid' : '')}>{items.map(({ kind, Icon, label, value, textValue, sub, change }) => <Stat key={kind} className={'kpi is-' + kind}
     size={size} label={label} icon={<Icon size={15} strokeWidth={1.6} aria-hidden="true" />} value={value} textValue={textValue} scale={size === 'lg'}
     delta={change != null ? { dir: change < 0 ? 'down' : 'up', text: fmtPct(Math.abs(change)), title: tx('compareFullDay') } : null}
-    sub={sub} caption={change != null ? tx('compareFullDay') : tx('localRecord')} />)}</dl>;
+    sub={sub} />)}</dl>;
 }

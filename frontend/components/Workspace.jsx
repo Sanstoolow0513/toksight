@@ -1,17 +1,17 @@
 'use client';
 
 import { useState } from 'react';
-import { CalendarDays, RefreshCw, RotateCcw, TriangleAlert } from 'lucide-react';
+import { CalendarDays, RefreshCw, TriangleAlert } from 'lucide-react';
 import { useWorkspace } from '@/lib/useWorkspace';
 import { dayLabel, weekdayLabel } from '@/lib/i18n';
 import { periodOf } from '@/lib/period';
 import AppHeader from './AppHeader';
-import Sidebar, { NAV_INDEX } from './Sidebar';
+import Sidebar from './Sidebar';
 import { Button, Segmented } from './ui';
 import { AgentDot } from './Marks';
 import TodayDashboard from './TodayDashboard';
 import Settings from './Settings';
-import ReportActions from './ReportActions';
+import PageActions from './PageActions';
 import ReportFilters from './ReportFilters';
 import ReportFooter from './ReportFooter';
 import CalendarView from './CalendarView';
@@ -59,24 +59,18 @@ export default function Workspace() {
     <ReportFooter data={data} tx={tx} />
   </div>;
 
+  const actions = !ready ? null : <PageActions view={view} tx={tx} loading={busy || w.reportBusy} refreshing={w.refreshing} onRefresh={w.onRefresh}
+    exporting={w.exporting} onExport={w.onExport} canExport={w.canExport}
+    prices={{ busy, offline: prices.status.offline, updating: w.updatingPrices, onUpdate: w.onUpdatePrices, onReset: () => { w.setPriceResetError(null); w.setPriceResetOpen(true); } }} />;
+
   return <div className={`app-shell${collapsed ? ' is-collapsed' : ''}`}>
     <a className="skip-link" href="#main-content">{tx('skipContent')}</a>
-    <AppHeader view={view} onView={navigate} locale={locale} theme={w.theme} onTheme={w.onTheme} onLocale={w.onLocale} tx={tx} />
+    <AppHeader view={view} onView={navigate} locale={locale} theme={w.theme} onTheme={w.onTheme} onLocale={w.onLocale} tx={tx} actions={actions} />
     <Sidebar view={view} onView={navigate} timezone={timezone} collapsed={collapsed} onCollapse={() => setCollapsed(!collapsed)} tx={tx} />
     <main className="main" id="main-content" tabIndex={-1}>
       <div className="workspace-content">
-        <header className="workspace-head">
-          <div className="workspace-title"><span className="label">{NAV_INDEX[view]} — {tx('eyebrow' + view)}</span><h1>{tx('title' + view)}</h1>
-            <p>{tx(view + 'Description')}</p></div>
-          {ready ? view === 'prices' ? <div className="price-actions">
-            <Button disabled={busy} icon={<RotateCcw size={15} />} onClick={() => { w.setPriceResetError(null); w.setPriceResetOpen(true); }}>{tx('priceReset')}</Button>
-            <Button variant="primary" disabled={busy || prices.status.offline} loading={w.updatingPrices} title={prices.status.offline ? tx('setupOffline') : undefined} icon={<RefreshCw size={15} />} onClick={w.onUpdatePrices}>
-              {tx(w.updatingPrices ? 'updatingPrices' : 'updatePrices')}</Button>
-          </div> : <ReportActions tx={tx} loading={busy || w.reportBusy} refreshing={w.refreshing} onRefresh={w.onRefresh}
-            exporting={w.exporting} onExport={w.onExport} canExport={w.canExport} settings={view === 'settings'} /> : null}
-        </header>
         {ready && view === 'today' ? <div className="overview-toolbar no-export">
-          <Segmented label={tx('colAgent')} value={w.agent || ''} onChange={(id) => w.onAgent(id)} wrap className="agent-tabs" options={[
+          <Segmented size="sm" label={tx('colAgent')} value={w.agent || ''} onChange={(id) => w.onAgent(id)} wrap className="agent-tabs" options={[
             { value: '', label: tx('filterAllAgents') },
             ...(report.data?.view?.availableClients ?? []).map((client) => ({ value: client.id, label: client.label, icon: <AgentDot id={client.id} /> })),
           ]} />

@@ -28,7 +28,7 @@ export default function QuotaCard({ revision, timezone, locale, tx }) {
   if (!quotas.length && !error) return null;
   const offline = Boolean(payload?.offline);
   const hasKimi = quotas.some((q) => q.client === 'kimi');
-  return <Panel className="quota-card no-export" aria-labelledby="quota-title" index="00" title={tx('quotaTitle')} note={tx('quotaNote')} titleProps={{ id: 'quota-title' }}
+  return <Panel className="quota-card no-export" aria-labelledby="quota-title" title={tx('quotaTitle')} titleProps={{ id: 'quota-title' }}
     actions={hasKimi ? <Button size="sm" className="quota-refresh" disabled={offline} loading={busy} title={offline ? tx('quotaOffline') : undefined} icon={<RefreshCw size={14} />} onClick={() => void refresh()}>
       {tx(busy ? 'quotaRefreshing' : 'quotaRefresh')}</Button> : null}>
     {error ? <p className="quota-error error-text" role="alert">{error}</p> : null}

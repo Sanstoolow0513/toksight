@@ -34,7 +34,7 @@ export default function TrendCard({ data, period, today, locale, tx }) {
   const { since, until } = periodBounds(period);
   const series = useMemo(() => trendSeries(data.daily, data.hourly, { since, until, today }), [data.daily, data.hourly, since, until, today]);
   return (
-    <Panel className="trend-section" index="06" title={tx('cardTrend')} titleProps={{ tabIndex: -1 }} note={`${periodLabel(locale, period)} · ${tx(`trend${series.unit}`)}`}>
+    <Panel className="trend-section" title={tx('cardTrend')} titleProps={{ tabIndex: -1 }} note={`${periodLabel(locale, period)} · ${tx(`trend${series.unit}`)}`}>
       <div className="trend-charts plate-body">
         <TrendPlot rows={series.rows} metric="tokens" label={tx('trendTokens')} format={fmtTokens} unit={series.unit} />
         <TrendPlot rows={series.rows} metric="cost" label={tx('trendCost')} format={fmtCost} unit={series.unit} />
