@@ -2,7 +2,7 @@ import { useMemo, useRef } from 'react';
 import { ArrowDown, ChevronLeft, ChevronRight } from 'lucide-react';
 import { HeatGrid } from '@/components/HeatGrid';
 import DayDetail from '@/components/DayDetail';
-import Segmented from '@/components/Segmented';
+import { IconButton, Segmented, Stat } from '@/components/ui';
 import TrendCard from '@/components/TrendCard';
 import { compactCalendar, periodNav, shiftPeriod, withMode } from '@/lib/period';
 import { dailyMap } from '@/lib/report';
@@ -32,20 +32,22 @@ export default function CalendarView({ data, period, today, firstDay, day, onPic
     }
   };
   return <div className={`calendar-workspace${wide ? ' is-wide' : ''}`}>
-    <section className="calendar-summary" aria-label={tx('rangeSummary')}>
-      <div><span>{tx('rangeTokens')}</span><strong>{fmtTokens(data.totals.totalTokens)}</strong></div>
-      <div><span>{tx('rangeCost')}</span><strong>{data.totals.pricedRequests ? fmtCost(data.totals.costUsd) : data.totals.requests ? tx('rowUnpriced') : fmtCost(0)}</strong></div>
-      <button type="button" className="summary-trend-link no-export" onClick={() => scrollTo(trendRef, 'h3')}>{tx('cardTrend')}<ArrowDown size={14} aria-hidden="true" /></button>
+    <section className="calendar-summary plate" aria-label={tx('rangeSummary')}>
+      <dl className="readouts" style={{ '--cols': 2 }}>
+        <Stat label={tx('rangeTokens')} value={fmtTokens(data.totals.totalTokens)} />
+        <Stat label={tx('rangeCost')} value={data.totals.pricedRequests ? fmtCost(data.totals.costUsd) : data.totals.requests ? tx('rowUnpriced') : fmtCost(0)} textValue={!data.totals.pricedRequests && data.totals.requests > 0} />
+      </dl>
+      <button type="button" className="btn btn--text summary-trend-link no-export" onClick={() => scrollTo(trendRef, 'h3')}>{tx('cardTrend')}<ArrowDown size={14} aria-hidden="true" /></button>
     </section>
-    <section ref={calendarRef} className="calendar-overview">
+    <section ref={calendarRef} className="calendar-overview plate">
       <header className="calendar-head">
-        <h2>{periodLabel(locale, period)}</h2>
+        <div><span className="label">{period.mode === 'year' ? tx('modeYear') : period.mode === 'month' ? tx('modeMonth') : tx('filterCustom')}</span><h2>{periodLabel(locale, period)}</h2></div>
         <div className="calendar-controls no-export">
-          <Segmented label={tx('modeGroup')} value={period.mode} onChange={(mode) => { writeMode(mode); onPeriod(withMode(period, mode, today)); }}
+          <Segmented size="sm" label={tx('modeGroup')} value={period.mode} onChange={(mode) => { writeMode(mode); onPeriod(withMode(period, mode, today)); }}
             options={[{ value: 'month', label: tx('modeMonth') }, { value: 'year', label: tx('modeYear') }]} />
           {period.mode !== 'custom' ? <div className="period-nav">
-            <button type="button" className="icon-btn" onClick={() => onPeriod(shiftPeriod(period, -1))} disabled={!nav.canPrev} aria-label={tx('prev')}><ChevronLeft size={16} /></button>
-            <button type="button" className="icon-btn" onClick={() => onPeriod(shiftPeriod(period, 1))} disabled={!nav.canNext} aria-label={tx('next')}><ChevronRight size={16} /></button>
+            <IconButton outline size="sm" onClick={() => onPeriod(shiftPeriod(period, -1))} disabled={!nav.canPrev} label={tx('prev')}><ChevronLeft size={16} /></IconButton>
+            <IconButton outline size="sm" onClick={() => onPeriod(shiftPeriod(period, 1))} disabled={!nav.canNext} label={tx('next')}><ChevronRight size={16} /></IconButton>
           </div> : null}
         </div>
       </header>

@@ -1,10 +1,11 @@
-import { ImageDown, LoaderCircle, RefreshCw } from 'lucide-react';
+import { ImageDown, RefreshCw } from 'lucide-react';
+import { Button } from './ui';
 
 export default function ReportActions({ tx, loading, refreshing, onRefresh, exporting, onExport, canExport, settings }) {
   return <div className="report-actions" role="group" aria-label={tx('reportActions')}>
-    {!settings ? <button type="button" className="btn-secondary" onClick={onExport} disabled={!canExport || exporting}>
-      {exporting ? <LoaderCircle size={15} className="spin" /> : <ImageDown size={15} />}<span>{tx(exporting ? 'exporting' : 'exportImage')}</span></button> : null}
-    <button type="button" className="btn-primary" onClick={onRefresh} disabled={loading}>
-      <RefreshCw size={15} className={refreshing ? 'spin' : undefined} /><span>{tx(refreshing ? 'refreshing' : 'refresh')}</span></button>
+    {!settings ? <Button onClick={onExport} disabled={!canExport} loading={exporting} icon={<ImageDown size={15} />}>
+      <span>{tx(exporting ? 'exporting' : 'exportImage')}</span></Button> : null}
+    <Button variant="primary" onClick={onRefresh} disabled={loading} icon={<RefreshCw size={15} className={refreshing ? 'spin' : undefined} />}>
+      <span>{tx(refreshing ? 'refreshing' : 'refresh')}</span></Button>
   </div>;
 }

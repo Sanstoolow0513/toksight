@@ -12,13 +12,14 @@ import AgentTable from '@/components/AgentTable';
 import ModelTable from '@/components/ModelTable';
 import Kpis from '@/components/Kpis';
 import { CostValue, agentStyle } from '@/components/Marks';
+import { Button, IconButton, Panel } from '@/components/ui';
 import { hasModelComparison, sessionRows } from '@/lib/report';
 import { fmtClockRange, fmtCost, fmtInt, fmtTokens } from '@/lib/format';
 import { dayLabel, durationLabel, periodLabel, weekdayLabel } from '@/lib/i18n';
 
 const icon = { size: 15, strokeWidth: 2, 'aria-hidden': true };
 const SESSION_LIMIT = 10;
-function SessionRow({ row, agentLabel, locale, tx, timezone }) {
+function SessionRow({ row, index, agentLabel, locale, tx, timezone }) {
   const meta = [
     agentLabel(row.client),
     fmtClockRange(row.startedAt, row.endedAt, timezone),
@@ -29,6 +30,7 @@ function SessionRow({ row, agentLabel, locale, tx, timezone }) {
   const name = row.name ?? tx('sessionUntitled');
   return (
     <li className="session-row" style={agentStyle(row.client)}>
+      <span className="session-index" aria-hidden="true">{String(index + 1).padStart(2, '0')}</span>
       <div className="session-line">
         <span className="session-name" title={row.name ?? row.sessionId}>
           {name}
@@ -53,19 +55,20 @@ export function DayBody({ data, day, sortBy, onSort, locale, tx, agentLabel, ope
   const visible = expanded ? sessions : sessions.slice(0, 5);
   return <div className={'day-sections' + (overview ? ' is-overview' : '')}>
     <div className="analysis-grid"><ActivityChart data={data} tx={tx} /><TokenBreakdown data={data} tx={tx} /></div>
-    {!data.totals?.requests ? <div className="day-empty"><h3>{tx('noSessions')}</h3><p>{tx('noSessionsNote')}</p></div> : null}
-    {Object.keys(data.clients ?? {}).length ? <section className="day-section section-agents">
-      <header className="day-section-head"><div><h3>{tx('cardAgents')}</h3><p>{tx(sortBy === 'cost' ? 'subAgentsCost' : 'subAgentsTokens', { period: dayLabel(locale, day) })}</p></div><span className="section-count">{Object.keys(data.clients).length} AGENTS</span></header>
+    {!data.totals?.requests ? <div className="day-empty plate plate--inset"><h3>{tx('noSessions')}</h3><p>{tx('noSessionsNote')}</p></div> : null}
+    {Object.keys(data.clients ?? {}).length ? <Panel className="day-section section-agents" index="03" title={tx('cardAgents')} count={`${Object.keys(data.clients).length} AGENTS`}
+      note={tx(sortBy === 'cost' ? 'subAgentsCost' : 'subAgentsTokens', { period: dayLabel(locale, day) })}>
       <AgentTable clients={data.clients} models={data.models} pricing={data.pricing} sortBy={sortBy} onSort={onSort} agentLabel={agentLabel} tx={tx} open={open} onToggle={onToggle} />
-    </section> : null}
-    {hasModelComparison(data.models) ? <section className="day-section section-models">
-      <header className="day-section-head"><div><h3>{tx('cardModels')}</h3><p>{tx(sortBy === 'cost' ? 'subAgentsCost' : 'subAgentsTokens', { period: dayLabel(locale, day) })}</p></div><span className="section-count">{data.models.length} MODELS</span></header>
+    </Panel> : null}
+    {hasModelComparison(data.models) ? <Panel className="day-section section-models" index="04" title={tx('cardModels')} count={`${data.models.length} MODELS`}
+      note={tx(sortBy === 'cost' ? 'subAgentsCost' : 'subAgentsTokens', { period: dayLabel(locale, day) })}>
       <ModelTable models={data.models} pricing={data.pricing} sortBy={sortBy} onSort={onSort} agentLabel={agentLabel} tx={tx} />
-    </section> : null}
-    {sessions.length ? <section className="day-section section-sessions"><header className="day-section-head"><div><h3>{tx('secSessions')}</h3><p>{tx('shownSessions', { shown: visible.length, total: fmtInt(data.totals.sessions ?? sessions.length) })} · {tx('topSessionsNote')}</p></div>
-      {sessions.length > 5 ? <button type="button" className="text-button no-export" aria-expanded={expanded} onClick={() => setExpanded(!expanded)}>{tx(expanded ? 'hideSessions' : 'viewSessions')}</button> : null}</header>
-      <ol className="session-list">{visible.map((row) => <SessionRow key={row.client + '/' + row.sessionId} row={row} agentLabel={agentLabel} locale={locale} tx={tx} timezone={data.timezone} />)}</ol>
-    </section> : null}
+    </Panel> : null}
+    {sessions.length ? <Panel className="day-section section-sessions" index="05" title={tx('secSessions')}
+      note={`${tx('shownSessions', { shown: visible.length, total: fmtInt(data.totals.sessions ?? sessions.length) })} · ${tx('topSessionsNote')}`}
+      actions={sessions.length > 5 ? <Button variant="text" className="no-export" aria-expanded={expanded} onClick={() => setExpanded(!expanded)}>{tx(expanded ? 'hideSessions' : 'viewSessions')}</Button> : null}>
+      <ol className="session-list">{visible.map((row, index) => <SessionRow key={row.client + '/' + row.sessionId} row={row} index={index} agentLabel={agentLabel} locale={locale} tx={tx} timezone={data.timezone} />)}</ol>
+    </Panel> : null}
   </div>;
 }
 
@@ -100,19 +103,20 @@ export default function DayDetail({ day, report, nav, today, sortBy, onSort, onS
     <section className="xday" aria-label={dayLabel(locale, displayDay, true)}>
       <header className="xday-head">
         <div>
+          <span className="label">{displayDay}</span>
           <h3 className="xday-title" aria-live="polite" tabIndex={-1}>
             {dayLabel(locale, displayDay)}
           </h3>
           <p className="xday-sub">{sub.filter(Boolean).join(' · ')}</p>
         </div>
         <div className="xday-nav no-export">
-          {onBack ? <button type="button" className="calendar-back" onClick={onBack}><ArrowUp {...icon} />{tx('backToCalendar')}</button> : null}
-          <button type="button" className="icon-btn" onClick={() => onStep(-1)} disabled={!nav.canPrev} aria-label={tx('dayPrev')} title={tx('dayPrev')}>
+          {onBack ? <Button variant="text" className="calendar-back" onClick={onBack}><ArrowUp {...icon} />{tx('backToCalendar')}</Button> : null}
+          <IconButton outline size="sm" onClick={() => onStep(-1)} disabled={!nav.canPrev} label={tx('dayPrev')}>
             <ChevronLeft {...icon} />
-          </button>
-          <button type="button" className="icon-btn" onClick={() => onStep(1)} disabled={!nav.canNext} aria-label={tx('dayNext')} title={tx('dayNext')}>
+          </IconButton>
+          <IconButton outline size="sm" onClick={() => onStep(1)} disabled={!nav.canNext} label={tx('dayNext')}>
             <ChevronRight {...icon} />
-          </button>
+          </IconButton>
         </div>
       </header>
       {report.error ? (
@@ -120,10 +124,9 @@ export default function DayDetail({ day, report, nav, today, sortBy, onSort, onS
           <TriangleAlert size={15} strokeWidth={2} aria-hidden="true" />
           <div>
             <p>{coded(tx('errorBody', { error: report.error }))}</p>
-            <button type="button" className="btn-secondary" onClick={() => void report.reload()}>
-              <RefreshCw size={15} strokeWidth={2} aria-hidden="true" />
+            <Button size="sm" icon={<RefreshCw size={14} strokeWidth={2} aria-hidden="true" />} onClick={() => void report.reload()}>
               {tx('retry')}
-            </button>
+            </Button>
           </div>
         </div>
       ) : null}

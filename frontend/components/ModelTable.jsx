@@ -1,7 +1,7 @@
 import { Fragment, useId, useMemo, useState } from 'react';
-import Tooltip from '@/components/Tooltip';
+import { Tooltip, useTip } from '@/components/ui';
 import { AgentDot, PartsLegend } from '@/components/Marks';
-import { Cells, RowInfo, RowInfoButton, RowTip, SortHeader, commonRate } from '@/components/AgentTable';
+import { Cells, ROW_TIP_IGNORE, RowInfo, RowInfoButton, RowTip, SortHeader, commonRate } from '@/components/AgentTable';
 import { modelRows } from '@/lib/report';
 import { useTableColumns } from '@/lib/useTableColumns';
 
@@ -9,18 +9,13 @@ import { useTableColumns } from '@/lib/useTableColumns';
 export default function ModelTable({ models, pricing, sortBy, onSort, agentLabel, tx }) {
   const { rows } = useMemo(() => modelRows(models, sortBy, Infinity), [models, sortBy]);
   const rates = useMemo(() => new Map((pricing?.modelRates ?? []).map((rate) => [`${rate.client}\0${rate.model}`, rate])), [pricing]);
-  const [tip, setTip] = useState(null);
+  const { tip, hide, track } = useTip();
   const [detail, setDetail] = useState(null);
   const listId = useId();
   const { ref: tableRef, columns } = useTableColumns(rows.length > 0);
   if (!rows.length) return null;
 
   const tips = new Map();
-  const onMove = (e) => {
-    if (e.target.closest?.('.row-info-btn,.row-details-content')) return setTip(null);
-    const key = e.target.closest?.('[data-tip]')?.dataset.tip;
-    setTip(key ? { key, x: e.clientX, y: e.clientY } : null);
-  };
   const body = rows.map((row, index) => {
     tips.set(row.id, { name: `${agentLabel(row.client)} · ${row.model}`, row, rate: commonRate(row, rates), mono: true });
     const id = `${listId}-detail-${index}`;
@@ -33,7 +28,7 @@ export default function ModelTable({ models, pricing, sortBy, onSort, agentLabel
           </span>
         </th>
         <Cells row={row} tx={tx} />
-        <RowInfoButton id={id} expanded={detail === row.id} onToggle={() => { setTip(null); setDetail((previous) => previous === row.id ? null : row.id); }} name={tips.get(row.id).name} tx={tx} />
+        <RowInfoButton id={id} expanded={detail === row.id} onToggle={() => { hide(); setDetail((previous) => previous === row.id ? null : row.id); }} name={tips.get(row.id).name} tx={tx} />
       </tr><RowInfo id={id} expanded={detail === row.id} tip={tips.get(row.id)} tx={tx} columns={columns} /></Fragment>
     );
   });
@@ -41,7 +36,7 @@ export default function ModelTable({ models, pricing, sortBy, onSort, agentLabel
 
   return (
     <div className="agent-table-wrap">
-      <table ref={tableRef} className="agent-table" onMouseMove={onMove} onMouseLeave={() => setTip(null)}>
+      <table ref={tableRef} className="agent-table ledger" {...track('tip', { ignore: ROW_TIP_IGNORE })}>
         <thead>
           <tr>
             <th scope="col" className="col-name">{tx('colModel')}</th>
@@ -53,7 +48,7 @@ export default function ModelTable({ models, pricing, sortBy, onSort, agentLabel
             </SortHeader>
             <th scope="col" className="col-mix">{tx('colMix')}</th>
             <th scope="col" className="col-cache">{tx('colCache')}</th>
-            <th scope="col" className="col-num col-req">{tx('colRequests')}</th>
+            <th scope="col" className="num col-num col-req">{tx('colRequests')}</th>
             <th scope="col" className="col-info no-export"><span className="visually-hidden">{tx('details')}</span></th>
           </tr>
         </thead>

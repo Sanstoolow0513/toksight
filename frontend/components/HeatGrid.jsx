@@ -1,9 +1,7 @@
 'use client';
 
-import { memo, useMemo, useState } from 'react';
-
-
-import Tooltip from '@/components/Tooltip';
+import { memo, useMemo } from 'react';
+import { TipRow, TipTitle, Tooltip, useTip } from '@/components/ui';
 import { calendarWeeks, compactCalendar, periodBounds } from '@/lib/period';
 import { cacheHitRate, heatLevel, heatMax, metricValue } from '@/lib/report';
 import { fmtCost, fmtCostShort, fmtInt, fmtPct, fmtTokens, fmtTokensShort } from '@/lib/format';
@@ -111,19 +109,19 @@ const YearGrid = memo(function YearGrid({ weeks, days, max, today, selected, loc
 function DayTip({ date, row, today, locale, tx }) {
   return (
     <>
-      <div className="tip-title">
+      <TipTitle>
         {dayLabel(locale, date, true)} · {weekdayLabel(locale, date)}
-      </div>
+      </TipTitle>
       {date > today ? (
         <div className="tip-muted">{tx('tipFuture')}</div>
       ) : !row?.requests ? (
         <div className="tip-muted">{tx('tipIdle')}</div>
       ) : (
         <>
-          <div className="tip-row"><span>{tx('tipTokens')}</span><b>{fmtTokens(row.totalTokens)}</b></div>
-          <div className="tip-row"><span>{tx('tipCost')}</span><b>{fmtCost(row.costUsd)}</b></div>
-          <div className="tip-row"><span>{tx('tipRequests')}</span><b>{fmtInt(row.requests)} / {fmtInt(row.sessions)}</b></div>
-          <div className="tip-row"><span>{tx('tipCache')}</span><b>{fmtPct(cacheHitRate(row))}</b></div>
+          <TipRow label={tx('tipTokens')}>{fmtTokens(row.totalTokens)}</TipRow>
+          <TipRow label={tx('tipCost')}>{fmtCost(row.costUsd)}</TipRow>
+          <TipRow label={tx('tipRequests')}>{fmtInt(row.requests)} / {fmtInt(row.sessions)}</TipRow>
+          <TipRow label={tx('tipCache')}>{fmtPct(cacheHitRate(row))}</TipRow>
         </>
       )}
     </>
@@ -133,7 +131,7 @@ function DayTip({ date, row, today, locale, tx }) {
 // Calendar grid, hover details and legend. Click or keyboard activation
 // directly selects a day in the adjacent detail view.
 export function HeatGrid({ days, period, today, selected, onPick, hint, active = true, locale, tx }) {
-  const [tip, setTip] = useState(null);
+  const { tip, hide, track } = useTip();
   const { since, until } = periodBounds(period);
   const weeks = useMemo(() => calendarWeeks(since, until), [since, until]);
   const compact = compactCalendar(period);
@@ -148,14 +146,9 @@ export function HeatGrid({ days, period, today, selected, onPick, hint, active =
   const max = useMemo(() => heatMax(days), [days]);
   const label = periodLabel(locale, period);
 
-  const onMove = (e) => {
-    const date = e.target.closest?.('[data-date]')?.dataset.date;
-    if (!date) return setTip(null);
-    setTip({ date, x: e.clientX, y: e.clientY });
-  };
   const onClick = (e) => {
     const date = e.target.closest?.('[data-date]')?.dataset.date;
-    if (date && date <= today) { setTip(null); onPick(date, e); }
+    if (date && date <= today) { hide(); onPick(date, e); }
   };
 
   return (
@@ -164,8 +157,7 @@ export function HeatGrid({ days, period, today, selected, onPick, hint, active =
         className="heat-body"
         role="group"
         aria-label={tx('heatAria', { period: label })}
-        onMouseMove={onMove}
-        onMouseLeave={() => setTip(null)}
+        {...track('date')}
         onClick={onClick}
       >
         {compact ? (
@@ -181,13 +173,13 @@ export function HeatGrid({ days, period, today, selected, onPick, hint, active =
         <span className="heat-hint no-export">{hint}</span>
         <span>{tx('heatLess')}</span>
         {[0, 1, 2, 3, 4].map((level) => (
-          <i key={level} className={`lv-${level}`} />
+          <i key={level} className={`heat-swatch lv-${level}`} />
         ))}
         <span>{tx('heatMore')}</span>
       </div>
       {tip && active ? (
         <Tooltip x={tip.x} y={tip.y}>
-          <DayTip date={tip.date} row={days.get(tip.date)} today={today} locale={locale} tx={tx} />
+          <DayTip date={tip.key} row={days.get(tip.key)} today={today} locale={locale} tx={tx} />
         </Tooltip>
       ) : null}
     </>

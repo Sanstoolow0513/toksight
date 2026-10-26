@@ -3,6 +3,7 @@ import { periodBounds } from '@/lib/period';
 import { trendSeries } from '@/lib/report';
 import { fmtCost, fmtTokens } from '@/lib/format';
 import { periodLabel } from '@/lib/i18n';
+import { Panel } from './ui';
 
 function TrendPlot({ rows, metric, label, format, unit }) {
   const max = rows.reduce((value, row) => Math.max(value, row[metric]), 0);
@@ -12,14 +13,14 @@ function TrendPlot({ rows, metric, label, format, unit }) {
   const tick = (row) => unit === 'Daily' ? row.key.slice(5) : row.key;
   return (
     <figure className={`trend-plot is-${metric}`}>
-      <figcaption><span>{label}</span><span>{format(max)}</span></figcaption>
+      <figcaption><span className="label">{label}</span><span>{format(max)}</span></figcaption>
       <div className="chart-layout"><div className="chart-scale" aria-hidden="true"><span>{max > 0 ? format(max) : ''}</span><span>{max > 0 ? format(max / 2) : ''}</span><span>{format(0)}</span></div>
       <div><svg viewBox={`0 0 ${width} ${height + 2}`} role="img" aria-label={label} preserveAspectRatio="none">
         <title>{label}</title>
         {[0, 0.5, 1].map((ratio) => <line key={ratio} x1="0" x2={width} y1={ratio * height + 1} y2={ratio * height + 1} className="trend-guide" />)}
         {rows.map((row, i) => {
           const barHeight = max ? row[metric] / max * height : 0;
-          return <rect key={row.key} x={i * step + step * 0.16} y={height - barHeight + 1} width={step * 0.68} height={barHeight} rx={Math.min(3, step / 5)} className="trend-bar">
+          return <rect key={row.key} x={i * step + step * 0.16} y={height - barHeight + 1} width={step * 0.68} height={barHeight} className="trend-bar">
             <title>{row.key} · {format(row[metric])}</title>
           </rect>;
         })}
@@ -33,12 +34,11 @@ export default function TrendCard({ data, period, today, locale, tx }) {
   const { since, until } = periodBounds(period);
   const series = useMemo(() => trendSeries(data.daily, data.hourly, { since, until, today }), [data.daily, data.hourly, since, until, today]);
   return (
-    <section className="trend-section">
-      <header className="trend-head"><h3 tabIndex={-1}>{tx('cardTrend')}</h3><p>{periodLabel(locale, period)} · {tx(`trend${series.unit}`)}</p></header>
-      <div className="trend-charts">
+    <Panel className="trend-section" index="06" title={tx('cardTrend')} titleProps={{ tabIndex: -1 }} note={`${periodLabel(locale, period)} · ${tx(`trend${series.unit}`)}`}>
+      <div className="trend-charts plate-body">
         <TrendPlot rows={series.rows} metric="tokens" label={tx('trendTokens')} format={fmtTokens} unit={series.unit} />
         <TrendPlot rows={series.rows} metric="cost" label={tx('trendCost')} format={fmtCost} unit={series.unit} />
       </div>
-    </section>
+    </Panel>
   );
 }

@@ -1,30 +1,26 @@
 import { ChartPie } from 'lucide-react';
 import { TOKEN_PARTS } from '@/lib/report';
 import { fmtPct, fmtTokens } from '@/lib/format';
+import { Panel } from './ui';
 
 const labels = ['compInput', 'compCacheRead', 'compCacheWrite', 'compOutput'];
 
+// Token mix as a spectrum band (one stacked bar) and a leader-dotted ledger.
 export default function TokenBreakdown({ data, tx }) {
   const total = data.totals?.totalTokens || 0;
-  let offset = 0;
   const parts = TOKEN_PARTS.map((key, i) => {
     const count = data.totals?.[key] || 0;
-    const share = total ? count / total : 0;
-    const part = { key, i, count, share, offset };
-    offset += share * 100;
-    return part;
+    return { key, i, count, share: total ? count / total : 0 };
   });
-  return <section className="day-section section-breakdown">
-    <header className="day-section-head"><div><h3><ChartPie size={17} />{tx('tokenMix')}</h3><p>{tx('tokenMixNote')}</p></div></header>
+  return <Panel className="day-section section-breakdown" index="02" icon={<ChartPie size={16} aria-hidden="true" />} title={tx('tokenMix')} note={tx('tokenMixNote')}>
     <div className="token-breakdown">
-      <div className="token-donut"><svg viewBox="0 0 180 180" role="img" aria-label={`${tx('tokenMix')} · ${fmtTokens(total)} Tokens`}>
-        <circle className="donut-track" cx="90" cy="90" r="70" />
-        {parts.filter((part) => part.count > 0).map((part) => <circle key={part.key} cx="90" cy="90" r="70" pathLength="100" className={`donut-part part-${part.i}`}
-          strokeDasharray={`${Math.max(0.1, part.share * 100 - (part.share === 1 ? 0 : Math.min(1.4, part.share * 20)))} 100`} strokeDashoffset={-part.offset} transform="rotate(-90 90 90)">
-          <title>{tx(labels[part.i])} · {fmtTokens(part.count)} · {fmtPct(part.share)}</title></circle>)}
-      </svg><div className="donut-center"><strong>{fmtTokens(total)}</strong><span>Tokens</span></div></div>
-      <dl className="token-legend">{parts.map((part) => <div key={part.key}><dt><i className={`part-${part.i}`} />{tx(labels[part.i])}</dt>
+      <div className="token-total"><strong>{fmtTokens(total)}</strong><span className="label">Tokens</span></div>
+      <div className="spectrum" role="img" aria-label={`${tx('tokenMix')} · ${parts.map((part) => `${tx(labels[part.i])} ${fmtPct(part.share)}`).join(' · ')}`}>
+        {parts.filter((part) => part.count > 0).map((part) => <i key={part.key} className={`swatch part-${part.i}`} style={{ flexGrow: part.count }} title={`${tx(labels[part.i])} · ${fmtTokens(part.count)} · ${fmtPct(part.share)}`} />)}
+      </div>
+      <div className="spectrum-scale" aria-hidden="true"><span>0</span><span>50%</span><span>100%</span></div>
+      <dl className="token-legend">{parts.map((part) => <div key={part.key} className="leader"><dt><i className={`swatch part-${part.i}`} />{tx(labels[part.i])}</dt>
         <dd><strong>{fmtTokens(part.count)}</strong><span>{total ? fmtPct(part.share) : '—'}</span></dd></div>)}</dl>
     </div>
-  </section>;
+  </Panel>;
 }

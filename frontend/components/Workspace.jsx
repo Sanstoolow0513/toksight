@@ -1,12 +1,14 @@
 'use client';
 
 import { useState } from 'react';
-import { CalendarDays, LoaderCircle, RefreshCw, RotateCcw, TriangleAlert } from 'lucide-react';
+import { CalendarDays, RefreshCw, RotateCcw, TriangleAlert } from 'lucide-react';
 import { useWorkspace } from '@/lib/useWorkspace';
 import { dayLabel, weekdayLabel } from '@/lib/i18n';
 import { periodOf } from '@/lib/period';
 import AppHeader from './AppHeader';
-import Sidebar from './Sidebar';
+import Sidebar, { NAV_INDEX } from './Sidebar';
+import { Button, Segmented } from './ui';
+import { AgentDot } from './Marks';
 import TodayDashboard from './TodayDashboard';
 import Settings from './Settings';
 import ReportActions from './ReportActions';
@@ -21,14 +23,14 @@ import Toasts from './Toasts';
 
 function Skeleton({ tx }) {
   return <div className="loading-workspace" role="status" aria-label={tx('filterLoading')} aria-busy="true">
-    <div className="skeleton-metrics">{[0, 1, 2, 3].map((i) => <div key={i} className="skel" />)}</div>
+    <div className="skel skeleton-metrics" />
     <div className="skel skeleton-chart" /><div className="skel skeleton-table" />
   </div>;
 }
 
 function ErrorState({ error, onRetry, tx }) {
-  return <section className="state-card" role="alert"><TriangleAlert size={28} /><h2>{tx('errorTitle')}</h2><p>{error}</p>
-    <button type="button" className="btn-primary" onClick={onRetry}><RefreshCw size={16} />{tx('retry')}</button></section>;
+  return <section className="state-card plate" role="alert"><TriangleAlert size={28} aria-hidden="true" /><h2>{tx('errorTitle')}</h2><p>{error}</p>
+    <Button variant="primary" icon={<RefreshCw size={15} />} onClick={onRetry}>{tx('retry')}</Button></section>;
 }
 
 export default function Workspace() {
@@ -64,27 +66,26 @@ export default function Workspace() {
     <main className="main" id="main-content" tabIndex={-1}>
       <div className="workspace-content">
         <header className="workspace-head">
-          <div className="workspace-title"><h1>{tx('title' + view)}</h1>
+          <div className="workspace-title"><span className="label">{NAV_INDEX[view]} — {tx('eyebrow' + view)}</span><h1>{tx('title' + view)}</h1>
             <p>{tx(view + 'Description')}</p></div>
           {ready ? view === 'prices' ? <div className="price-actions">
-            <button type="button" className="btn-secondary" disabled={busy} onClick={() => { w.setPriceResetError(null); w.setPriceResetOpen(true); }}><RotateCcw size={15} />{tx('priceReset')}</button>
-            <button type="button" className="btn-primary" disabled={busy || prices.status.offline} title={prices.status.offline ? tx('setupOffline') : undefined} onClick={w.onUpdatePrices}>
-              {w.updatingPrices ? <LoaderCircle size={15} className="spin" /> : <RefreshCw size={15} />}{tx(w.updatingPrices ? 'updatingPrices' : 'updatePrices')}</button>
+            <Button disabled={busy} icon={<RotateCcw size={15} />} onClick={() => { w.setPriceResetError(null); w.setPriceResetOpen(true); }}>{tx('priceReset')}</Button>
+            <Button variant="primary" disabled={busy || prices.status.offline} loading={w.updatingPrices} title={prices.status.offline ? tx('setupOffline') : undefined} icon={<RefreshCw size={15} />} onClick={w.onUpdatePrices}>
+              {tx(w.updatingPrices ? 'updatingPrices' : 'updatePrices')}</Button>
           </div> : <ReportActions tx={tx} loading={busy || w.reportBusy} refreshing={w.refreshing} onRefresh={w.onRefresh}
             exporting={w.exporting} onExport={w.onExport} canExport={w.canExport} settings={view === 'settings'} /> : null}
         </header>
         {ready && view === 'today' ? <div className="overview-toolbar no-export">
-          <div className="agent-tabs" role="group" aria-label={tx('colAgent')}>
-            <button type="button" className={!w.agent ? 'is-active' : ''} aria-pressed={!w.agent} onClick={() => w.onAgent('')}>{tx('filterAllAgents')}</button>
-            {(report.data?.view?.availableClients ?? []).map((client) => <button key={client.id} type="button" className={w.agent === client.id ? 'is-active' : ''} aria-pressed={w.agent === client.id} onClick={() => w.onAgent(client.id)}>
-              <i className="agent-dot" style={{ '--agent': `var(--agent-${client.id}, var(--text-3))` }} />{client.label}</button>)}
-          </div>
-          <div className="today-date"><CalendarDays size={15} />{today ? `${dayLabel(locale, today, true)} · ${weekdayLabel(locale, today)}` : '…'}</div>
+          <Segmented label={tx('colAgent')} value={w.agent || ''} onChange={(id) => w.onAgent(id)} wrap className="agent-tabs" options={[
+            { value: '', label: tx('filterAllAgents') },
+            ...(report.data?.view?.availableClients ?? []).map((client) => ({ value: client.id, label: client.label, icon: <AgentDot id={client.id} /> })),
+          ]} />
+          <div className="today-date"><CalendarDays size={14} aria-hidden="true" />{today ? `${dayLabel(locale, today, true)} · ${weekdayLabel(locale, today)}` : '…'}</div>
         </div> : null}
         {ready && view === 'calendar' && w.activePeriod && today ? <ReportFilters period={w.activePeriod} today={today} agent={w.agent} clients={report.data?.view?.availableClients ?? []}
           onAgent={w.onAgent} onPeriod={w.onPeriod} onReset={() => { w.onAgent(''); w.onPeriod(periodOf(today, 'month')); }} tx={tx} /> : null}
         {w.reportView && (w.reportBusy || (report.error && w.hasData)) ? <div className="filter-status" role="status">
-          {w.reportBusy ? <><LoaderCircle className="spin" size={13} />{tx('filterLoading')}</> : <>{tx('filterFailed')} <button type="button" className="filter-reset" onClick={() => void report.reload()}>{tx('retry')}</button></>}
+          {w.reportBusy ? <><span className="status-led" aria-hidden="true" />{tx('filterLoading')}</> : <>{tx('filterFailed')} <Button variant="text" onClick={() => void report.reload()}>{tx('retry')}</Button></>}
         </div> : null}
         {content}
       </div>

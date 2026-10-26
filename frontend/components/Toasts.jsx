@@ -8,6 +8,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { CircleCheck, TriangleAlert, X } from 'lucide-react';
 import { coded } from '@/components/Coded';
+import { IconButton } from '@/components/ui';
 
 const DURATION = { success: 4000, warn: 8000, error: 8000 };
 const LEAVE_MS = 200;
@@ -70,9 +71,9 @@ function ToastItem({ toast, onDismiss, tx }) {
           </details>
         ) : null}
       </div>
-      <button type="button" className="toast-close" onClick={() => onDismiss(id)} aria-label={closeLabel} title={closeLabel}>
+      <IconButton size="sm" className="toast-close" onClick={() => onDismiss(id)} label={closeLabel}>
         <X size={14} strokeWidth={2} aria-hidden="true" />
-      </button>
+      </IconButton>
     </div>
   );
 }

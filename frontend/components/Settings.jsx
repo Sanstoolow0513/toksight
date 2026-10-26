@@ -1,6 +1,6 @@
 import { useMemo, useRef } from 'react';
-import { DatabaseBackup, DatabaseZap, Globe2, LoaderCircle, Monitor, Moon, Palette, Sun } from 'lucide-react';
-import Segmented from './Segmented';
+import { DatabaseBackup, DatabaseZap, Globe2, Monitor, Moon, Palette, Sun } from 'lucide-react';
+import { Button, Field, Panel, Segmented } from './ui';
 import { timezoneOptions } from '@/lib/period';
 import { fmtDateTime } from '@/lib/format';
 
@@ -9,38 +9,37 @@ export default function Settings({ tx, timezone, timezonePref, systemZone, onTim
   const databaseInput = useRef(null);
   const zones = useMemo(() => timezoneOptions(timezone), [timezone]);
   return <div className="settings-content">
-    <section className="settings-section appearance-settings">
-      <div className="settings-heading"><Palette size={20} /><div><h2>{tx('appearanceTitle')}</h2><p>{tx('appearanceNote')}</p></div></div>
-      <div className="settings-row"><h3>{tx('themeGroup')}</h3><Segmented label={tx('themeGroup')} value={theme} onChange={onTheme} options={[
+    <Panel className="settings-section appearance-settings" index="01" level={2} icon={<Palette size={18} aria-hidden="true" />} title={tx('appearanceTitle')} note={tx('appearanceNote')}>
+      <div className="settings-row"><h3>{tx('themeGroup')}</h3><Segmented wrap label={tx('themeGroup')} value={theme} onChange={onTheme} options={[
         { value: 'light', label: tx('themeLight'), icon: <Sun size={15} /> }, { value: 'dark', label: tx('themeDark'), icon: <Moon size={15} /> }, { value: 'system', label: tx('themeSystem'), icon: <Monitor size={15} /> },
       ]} /></div>
-      <div className="settings-row"><h3>{tx('langGroup')}</h3><Segmented label={tx('langGroup')} value={locale} onChange={onLocale} options={[{ value: 'zh-CN', label: '简体中文' }, { value: 'en', label: 'English' }]} /></div>
-    </section>
-    <section className="settings-section">
-      <div className="settings-heading"><Globe2 size={20} aria-hidden="true" /><div><h2>{tx('timezoneTitle')}</h2><p>{tx('timezoneDescription')}</p></div></div>
-      <label className="timezone-field"><span>{tx('timezoneLabel')}</span>
+      <div className="settings-row"><h3>{tx('langGroup')}</h3><Segmented wrap label={tx('langGroup')} value={locale} onChange={onLocale} options={[{ value: 'zh-CN', label: '简体中文' }, { value: 'en', label: 'English' }]} /></div>
+    </Panel>
+    <Panel className="settings-section" index="02" level={2} icon={<Globe2 size={18} aria-hidden="true" />} title={tx('timezoneTitle')} note={tx('timezoneDescription')}>
+      <div className="settings-body">
+      <Field label={tx('timezoneLabel')} className="timezone-field">
         <select value={timezonePref ?? 'auto'} onChange={(e) => onTimezone(e.target.value)}>
           <option value="auto">{tx('timezoneAuto', { zone: systemZone ?? '…' })}</option>
           {zones.map((zone) => <option key={zone} value={zone}>{zone.replaceAll('_', ' ')}</option>)}
         </select>
-      </label>
+      </Field>
       <p className="timezone-preview">{tx('timezonePreview', { time: timezone ? fmtDateTime(now, timezone) : '…' })}</p>
-      <p className="settings-note">{tx('timezoneNote')}</p>
-    </section>
-    <section className="settings-section">
-      <div className="settings-heading"><DatabaseBackup size={20} aria-hidden="true" /><div><h2>{tx('databaseActions')}</h2><p>{tx('databaseDescription')}</p></div></div>
+      <p className="muted-note">{tx('timezoneNote')}</p>
+      </div>
+    </Panel>
+    <Panel className="settings-section" index="03" level={2} icon={<DatabaseBackup size={18} aria-hidden="true" />} title={tx('databaseActions')} note={tx('databaseDescription')}>
       <input ref={databaseInput} type="file" className="visually-hidden" tabIndex={-1} accept=".sqlite,.sqlite3,.db,application/vnd.sqlite3" aria-label={tx('importDatabase')}
         onChange={(e) => { const file = e.target.files?.[0]; e.target.value = ''; if (file) onImportDatabase(file); }} />
       <div className="settings-row"><div><h3>{tx('exportDatabase')}</h3><p>{tx('databaseAllHint')}</p></div>
-        <button type="button" className="btn-secondary" disabled={loading} onClick={onExportDatabase}>
-          {databaseBusy === 'export' ? <LoaderCircle size={16} className="spin" /> : <DatabaseBackup size={16} />}{tx(databaseBusy === 'export' ? 'exportingDatabase' : 'exportDatabase')}
-        </button>
+        <Button disabled={loading} loading={databaseBusy === 'export'} icon={<DatabaseBackup size={15} />} onClick={onExportDatabase}>
+          {tx(databaseBusy === 'export' ? 'exportingDatabase' : 'exportDatabase')}
+        </Button>
       </div>
       <div className="settings-row"><div><h3>{tx('importDatabase')}</h3><p>{tx('databaseMergeHint')}</p></div>
-        <button type="button" className="btn-secondary" disabled={loading} onClick={() => databaseInput.current?.click()}>
-          {databaseBusy === 'import' ? <LoaderCircle size={16} className="spin" /> : <DatabaseZap size={16} />}{tx(databaseBusy === 'import' ? 'importingDatabase' : 'importDatabase')}
-        </button>
+        <Button disabled={loading} loading={databaseBusy === 'import'} icon={<DatabaseZap size={15} />} onClick={() => databaseInput.current?.click()}>
+          {tx(databaseBusy === 'import' ? 'importingDatabase' : 'importDatabase')}
+        </Button>
       </div>
-    </section>
+    </Panel>
   </div>;
 }

@@ -1,12 +1,13 @@
 import { Fragment, useId, useMemo, useState } from 'react';
 import { ArrowDown, ChevronRight, Info } from 'lucide-react';
-import Tooltip from '@/components/Tooltip';
+import { TipRow, TipTitle, Tooltip, useTip } from '@/components/ui';
 import { AgentDot, CacheRing, CostValue, PartsBar, PartsLegend, agentStyle } from '@/components/Marks';
 import { TOKEN_PARTS, agentRows, modelsByAgent } from '@/lib/report';
 import { fmtCost, fmtInt, fmtPct, fmtTokens } from '@/lib/format';
 import { useTableColumns } from '@/lib/useTableColumns';
 import { priceSourceLabel } from '@/lib/prices';
 
+export const ROW_TIP_IGNORE = '.row-info-btn,.row-details-content';
 const RATE_PARTS = ['input', 'cacheRead', 'cacheWrite', 'output'];
 const PART_LABELS = ['compInput', 'compCacheRead', 'compCacheWrite', 'compOutput'];
 
@@ -22,7 +23,7 @@ export { commonRate };
 export function SortHeader({ id, sortBy, onSort, children }) {
   const active = sortBy === id;
   return (
-    <th scope="col" className={`col-num col-${id}`} aria-sort={active ? 'descending' : undefined}>
+    <th scope="col" className={`num col-num col-${id}`} aria-sort={active ? 'descending' : undefined}>
       <button type="button" className={active ? 'sort-btn is-active' : 'sort-btn'} onClick={() => onSort(id)}>
         {children}
         <ArrowDown className="sort-arrow" size={12} strokeWidth={2.4} aria-hidden="true" />
@@ -34,11 +35,11 @@ export function SortHeader({ id, sortBy, onSort, children }) {
 export function Cells({ row, tx }) {
   return (
     <>
-      <td className="col-num">
+      <td className="num col-num">
         <span className="cell-value">{fmtTokens(row.totalTokens)}</span>
         <span className="cell-share">{fmtPct(row.tokenShare)}</span>
       </td>
-      <td className="col-num">
+      <td className="num col-num">
         <CostValue row={row} tx={tx} />
         <span className="cell-share">{row.pricing === 'none' ? '—' : fmtPct(row.costShare)}</span>
       </td>
@@ -48,7 +49,7 @@ export function Cells({ row, tx }) {
       <td className="col-cache">
         <CacheRing rate={row.cacheHitRate} />
       </td>
-      <td className="col-num col-req">{fmtInt(row.requests)}</td>
+      <td className="num col-num col-req">{fmtInt(row.requests)}</td>
     </>
   );
 }
@@ -60,23 +61,17 @@ export function RowTip({ tip, tx }) {
   const ids = row.modelIds ?? [];
   return (
     <>
-      <div className={mono ? 'tip-title is-mono' : 'tip-title'}>{name}</div>
-      <div className="tip-row"><span>{tx('tipTokens')}</span><b>{fmtTokens(row.totalTokens)}</b></div>
-      <div className="tip-row"><span>{tx('kpiCost')}</span><b><CostValue row={row} tx={tx} /></b></div>
+      <TipTitle mono={mono}>{name}</TipTitle>
+      <TipRow label={tx('tipTokens')}>{fmtTokens(row.totalTokens)}</TipRow>
+      <TipRow label={tx('kpiCost')}><CostValue row={row} tx={tx} /></TipRow>
       {TOKEN_PARTS.map((key, i) => (
-        <div key={key} className="tip-row">
-          <span>
-            <i className={`tip-swatch part-${i}`} />
-            {tx(PART_LABELS[i])}
-          </span>
-          <b>
-            {fmtTokens(row[key])}
-            {rate ? <em>{fmtCost(rate[RATE_PARTS[i]])}</em> : null}
-          </b>
-        </div>
+        <TipRow key={key} label={<><i className={`swatch part-${i}`} />{tx(PART_LABELS[i])}</>}>
+          {fmtTokens(row[key])}
+          {rate ? <em>{fmtCost(rate[RATE_PARTS[i]])}</em> : null}
+        </TipRow>
       ))}
-      <div className="tip-row"><span>{tx('tipCache')}</span><b>{fmtPct(row.cacheHitRate)}</b></div>
-      <div className="tip-row"><span>{tx('tipRequests')}</span><b>{fmtInt(row.requests)} / {row.sessions ? fmtInt(row.sessions) : '—'}</b></div>
+      <TipRow label={tx('tipCache')}>{fmtPct(row.cacheHitRate)}</TipRow>
+      <TipRow label={tx('tipRequests')}>{fmtInt(row.requests)} / {row.sessions ? fmtInt(row.sessions) : '—'}</TipRow>
       {rate ? <div className="tip-note">{tx('tipRates', { source: priceSourceLabel(rate.source, tx) })}</div> : null}
       {ids.length && (ids.length > 1 || ids[0] !== row.model) ? <div className="tip-note is-mono">{ids.join(', ')}</div> : null}
     </>
@@ -84,9 +79,9 @@ export function RowTip({ tip, tx }) {
 }
 
 export function RowInfoButton({ id, expanded, onToggle, name, tx }) {
-  return <td className="col-info no-export"><button type="button" className="row-info-btn" aria-expanded={expanded} aria-controls={expanded ? id : undefined}
+  return <td className="col-info no-export"><button type="button" className="icon-btn icon-btn--sm row-info-btn" aria-expanded={expanded} aria-controls={expanded ? id : undefined}
     aria-label={tx('rowDetails', { name })} title={tx('rowDetails', { name })} onClick={(e) => { e.stopPropagation(); onToggle(); }}>
-    <Info size={16} aria-hidden="true" /></button></td>;
+    <Info size={15} aria-hidden="true" /></button></td>;
 }
 
 export function RowInfo({ id, expanded, tip, tx, columns }) {
@@ -105,7 +100,7 @@ export default function AgentTable({ clients, models, pricing, sortBy, onSort, a
   const grouped = useMemo(() => modelsByAgent(models, sortBy), [models, sortBy]);
   const rates = useMemo(() => new Map((pricing?.modelRates ?? []).map((rate) => [`${rate.client}\0${rate.model}`, rate])), [pricing]);
   const [openState, setOpenState] = useState(() => new Set());
-  const [tip, setTip] = useState(null);
+  const { tip, hide, track } = useTip();
   const [detail, setDetail] = useState(null);
   const listId = useId();
   const { ref: tableRef, columns } = useTableColumns(agents.length > 0);
@@ -120,13 +115,7 @@ export default function AgentTable({ clients, models, pricing, sortBy, onSort, a
       }));
   if (!agents.length) return null;
   const tips = new Map();
-  const onMove = (e) => {
-    if (e.target.closest?.('.row-info-btn,.row-details-content')) return setTip(null);
-    const key = e.target.closest?.('[data-tip]')?.dataset.tip;
-    setTip(key ? { key, x: e.clientX, y: e.clientY } : null);
-  };
-
-  const toggleDetail = (key) => { setTip(null); setDetail((previous) => previous === key ? null : key); };
+  const toggleDetail = (key) => { hide(); setDetail((previous) => previous === key ? null : key); };
   const body = agents.map((agent, agentIndex) => {
     const group = grouped.get(agent.id);
     const name = agentLabel(agent.id);
@@ -200,7 +189,7 @@ export default function AgentTable({ clients, models, pricing, sortBy, onSort, a
 
   return (
     <div className="agent-table-wrap">
-      <table ref={tableRef} className="agent-table" onMouseMove={onMove} onMouseLeave={() => setTip(null)}>
+      <table ref={tableRef} className="agent-table ledger" {...track('tip', { ignore: ROW_TIP_IGNORE })}>
         <thead>
           <tr>
             <th scope="col" className="col-name">{tx('colAgent')}</th>
@@ -208,7 +197,7 @@ export default function AgentTable({ clients, models, pricing, sortBy, onSort, a
             <SortHeader id="cost" sortBy={sortBy} onSort={onSort}>{tx('colCost')}</SortHeader>
             <th scope="col" className="col-mix">{tx('colMix')}</th>
             <th scope="col" className="col-cache">{tx('colCache')}</th>
-            <th scope="col" className="col-num col-req">{tx('colRequests')}</th>
+            <th scope="col" className="num col-num col-req">{tx('colRequests')}</th>
             <th scope="col" className="col-info no-export"><span className="visually-hidden">{tx('details')}</span></th>
           </tr>
         </thead>
