@@ -67,5 +67,5 @@ error         { code, message }
 因此与写路由一样要求 POST、回环 Host 和同源 Origin。`--offline` 启动时刷新返回 `KIMI_OFFLINE`，按钮禁用；
 `--client` 启动范围同样限制额度客户端。
 
-`QuotaCard` 位于今日概览 KPI 下方，`useQuota` 在挂载、窗口聚焦和数据库刷新后 GET，按钮才 POST。
+`QuotaCard` 位于今日概览 KPI 下方，`useQuota` 在挂载、窗口聚焦和数据库刷新后 GET，按钮才 POST。每个窗口以共享 `Meter` 原语显示（分格刻度条，≥80% 用信号色，剩余部分阴影线），并保留百分比文本与重置倒计时。
 卡片带 `.no-export`，PNG 导出不包含实时额度。重置时间按报告时区显示绝对时间与倒计时。

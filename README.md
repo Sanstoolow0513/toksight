@@ -277,15 +277,16 @@ the automatic-update preference. `GET /api/prices` reads the catalog; add `key=<
 read a model's revisions, newest first. API token rates remain USD per token. These endpoints
 use the existing Host/Origin checks.
 
-The rebuilt UI lives in `frontend/`, with a workspace inspired by [ATK HUB](https://hub.atk.pro/): a cool gray canvas,
-a compact top toolbar, collapsible gray sidebar, translucent neutral panels, monochrome controls and restrained orange accents.
+The UI lives in `frontend/` and follows its own "Instrument Ledger" design language: a graph-paper ground, hairline
+plates with registration ticks, serif readouts with monospace tabular figures, hatching for missing data and a single
+signal orange, in warm-paper light and carbon dark themes with a collapsible index sidebar.
 The dashboard opens on **Today**, with **Calendar**, **Prices** and **Settings** in the sidebar.
 Theme (light / dark / system) and 中文 / EN controls live in the top bar. On phones, a sticky toolbar and horizontal
 navigation keep all four views within reach. **Refresh database** and **Export image** sit above reports;
 **Update prices** lives on the Prices page. See `design-spec.md` for the visual specification.
 
 - **Today** emphasizes tokens and reference cost, with cache hit rate and requests alongside, followed by hourly
-  activity with Tokens / Cost controls, a token-breakdown ring, expandable agents and models, and up to ten sessions
+  activity with Tokens / Cost controls, a token-mix spectrum bar, expandable agents and models, and up to ten sessions
   (five initially, with an expand control). Token/cost changes compare with the previous full day when a baseline exists. Single-model agents show the model name directly;
   a separate model ranking appears when an agent uses multiple models. Charts show quantity scales and the hourly peak.
   Pick all agents or a single agent. Session details include title, usage, cost, time span,

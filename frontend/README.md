@@ -1,6 +1,6 @@
 # toksight frontend
 
-参考 [ATK HUB](https://hub.atk.pro/) 的本地用量工作台。使用 Next App Router、React、Geist、Lucide 和原生 CSS，静态导出后由 toksight CLI 提供页面与同源 API。
+本地用量工作台，采用“刻度账本”设计语言（见 [视觉规范](../design-spec.md)）。使用 Next App Router、React、Geist、Instrument Serif、Lucide 和原生 CSS（`@layer`），静态导出后由 toksight CLI 提供页面与同源 API。
 
 在仓库根目录运行：
 
@@ -25,6 +25,8 @@ npm run check:package
 - `components/ActivityChart.jsx`、`TokenBreakdown.jsx`：本地小时用量与 Token 构成。
 - `components/CalendarView.jsx`：日历、日期详情与趋势。
 - `lib/period.js`、`report.js`：沿用已有测试覆盖的日期与聚合算法。
-- `app/globals.css`：设计变量、明暗主题与响应式组件样式。
+- `app/globals.css`：声明 `@layer` 顺序并引入 `app/styles/`：`tokens`（明暗色、字号、间距、圆角、线条、动效）、`base`、`primitives`、`shell`、`report`、`calendar`、`manage`、`utilities`。
+- `components/ui/`：共享原语 Button / IconButton、Segmented、Panel、Stat、Meter、Badge、Field、Tooltip + `useTip`；页面组件只组合原语。
+- `app/fonts/`：随包提供的 Instrument Serif（SIL OFL，许可见同目录），经 `next/font/local` 打包，无远程字体请求。
 
 详情见 [Web 报告](../doc/web-report.md)、[架构](../doc/architecture.md)、[视觉规范](../design-spec.md)。
