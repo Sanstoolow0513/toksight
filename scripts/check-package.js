@@ -1,4 +1,4 @@
-// Exercise the shipped artifact, not source files or a mocked web/out directory.
+// Exercise the shipped artifact, not source files or a mocked frontend/out directory.
 import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import net from 'node:net';
@@ -53,7 +53,7 @@ async function main() {
   let output = '';
   try {
     const sourcePkg = JSON.parse(await readFile(path.join(root, 'package.json'), 'utf8'));
-    const webPkg = JSON.parse(await readFile(path.join(root, 'web', 'package.json'), 'utf8'));
+    const webPkg = JSON.parse(await readFile(path.join(root, 'frontend', 'package.json'), 'utf8'));
     assert.equal(webPkg.version, sourcePkg.version, 'Root and dashboard versions must match');
     console.log('Building and packing toksight (prepack installs locked web dependencies)…');
     await runNpm(['pack', '--loglevel=error', '--pack-destination', temp], { cwd: root });
@@ -122,7 +122,7 @@ async function main() {
 
     const assetPaths = new Set();
     for (const [route, file] of [['/', 'index.html']]) {
-      const expected = await readFile(path.join(installed, 'web', 'out', file), 'utf8');
+      const expected = await readFile(path.join(installed, 'frontend', 'out', file), 'utf8');
       const response = await fetch(url + route);
       assert.equal(response.status, 200, route);
       assert.match(response.headers.get('content-type'), /text\/html/);
@@ -135,7 +135,7 @@ async function main() {
       console.log(`OK ${route}: packaged HTML`);
     }
     // Also check fonts and assets referenced indirectly from stylesheets.
-    const out = path.join(installed, 'web', 'out');
+    const out = path.join(installed, 'frontend', 'out');
     for (const file of await filesUnder(path.join(out, '_next', 'static'))) {
       assetPaths.add('/' + path.relative(out, file).split(path.sep).join('/'));
     }

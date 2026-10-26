@@ -248,15 +248,16 @@ the automatic-update preference. `GET /api/prices` reads the catalog; add `key=<
 read a model's revisions, newest first. API token rates remain USD per token. These endpoints
 use the existing Host/Origin checks.
 
+The rebuilt UI lives in `frontend/`, with a workspace inspired by [ATK HUB](https://hub.atk.pro/): a cool gray canvas,
+a compact top toolbar, collapsible gray sidebar, translucent neutral panels, monochrome controls and restrained orange accents.
 The dashboard opens on **Today**, with **Calendar**, **Prices** and **Settings** in the sidebar.
-The full-height sidebar sits beside the report, with the logo at the top, vertically centered
-navigation, and theme and 中文 / EN controls at the bottom. On small screens, the sidebar becomes a compact area above the report
-with navigation and an **Appearance** menu for theme and language. The page uses a cool gray background;
-the report sits on a white panel with black and gray controls (visual spec: `design-spec.md`).
-**Refresh**, **Update prices**, and **Export image** are above the report.
+Theme (light / dark / system) and 中文 / EN controls live in the top bar. On phones, a sticky toolbar and horizontal
+navigation keep all four views within reach. **Refresh database** and **Export image** sit above reports;
+**Update prices** lives on the Prices page. See `design-spec.md` for the visual specification.
 
 - **Today** emphasizes tokens and reference cost, with cache hit rate and requests alongside, followed by hourly
-  activity, expandable agents and models, and up to ten sessions. Single-model agents show the model name directly;
+  activity with Tokens / Cost controls, a token-breakdown ring, expandable agents and models, and up to ten sessions
+  (five initially, with an expand control). Token/cost changes compare with the previous full day when a baseline exists. Single-model agents show the model name directly;
   a separate model ranking appears when an agent uses multiple models. Charts show quantity scales and the hourly peak.
   Pick all agents or a single agent. Session details include title, usage, cost, time span,
   active time, directory and models.
@@ -269,7 +270,7 @@ the report sits on a white panel with black and gray controls (visual spec: `des
   A range-trend shortcut remains available. Short ranges use a
   calendar; long ranges use week grids grouped by year. Trends use hours for a single day,
   days up to 62 elapsed dates, and months for longer ranges, with missing dates filled as zero.
-- **Settings** contains the reporting time zone, database import/export.
+- **Settings** contains appearance, language, the reporting time zone, and database import/export.
 
 The time zone defaults to the browser's detected zone and can be set explicitly, for example
 `Asia/Shanghai` when the operating system is set to US time. Today, date boundaries, hourly
@@ -309,7 +310,10 @@ usage. Cross-origin write requests are rejected.
 
 ### Dashboard bundle
 
-The npm package ships with the prebuilt static files in `web/out/` — installed users just run
+`frontend/` is the only frontend source, dependency, build and release directory; the old `web/` directory has been removed.
+Use `npm run frontend:ci`, `npm run frontend:dev`, and `npm run frontend:build`; existing `web:*` commands remain aliases for the new frontend.
+
+The npm package ships with the prebuilt static files in `frontend/out/` — installed users just run
 `toksight web`, no build and no Next runtime. To preview the production dashboard from a source
 checkout (requires Node >=22.5):
 
@@ -317,7 +321,7 @@ checkout (requires Node >=22.5):
 npm run web:ci && npm run web:build && node bin/toksight.js web
 ```
 
-Until `web/out/` exists, `toksight web` serves a setup-instructions page at `/` while
+Until `frontend/out/` exists, `toksight web` serves a setup-instructions page at `/` while
 `/api/data` keeps working. `web:build` only builds (it never installs); rebuild and refresh
 after editing the frontend. `npm pack` and `npm publish` rebuild the dashboard automatically.
 
@@ -377,20 +381,24 @@ with `git push origin dev`; prepare a PR targeting `release` when ready to publi
 ```bash
 npm test             # node:test suite with per-client fixtures (no network needed)
 node bin/toksight.js # run the CLI from source
-npm run web:ci       # install locked web dependencies from web/package-lock.json
+npm run web:ci       # install locked web dependencies from frontend/package-lock.json
 npm run web:dev      # API (4729) + Next dev server (3000) together, with hot reload
 ```
 
-Open `http://127.0.0.1:3000`; no `web/out/` build needed. Ctrl+C stops both; an occupied port
+Open `http://127.0.0.1:3000`; no `frontend/out/` build needed. Ctrl+C stops both; an occupied port
 errors out and shuts down the services the command started.
 `npm run web:dev -- --port 3001 --api-port 4730 --offline` overrides the two ports and skips the
 pricing fetch. For two-terminal work run `node bin/toksight.js web --api-only` plus
 `npm run web:dev:ui` (proxy overridable via `TOKSIGHT_DEV_API`, dev-server only — production
 builds always export static files). `web:install` remains for updating web dependencies.
 
+Codex browser automation is configured per project in [`.codex/config.toml`](./.codex/config.toml)
+using Playwright MCP. Trust the project and restart your Codex session, then check `/mcp`.
+See the [development guide](./doc/development-release.md#playwright-mcp) for setup and usage.
+
 The CLI keeps **zero runtime dependencies**; dashboard dependencies live only in
-`web/package.json`, needed just to (re)build `web/out/`. The flows: session files →
-parsers → `collectAll` → CLI output or SQLite refresh → `/api/data`; `web/` source → Next build → `web/out/` →
+`frontend/package.json`, needed just to (re)build `frontend/out/`. The flows: session files →
+parsers → `collectAll` → CLI output or SQLite refresh → `/api/data`; `frontend/` source → Next build → `frontend/out/` →
 the CLI's HTTP server. Developer architecture, data contracts and maintenance notes are indexed in
 [doc/README.md](./doc/README.md); short agent rules live in [AGENTS.md](./AGENTS.md).
 

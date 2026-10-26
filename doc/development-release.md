@@ -8,13 +8,27 @@
 | --- | --- |
 | `npm test` / `node --test` | 无网络的 node:test 套件；不要在 Node v24/Windows 上把 `test/` 当目录参数传给 `node --test` |
 | `npm run smoke` / `node bin/toksight.js` | 用真实本机来源运行源码 CLI |
-| `npm run web:ci` | 按 `web/package-lock.json` 安装网页构建依赖，首次需要网络 |
-| `npm run web:build` | 构建并检查静态导出 `web/out/`，不负责安装依赖 |
+| `npm run web:ci` | 按 `frontend/package-lock.json` 安装网页构建依赖，首次需要网络 |
+| `npm run web:build` | 构建并检查静态导出 `frontend/out/`，不负责安装依赖 |
 | `npm run web:dev` | 同时启动 API 4729 和 Next 3000；`-- --port <ui> --api-port <api> --offline` 可覆盖，Ctrl+C 关闭两者 |
 | `npm run web:dev:ui` | 只运行 Next；与 `node bin/toksight.js web --api-only` 配合，`TOKSIGHT_DEV_API` 可改开发代理目标 |
 | `npm run check:package` | 打包、临时离线安装并用 fixture 验证页面、静态资源、API 和数据库刷新 |
 
-Next 生产构建始终静态导出，不受 `TOKSIGHT_DEV_API` 影响。源码运行 `toksight web` 前需要构建 `web/out/`，否则 `/` 显示指引页。根包不添加运行时依赖；依赖只放在 `web/package.json`。项目使用 JavaScript ESM，没有独立 linter 或 typechecker。
+Next 生产构建始终静态导出，不受 `TOKSIGHT_DEV_API` 影响。源码运行 `toksight web` 前需要构建 `frontend/out/`，否则 `/` 显示指引页。根包不添加运行时依赖；依赖只放在 `frontend/package.json`。项目使用 JavaScript ESM，没有独立 linter 或 typechecker。
+
+前端源码与依赖统一位于 `frontend/`。也可使用同义的
+`frontend:install` / `frontend:ci` / `frontend:dev` / `frontend:dev:ui` / `frontend:build` 命令。
+`web:*` 保留兼容，全部指向 `frontend/`。前端依赖锁与 CI 缓存均使用 `frontend/package-lock.json`。
+
+前端直接依赖固定为已验证的稳定版本，间接依赖由 lockfile 锁定。升级时检查 `npm outdated --prefix frontend`，执行 `npm audit --prefix frontend`，并通过测试、静态构建及安装包检查；审计结果只代表检查时已知的漏洞。
+
+## Playwright MCP
+
+仓库的 [`.codex/config.toml`](../.codex/config.toml) 为 Codex 配置项目级 `playwright` MCP 服务，通过 `npx -y @playwright/mcp@latest` 启动。首次下载或检查更新需要网络，启动超时设为 60 秒；它是开发工具，不加入根包或 Web 的依赖。
+
+在 Codex 中信任此项目并重新启动会话后，用 `/mcp` 查看服务；也可在仓库根目录运行 `codex mcp get playwright` 检查配置。浏览器检查前先运行 `npm run web:ci` 和 `npm run web:dev`，再让 Agent 使用 Playwright 打开 `http://127.0.0.1:3000`。默认启动有界面的浏览器，需要无头运行时可在 `args` 中追加 `"--headless"`。
+
+本地 `.playwright-mcp/` 中的快照、截图等生成产物已由 Git 忽略。配置格式与可选参数见 [Codex MCP 文档](https://developers.openai.com/codex/mcp)和 [Playwright MCP 文档](https://github.com/microsoft/playwright-mcp)。
 
 ## 修改时的检查
 
@@ -39,6 +53,6 @@ Next 生产构建始终静态导出，不受 `TOKSIGHT_DEV_API` 影响。源码�
 
 ## 发布
 
-从当前 `release` 分支准备包含待发布代码的 PR，运行 `npm run release:version -- 1.1.0` 同步更新根 `package.json`、`web/package.json` 及两个 lockfile。PR CI 校验版本、Ubuntu/Windows 的 Node 22/24 测试和两平台的安装包检查；通过后合并到 `release`。
+从当前 `release` 分支准备包含待发布代码的 PR，运行 `npm run release:version -- 1.1.0` 同步更新根 `package.json`、`frontend/package.json` 及两个 lockfile。PR CI 校验版本、Ubuntu/Windows 的 Node 22/24 测试和两平台的安装包检查；通过后合并到 `release`。
 
-`.github/workflows/release.yml` 由 `release` 分支的推送触发，重跑检查后创建同版本标签，通过 npm Trusted Publishing 发布，再创建 GitHub Release。版本不变的维护 PR 不发布。`prepublishOnly` 重跑测试；`prepack` 安装锁定的网页依赖并重建 `web/out/`。配置、恢复和线上验收以[发布指南](release.md)为准。
+`.github/workflows/release.yml` 由 `release` 分支的推送触发，重跑检查后创建同版本标签，通过 npm Trusted Publishing 发布，再创建 GitHub Release。版本不变的维护 PR 不发布。`prepublishOnly` 重跑测试；`prepack` 安装锁定的网页依赖并重建 `frontend/out/`。配置、恢复和线上验收以[发布指南](release.md)为准。

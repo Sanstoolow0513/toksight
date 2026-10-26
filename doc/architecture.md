@@ -2,7 +2,7 @@
 
 ## 边界
 
-`toksight` 是 ESM Node.js CLI，要求 Node >=22.5，根包没有运行时依赖。它读取本机 Agent 会话数据；刷新和导入更新自己的 SQLite，价格抓取更新自己的缓存文件，不修改 Agent 数据。`web/` 用 Next.js 构建静态页面，由 CLI 的 `node:http` 服务托管；没有 TUI。`scripts/` 是源码仓库开发工具，不随 npm 包发布。用户命令和选项见双语 README。
+`toksight` 是 ESM Node.js CLI，要求 Node >=22.5，根包没有运行时依赖。它读取本机 Agent 会话数据；刷新和导入更新自己的 SQLite，价格抓取更新自己的缓存文件，不修改 Agent 数据。`frontend/` 用 Next.js 构建静态页面，由 CLI 的 `node:http` 服务托管；没有 TUI。`scripts/` 是源码仓库开发工具，不随 npm 包发布。用户命令和选项见双语 README。
 
 ## 两条读写路径
 
@@ -16,7 +16,7 @@ GET /api/data -> 读取快照 -> 查询范围与筛选 -> buildPayload + Web 聚
 POST /api/refresh -> collectAll -> 事务替换快照
 数据库备份 -> 验证并合并 toksight SQLite -> 后续报告读取
 
-web/ 源码 -> Next 静态导出 web/out/ -> src/webserver.js 提供页面与同源 API
+frontend/ 源码 -> Next 静态导出 frontend/out/ -> src/webserver.js 提供页面与同源 API
 ```
 
 普通 CLI 报告走 `collectAll`，Web 的 GET 只筛选已提交的快照。首次运行 `web` 若没有快照会采集一次；刷新失败保留旧快照。价格目录的更新与采集分开执行，报告可用已存价格重新定价，不必重扫 Agent 文件。
@@ -42,6 +42,6 @@ web/ 源码 -> Next 静态导出 web/out/ -> src/webserver.js 提供页面与同
 | `src/webservice.js`、`src/webquery.js` | Web 快照服务、查询范围交集、共享刷新任务 |
 | `src/webdata.js`、`src/comparison.js` | Web 补充聚合、等日历天数的相邻周期比较 |
 | `src/webserver.js` | 静态资源与本机 HTTP API |
-| `web/app/`、`web/components/`、`web/lib/` | 静态报告页面、组件、独立可测的前端计算与偏好 |
+| `frontend/app/`、`frontend/components/`、`frontend/lib/` | 新版工作台、图表与设置组件；`useWorkspace.js` 管页面状态，日期与聚合计算独立可测 |
 
 采集口径见[采集器](collectors.md)，稳定输出见[数据契约](data-contract.md)，持久化见[存储与定价](storage-pricing.md)。

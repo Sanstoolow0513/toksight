@@ -2,7 +2,7 @@
 
 ## HTTP 与安全边界
 
-`src/webserver.js` 默认绑定 `127.0.0.1:4729`，使用 Node 内置 `node:http`，页面来自 `web/out/`。未构建 `index.html` 时 `/` 显示内置构建指引，API 仍可用。`web/out/_next/` 的非 HTML 静态资源用 immutable 缓存，其他资源 `no-cache`；路径越界返回 403。未定义的 `/api/*` 返回 JSON 404。`--api-only` 不托管静态页面。
+`src/webserver.js` 默认绑定 `127.0.0.1:4729`，使用 Node 内置 `node:http`，页面来自 `frontend/out/`。未构建 `index.html` 时 `/` 显示内置构建指引，API 仍可用。`frontend/out/_next/` 的非 HTML 静态资源用 immutable 缓存，其他资源 `no-cache`；路径越界返回 403。未定义的 `/api/*` 返回 JSON 404。`--api-only` 不托管静态页面。
 
 | 路由 | 方法 | 作用 |
 | --- | --- | --- |
@@ -25,7 +25,13 @@
 `PriceReset` 使用原生 dialog，提供范围说明、取消、忙状态和失败重试；成功后关闭弹窗并返回建库引导。
 离线时禁用联网更新；本地继续不能在下一次 GET 自动下载。具体来源和历史语义见[本机价格库](local-pricing.md)。
 
-Next App Router 静态导出为 `web/out/`，生产由 CLI 托管。页面默认打开 Today，采用全高侧栏与主内容左右分区，不设独立顶栏。`Sidebar` 顶部展示品牌，今天 / 日历 / 价格 / 设置导航组垂直居中，底部提供配色、语言与时区入口。侧栏与页面同为冷灰底，主内容是白色圆角面板；≤600px 收为品牌、显示偏好菜单与横向导航，菜单支持 Escape 关闭和焦点返回。`ReportActions` 在页首提供同权重的刷新、更新单价、图片导出；价格页页首提供单价更新；`Settings` 管时区、SQLite 备份 / 合并。视觉与交互以 `design-spec.md` 为准。
+Next App Router 从 `frontend/` 静态导出为 `frontend/out/`，生产由 CLI 托管；旧 `web/` 已移除。
+`app/page.js` 挂载 `Workspace`，`lib/useWorkspace.js` 集中管理筛选、时区、刷新、图片导出、价格初始化和数据库传输状态。
+`AppHeader` 为固定顶部工具栏，提供品牌、当前页面、配色和语言；配色菜单支持 Escape 关闭和焦点返回。
+`Sidebar` 分为数据洞察和工作台管理两组，支持折叠，底部提供本机说明与时区入口；≤700px 改为吸附横向导航。
+视觉参数取自 ATK HUB：浅色背景 `#edeef3`，深色背景 `#0f0f0f`；内容直接放在背景上，功能面板使用浅色 80% 白 / 深色 4% 白叠色，6–8px 圆角，无大面积投影。48px 顶栏和 226px 侧栏使用独立灰色面板；导航选中为灰底与左侧细条，按钮和分段选中为黑白反色。橙色限于品牌、小时峰值和输入 token，热图采用五档中性灰。
+`ReportActions` 提供刷新和图片导出；更新单价与重置集中在价格页。`Settings` 提供外观、语言、时区、SQLite 备份 / 合并。
+`Segmented` 支持方向键、Home / End 与单一 Tab 焦点。视觉与交互以 `design-spec.md` 为准。
 
 `PriceCatalog` 从独立的 `/api/prices` 读取第一方 LiteLLM 目录，支持模型搜索、提供商筛选和每页 50 条。
 单价按美元/百万 token 显示并保留小数精度，缓存回退加星号说明。点击模型在行下展示原始 ID、计费渠道、
@@ -34,7 +40,12 @@ Next App Router 静态导出为 `web/out/`，生产由 CLI 托管。页面默认
 旧请求并检查序号，页面关闭清理轮询；目录每分钟及回到前台重读，单项历史按需读取。手机表格在自己的
 可聚焦滚动区横向查看，不扩大页面宽度。切到价格或设置会停止用量报告请求。
 
-Today 请求 `period=custom&since=<今天>&until=<今天>&timezone=<IANA>`，首先展示四项 KPI，Tokens / 费用为主要指标，缓存命中 / 请求为辅助指标。`DayBody` 直接铺开小时分布、Agent / 模型和会话；`hasModelComparison` 仅在任一 Agent 有多个模型时保留独立模型排行，单模型名称直接显示在 Agent 行。小时图与趋势图标明纵轴数量，小时峰值同时给出时间和用量。
+Today 请求 `period=custom&since=<今天>&until=<今天>&timezone=<IANA>`，`TodayDashboard` 展示四项统一 KPI；每张卡由标题区与灰色内嵌数值区组成。
+Tokens 与费用在昨日有非零基数时展示相对变化，文案明确比较昨日全天；费用比较要求两期请求均已定价。
+`DayBody` 复用于概览和日历详情：`ActivityChart` 提供 Tokens / 费用切换，24 个本地小时柱、数量轴、键盘提示和橙色峰值；
+`TokenBreakdown` 以 SVG 环图和图例同时显示四种 token 的数量与占比。Agent / 模型仍可排序、展开和查看明细。
+`hasModelComparison` 仅在任一 Agent 有多个模型时保留独立模型排行，单模型名称直接显示在 Agent 行。
+会话初始五条，可展开 API 返回的前十条，显示当前数量和总会话数；PNG 捕获当前展开状态。
 
 日历使用 `CalendarView`：全宽范围总量先于月历与单日详情；宽屏左侧为月历与趋势、右侧为详情。窄屏、年历 / 长范围按日历、详情、趋势排列；选择日期后滚动到详情并避开手机吸附导航，键盘激活聚焦详情标题，“返回日历”聚焦所选日期格。范围总量还提供趋势跳转。所有详情进入正常页面流。`HeatGrid` 取 `daily`，五档背景映射同时用于日期格和图例；`fmtTokensShort` 在窄格使用三位、最窄格两位有效数字，标签和提示保留完整格式。Agent 取 `clients`，模型取 `models`，导航边界取 `scopeRange`。
 
@@ -42,8 +53,8 @@ Today 请求 `period=custom&since=<今天>&until=<今天>&timezone=<IANA>`，首
 
 日历保留 1D / 7D / MTD / 30D、月 / 年模式、月份直达、自定义首尾日期和 Agent 筛选。拒绝反向、无效或未来结束日；重置为当月和全部 Agent。条件保存在页面内存，刷新页面回到 Today。`useDayReport` 独立请求所选日期并沿用 Agent 和时区，不覆盖范围报告。日期按钮或 ‹ / › 直接切换；月 / 年模式跨周期同步移动范围，快捷 / 自定义范围的步进限制在范围内。
 
-`web/lib/useReport.js` 将日期、Agent、时区作为请求标识，取消旧请求并校验序号。加载时保留带原日期 / Agent / 时区标签的载荷，时区改变则隐藏旧时区数据；单日加载失败显示错误和重试。任一已显示数据尚未完成或请求失败时禁止图片导出。切到设置会取消范围与单日请求并清除 loading 状态。刷新先 POST 替换数据库，再重载当前范围和单日。
+`frontend/lib/useReport.js` 将日期、Agent、时区作为请求标识，取消旧请求并校验序号。加载或失败时保留带原日期 / Agent / 时区标签的载荷，时区改变则隐藏旧时区数据；单日加载失败显示错误和重试。任一已显示数据尚未完成或请求失败时禁止图片导出。切到设置会取消范围与单日请求并清除 loading 状态。刷新先 POST 替换数据库，再重载当前范围和单日。
 
-`web/lib/period.js` 负责时区检测与日期标签运算，每 30 秒及窗口重新获得焦点时更新当前日期。系统模式重新检测浏览器时区；手动时区不随系统变化。切时区后未来的自定义结束日收拢到今天。日期算法详见[数据契约](data-contract.md)。`prefs.js` 管全部 localStorage key：语言、配色、日历模式、表格排序和时区；不再读取旧卡片顺序。`format.js` 按载荷的时区显示会话与页脚时间。
+`frontend/lib/period.js` 负责时区检测与日期标签运算，每 30 秒及窗口重新获得焦点时更新当前日期。系统模式重新检测浏览器时区；手动时区不随系统变化。切时区后未来的自定义结束日收拢到今天。日期算法详见[数据契约](data-contract.md)。`prefs.js` 管全部 localStorage key：语言、配色、日历模式、表格排序和时区；不再读取旧卡片顺序。`format.js` 按载荷的时区显示会话与页脚时间。
 
-PNG 由 `modern-screenshot` 捕获 `.report`，包含 Today 全部详情或日历范围与单日详情、筛选摘要和页脚；导航、筛选操作、设置、toast、导入对话框不在捕获范围。`.no-export` 排除内嵌控件和临时行内明细，`.is-exporting` 关闭日期选中环过渡并隐藏明细按钮列；Agent 表格采用固定布局，保持模型展开状态和其余数值列宽。
+PNG 由 `modern-screenshot` 捕获 `.report`，导出时使用同色不透明画布承接半透明面板，包含 Today 全部详情或日历范围与单日详情、筛选摘要和页脚；导航、筛选操作、设置、toast、导入对话框不在捕获范围。`.no-export` 排除内嵌控件和临时行内明细，`.is-exporting` 关闭日期选中环过渡并隐藏明细按钮列；Agent 表格采用固定布局，保持模型展开状态和其余数值列宽。

@@ -9,7 +9,7 @@
 | 标准记录、日期、聚合、CLI JSON 与 Web 数据字段 | [数据契约](data-contract.md) | `src/payload.js`、`src/aggregate.js`、`src/webdata.js` |
 | SQLite 快照、导入/导出、价格来源 | [存储与定价](storage-pricing.md) | `src/database.js`、`src/dbtransfer.js`、`src/pricing.js` |
 | 首次建库、公开价格下载、定时更新、观察历史与提供商绑定 | [本机价格库](local-pricing.md) | `src/pricing.js`、`src/firstparty.js`、`src/pricehistory.js`、`src/localpricedb.js` |
-| HTTP 路由与安全边界、报告页、单日展开 | [Web 报告](web-report.md) | `src/webserver.js`、`web/` |
+| HTTP 路由与安全边界、报告页、单日展开 | [Web 报告](web-report.md) | `src/webserver.js`、`frontend/` |
 | 本地验证、打包和发布入口 | [开发与发布](development-release.md) | `package.json`、`scripts/`、`.github/workflows/` |
 | 发布 PR、版本号、npm 和 GitHub Release、失败恢复 | [发布指南](release.md) | `scripts/release-*.js`、`.github/workflows/release.yml` |
 

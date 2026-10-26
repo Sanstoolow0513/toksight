@@ -11,7 +11,7 @@ import { createWebServer } from '../src/webserver.js';
 import { readStoredPriceFor } from '../src/usageimports.js';
 import { parseArgs } from '../src/args.js';
 import { readProviderBindings, bindProvider } from '../src/providerbindings.js';
-import { fmtUnitPrice, priceSourceUrl } from '../web/lib/prices.js';
+import { fmtUnitPrice, priceSourceUrl } from '../frontend/lib/prices.js';
 
 const sourceUrl = 'https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json';
 const usage = (extra = {}) => ({ client: 'codex', sessionId: 'session', model: 'gpt-example', timestamp: Date.parse('2026-10-02T00:00:00Z'), inputTokens: 1e6,

@@ -2,11 +2,11 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   calendarWeeks, compactCalendar, currentPeriod, dayKey, dayNav, eachDayKey, inPeriod, periodBounds, periodKey, periodNav, periodOf, quickPeriod, shiftDay, shiftPeriod, validRange, weekdayIndex, withMode,
-} from '../web/lib/period.js';
+} from '../frontend/lib/period.js';
 import {
   agentRows, costPerMillion, dailyMap, hasModelComparison, heatLevel, heatMax, heatSummary, hourlyBars, modelRows, modelsByAgent, openingDay, sessionName, sessionRows, trendSeries,
-} from '../web/lib/report.js';
-import { fmtClock, fmtClockRange, fmtCostShort, fmtTokens, fmtTokensShort } from '../web/lib/format.js';
+} from '../frontend/lib/report.js';
+import { fmtClock, fmtClockRange, fmtCostShort, fmtTokens, fmtTokensShort } from '../frontend/lib/format.js';
 
 const usage = (over = {}) => {
   const row = { requests: 1, sessions: 1, inputTokens: 100, cacheReadTokens: 300, cacheWriteTokens: 0, outputTokens: 100, reasoningTokens: 0, costUsd: 1, pricedRequests: 1, ...over };

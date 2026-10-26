@@ -80,7 +80,7 @@ function openBrowser(url) {
 
 // Returns the running server so the source-development command can own its lifetime.
 export async function runWeb(opts) {
-  const outDir = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'web', 'out');
+  const outDir = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'frontend', 'out');
   const built = await pathExists(path.join(outDir, 'index.html'));
 
   const getData = createWebDataService(opts);

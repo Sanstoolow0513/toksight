@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { t, DEFAULT_LOCALE, tables, periodLabel, dayLabel, durationLabel, weekdayLabel, WEEKDAYS, MONTHS } from '../web/lib/i18n.js';
+import { t, DEFAULT_LOCALE, tables, periodLabel, dayLabel, durationLabel, weekdayLabel, WEEKDAYS, MONTHS } from '../frontend/lib/i18n.js';
 
 test('i18n returns Chinese by default and interpolates', () => {
   assert.equal(DEFAULT_LOCALE, 'zh-CN');

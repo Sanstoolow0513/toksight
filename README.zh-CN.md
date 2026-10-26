@@ -212,14 +212,13 @@ Web 使用 `POST /api/prices/reset`，返回 `completed: false` 的引导状态�
 `GET /api/prices` 返回目录，加 `key=<记录 id>` 读取该项价格历史（从新到旧）。API 单价仍为美元 / token。
 这些接口遵守已有 Host/Origin 检查。
 
-网页默认打开**今天**，侧边导航提供**今天、日历、价格、设置**四个入口。全高侧栏与报告左右分区，Logo 位于
-侧栏顶部，导航组垂直居中，配色与中文 / EN 切换位于底部；导航与偏好按钮均提供较大的点击区域。
-窄屏时侧栏收为导航与“显示偏好”菜单，配色与语言在菜单内切换。页面为冷灰背景，
-报告放在白色面板上，按钮为黑底或浅灰填充（视觉规范见 `design-spec.md`）。
-**刷新、更新单价、导出图片**位于报告上方。
+新版前端位于 `frontend/`，参考 [ATK HUB](https://hub.atk.pro/) 的工作台设计：冷灰底色、独立顶部工具栏、
+可收起灰色侧栏、半透明中性灰面板、黑白控件与少量橙色重点；深色使用近黑背景。网页默认打开**今天**，侧栏提供**今天、日历、价格、设置**。
+顶部可切换浅色 / 深色 / 跟随系统与中文 / EN；手机使用吸附顶栏和横向导航。页首提供**刷新数据库**和**导出图片**，
+**更新单价**集中在价格页。完整视觉规范见 `design-spec.md`。
 
-- **今天**：突出 Tokens 与参考费用，缓存命中率和请求数作为辅助指标；再展示小时分布、可展开模型的 Agent 表
-  和最多十条会话。单模型 Agent 直接标明模型名，任一 Agent 使用多个模型时才展示独立模型排行。
+- **今天**：突出 Tokens 与参考费用，缓存命中率和请求数作为辅助指标；再展示可切换 Tokens / 费用的小时分布、Token 构成环图、可展开模型的 Agent 表
+  和最多十条会话（默认展示五条，可展开）。有昨日基数时展示对比昨日全天的用量 / 费用变化。单模型 Agent 直接标明模型名，任一 Agent 使用多个模型时才展示独立模型排行。
   图表标明数量刻度，小时峰值同时显示时间和用量。可以筛选全部或单个 Agent。会话包含标题、用量、费用、起止时间、
   活跃时长、目录和模型。
 - **日历**：热力日历与所选日期详情直接展开，宽屏左右排列，窄屏上下排列。单击日期或用键盘激活就能
@@ -228,7 +227,7 @@ Web 使用 `POST /api/prices/reset`，返回 `completed: false` 的引导状态�
   会定位到紧接日历的详情，可用“返回日历”回到所选格，趋势排在详情之后并提供快捷入口。
   窄格用较短的数字缩写，日期标签和提示保留完整格式。短范围用日历，长范围按年分组周网格；趋势单日按小时、最多 62 个已过
   日期按日、更长范围按月汇总，缺失日期补零。
-- **设置**：调整统计时区，导入 / 导出完整数据库。
+- **设置**：调整外观、语言和统计时区，导入 / 导出完整数据库。
 
 统计时区默认自动读取浏览器，也可手动选择，例如系统设为美国时间时选 `Asia/Shanghai`。
 今天、日期边界、小时归属和显示时间都使用所选时区，时钟变化自动处理，界面始终采用统一的日视图。
@@ -259,14 +258,17 @@ API 可以这样调用：`GET /api/data?period=custom&since=2026-09-01&until=202
 
 ### 仪表盘构建产物
 
-npm 包已包含 `web/out/` 中预构建好的静态文件——安装后直接 `toksight web` 即可，无需构建，
+`frontend/` 是唯一的前端源码、依赖、构建与发布目录；旧 `web/` 已移除。
+推荐 `npm run frontend:ci`、`npm run frontend:dev`、`npm run frontend:build`；原 `web:*` 命令仍兼容，均指向新版。
+
+npm 包已包含 `frontend/out/` 中预构建好的静态文件——安装后直接 `toksight web` 即可，无需构建，
 也不运行 Next。从源码预览发布版页面需要 Node >=22.5：
 
 ```bash
 npm run web:ci && npm run web:build && node bin/toksight.js web
 ```
 
-`web/out/` 尚未构建时，`toksight web` 会在 `/` 显示构建指引页，`/api/data` 不受影响；
+`frontend/out/` 尚未构建时，`toksight web` 会在 `/` 显示构建指引页，`/api/data` 不受影响；
 `web:build` 只构建不安装依赖，改完前端需重新构建并刷新。`npm pack` / `npm publish`
 会自动重建仪表盘。
 
@@ -320,20 +322,24 @@ entries 构建，`--client` / `--since` / `--until` 对它与其余切片一样�
 ```bash
 npm test              # node:test 套件 + 各客户端 fixture（无需联网）
 node bin/toksight.js  # 从源码直接运行
-npm run web:ci        # 按 web/package-lock.json 安装锁定的网页依赖
+npm run web:ci        # 按 frontend/package-lock.json 安装锁定的网页依赖
 npm run web:dev       # 同时启动 API（4729）和前端（3000），支持热更新
 ```
 
-打开 `http://127.0.0.1:3000`，无需提前构建 `web/out/`；Ctrl+C 一起关闭前后端，端口被占用
+打开 `http://127.0.0.1:3000`，无需提前构建 `frontend/out/`；Ctrl+C 一起关闭前后端，端口被占用
 会报错并关闭本命令启动的服务。`npm run web:dev -- --port 3001 --api-port 4730 --offline`
 可覆盖两个端口并关闭价格拉取。需要分开管理时，在仓库根目录用两个终端分别跑
 `node bin/toksight.js web --api-only` 与 `npm run web:dev:ui`（代理目标可用
 `TOKSIGHT_DEV_API` 覆盖，仅影响开发服务器，生产构建始终输出静态文件）。
 `web:install` 保留给需要更新网页依赖的开发者。
 
-CLI 本体保持**零运行时依赖**，仪表盘依赖只存在于 `web/package.json`，仅在（重新）构建
-`web/out/` 时需要。数据流程：会话文件 → 解析器 → `collectAll` → CLI 输出或 SQLite 刷新 → `/api/data`；
-`web/` 源码 → Next 构建 → `web/out/` → CLI 内置 HTTP 服务器。架构、数据契约与维护说明按主题收录在
+仓库的 [`.codex/config.toml`](./.codex/config.toml) 已配置项目级 Playwright MCP，供 Codex 操作浏览器。
+信任项目并重新启动 Codex 会话后，可用 `/mcp` 查看服务。
+安装与使用步骤见[开发指南](./doc/development-release.md#playwright-mcp)。
+
+CLI 本体保持**零运行时依赖**，仪表盘依赖只存在于 `frontend/package.json`，仅在（重新）构建
+`frontend/out/` 时需要。数据流程：会话文件 → 解析器 → `collectAll` → CLI 输出或 SQLite 刷新 → `/api/data`；
+`frontend/` 源码 → Next 构建 → `frontend/out/` → CLI 内置 HTTP 服务器。架构、数据契约与维护说明按主题收录在
 [doc/README.md](./doc/README.md)；精简的 Agent 规则见 [AGENTS.md](./AGENTS.md)。
 
 ```bash

@@ -59,7 +59,7 @@ async function readDatabaseBody(req) {
   return Buffer.concat(chunks);
 }
 
-// Shown at / when web/out has not been built yet; the API keeps working so the
+// Shown at / when frontend/out has not been built yet; the API keeps working so the
 // dashboard can be developed against live data.
 function setupPage() {
   return `<!doctype html>

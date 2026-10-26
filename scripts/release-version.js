@@ -2,7 +2,7 @@ import { readFile, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const files = ['package.json', 'package-lock.json', 'web/package.json', 'web/package-lock.json'];
+const files = ['package.json', 'package-lock.json', 'frontend/package.json', 'frontend/package-lock.json'];
 
 export function parseStableVersion(version) {
   const match = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.exec(version);

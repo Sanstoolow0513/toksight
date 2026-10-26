@@ -2,9 +2,10 @@ node_modules/
 /zcode
 /.zcode/
 .cursor/
+/.playwright-mcp/
 *.log
 .DS_Store
 dist/
-web/.next/
-web/out/
+frontend/.next/
+frontend/out/
 usage-events-*.csv
