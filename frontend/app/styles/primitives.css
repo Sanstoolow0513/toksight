@@ -3,8 +3,8 @@
    compose these; they do not restyle them. */
 @layer primitives {
   /* Micro label: monospace caps annotation used by every primitive. */
-  .label, .plate-index, .readout dt, .ledger thead th, .field-label {
-    font: 400 var(--fs-2xs)/var(--lh-snug) var(--font-mono);
+  .label, .readout dt, .ledger thead th, .field-label {
+    font: 400 var(--fs-xs)/var(--lh-snug) var(--font-mono);
     letter-spacing: var(--track-label);
     text-transform: uppercase;
     color: var(--ink-3);
@@ -95,14 +95,12 @@
     border-bottom: var(--bw) dashed var(--line);
   }
   .plate-heading { min-width: 0; }
-  .plate-index { display: block; margin-bottom: 2px; }
-  .plate-index b { font-weight: 400; color: var(--signal-ink); }
   .plate-title {
     display: flex; align-items: center; gap: var(--sp-2);
     font: var(--fs-xl)/var(--lh-snug) var(--font-display); letter-spacing: var(--track-display); color: var(--ink);
   }
   .plate-title > svg { color: var(--ink-3); }
-  .plate-note { margin-top: 2px; font-size: var(--fs-xs); color: var(--ink-3); }
+  .plate-note { margin-top: 2px; font-size: var(--fs-sm); color: var(--ink-2); }
   .plate-tools { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; justify-content: flex-end; }
   .plate-body { padding: var(--sp-5) var(--sp-6); }
 
@@ -127,11 +125,10 @@
       repeating-linear-gradient(90deg, var(--tick) 0 1px, transparent 1px 40px) left bottom / 100% 6px no-repeat,
       repeating-linear-gradient(90deg, var(--line-strong) 0 1px, transparent 1px 8px) left bottom / 100% 3px no-repeat;
   }
-  .readout-sub { display: block; margin-top: var(--sp-2); font: var(--fs-xs)/1.5 var(--font-mono); color: var(--ink-2); }
-  .readout-caption { display: block; margin-top: auto; padding-top: var(--sp-2); font-size: var(--fs-2xs); color: var(--ink-3); }
+  .readout-sub { display: block; margin-top: var(--sp-2); font: var(--fs-sm)/1.5 var(--font-mono); color: var(--ink-2); }
   .delta {
     display: inline-flex; align-items: center; gap: 2px; padding: 1px var(--sp-1);
-    border: var(--bw) solid var(--line-strong); font: var(--fs-2xs)/1.4 var(--font-mono); color: var(--ink-2);
+    border: var(--bw) solid var(--line-strong); font: var(--fs-xs)/1.4 var(--font-mono); color: var(--ink-2);
   }
   .delta.is-up { color: var(--signal-ink); border-color: currentColor; }
 
@@ -163,8 +160,8 @@
   .tip-row::before, .leader::before { content: ''; order: 1; flex: 1; min-width: var(--sp-4); border-bottom: var(--bw) dotted currentColor; opacity: .3; transform: translateY(-3px); }
   .tip-row > span, .leader > :first-child { order: 0; display: inline-flex; align-items: center; gap: 6px; opacity: .8; }
   .tip-row > b, .leader > :last-child { order: 2; font: 500 var(--fs-xs) var(--font-mono); white-space: nowrap; }
-  .tip-row em { font-style: normal; opacity: .65; margin-left: var(--sp-2); }
-  .tip-note, .tip-muted { margin-top: var(--sp-2); font-size: var(--fs-2xs); opacity: .7; overflow-wrap: anywhere; }
+  .tip-row em { font-style: normal; opacity: .8; margin-left: var(--sp-2); }
+  .tip-note, .tip-muted { margin-top: var(--sp-2); font-size: var(--fs-xs); opacity: .85; overflow-wrap: anywhere; }
   .tooltip .swatch { box-shadow: 0 0 0 1px currentColor; }
 
   /* Fields */
@@ -189,9 +186,9 @@
 
   /* Badge */
   .badge {
-    display: inline-flex; align-items: center; gap: var(--sp-1); height: 20px; padding: 0 var(--sp-2);
+    display: inline-flex; align-items: center; gap: var(--sp-1); height: 24px; padding: 0 var(--sp-2);
     border: var(--bw) solid var(--line-strong); border-radius: var(--r-pill);
-    font: var(--fs-2xs)/1 var(--font-mono); letter-spacing: var(--track-label); text-transform: uppercase;
+    font: var(--fs-xs)/1 var(--font-mono); letter-spacing: var(--track-label); text-transform: uppercase;
     color: var(--ink-2); white-space: nowrap; max-width: 100%; overflow: hidden; text-overflow: ellipsis;
   }
   .badge--signal { color: var(--signal-ink); border-color: currentColor; background: var(--signal-wash); }

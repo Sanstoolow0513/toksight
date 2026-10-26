@@ -23,7 +23,7 @@
   }
   .price-search:focus-within { border-color: var(--ink); }
   .price-search input { flex: 1; width: 100%; border: 0 !important; background: none !important; outline: none; }
-  .price-result-status { display: flex; align-items: center; gap: var(--sp-2); padding-bottom: var(--sp-2); font: var(--fs-2xs) var(--font-mono); color: var(--ink-3); }
+  .price-result-status { display: flex; align-items: center; gap: var(--sp-2); padding-bottom: var(--sp-2); font: var(--fs-xs) var(--font-mono); color: var(--ink-3); }
   .price-table-scroll { overflow-x: auto; max-width: 100%; min-width: 0; }
   .price-table, .price-history-table { min-width: 720px; }
   .price-table tbody th { vertical-align: top; }
@@ -33,16 +33,16 @@
   .price-model svg { transition: transform var(--dur-2) var(--ease); color: var(--ink-3); }
   .price-model .is-open { transform: rotate(90deg); color: var(--signal); }
   .price-table tr.is-expanded { background: var(--signal-wash); }
-  .price-model-note { display: block; margin-left: 23px; font-size: var(--fs-2xs); color: var(--ink-3); }
+  .price-model-note { display: block; margin-left: 23px; font-size: var(--fs-xs); color: var(--ink-3); }
   .price-number { font-family: var(--font-mono); }
-  .price-observed { font: var(--fs-2xs) var(--font-mono); color: var(--ink-2); white-space: nowrap; }
+  .price-observed { font: var(--fs-xs) var(--font-mono); color: var(--ink-2); white-space: nowrap; }
   .price-observed span { display: block; margin-top: 2px; font-family: var(--font-sans); color: var(--ink-3); }
   .price-details { padding: var(--sp-4); font-size: var(--fs-sm); }
   .price-details dl { display: grid; gap: var(--sp-2); }
   .price-details dl > div { display: flex; gap: var(--sp-4); }
-  .price-details dt { min-width: 100px; font: var(--fs-2xs) var(--font-mono); letter-spacing: var(--track-label); text-transform: uppercase; color: var(--ink-3); }
+  .price-details dt { min-width: 100px; font: var(--fs-xs) var(--font-mono); letter-spacing: var(--track-label); text-transform: uppercase; color: var(--ink-3); }
   .price-details a { color: var(--signal-ink); text-decoration: underline dotted; text-underline-offset: 3px; }
-  .price-note, .price-history > p { margin-top: var(--sp-3); font-size: var(--fs-2xs); line-height: 1.8; color: var(--ink-3); }
+  .price-note, .price-history > p { margin-top: var(--sp-3); font-size: var(--fs-xs); line-height: 1.8; color: var(--ink-3); }
   .price-history { margin-top: var(--sp-5); }
   .price-history h3 { font: var(--fs-lg) var(--font-display); }
   .price-conditions { font-size: var(--fs-xs); color: var(--ink-2); }
@@ -65,8 +65,8 @@
   .settings-row { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-4); padding: var(--sp-4) 0; border-top: var(--bw) dashed var(--line); }
   .plate-head + .settings-row, .plate-head + input + .settings-row { border-top: 0; }
   .settings-row:last-child { padding-bottom: var(--sp-5); }
-  .settings-row h3 { font-size: var(--fs-md); font-weight: 500; }
-  .settings-row p { margin-top: 2px; font: var(--fs-2xs) var(--font-mono); color: var(--ink-3); }
+  .settings-row h3 { font-size: var(--fs-base); font-weight: 500; }
+  .settings-row p { margin-top: 2px; font-size: var(--fs-sm); color: var(--ink-3); }
   .settings-body { padding: var(--sp-5) var(--sp-6); }
   .timezone-field { display: flex; max-width: 460px; }
   .timezone-preview { display: inline-block; margin: var(--sp-3) 0 var(--sp-1); padding: var(--sp-2) var(--sp-3); border-left: 3px solid var(--signal); background: var(--surface-2); font: var(--fs-xs) var(--font-mono); color: var(--ink-2); }

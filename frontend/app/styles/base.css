@@ -1,7 +1,7 @@
 /* Reset and element defaults. */
 @layer reset {
   *, *::before, *::after { box-sizing: border-box; }
-  html { -webkit-text-size-adjust: 100%; scroll-padding-top: calc(var(--header-h) + var(--sp-7)); }
+  html { font-size: var(--fs-root); -webkit-text-size-adjust: 100%; scroll-padding-top: calc(var(--header-h) + var(--sp-7)); }
   h1, h2, h3, h4, p, figure, dl, dd, ol, ul { margin: 0; }
   ol, ul { padding: 0; }
   button, input, select, textarea { font: inherit; color: inherit; }

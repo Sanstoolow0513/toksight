@@ -6,7 +6,6 @@
   .kpis.is-grid .readout:nth-child(odd) { border-left: 0; }
   .kpis.is-grid .readout:nth-child(n + 3) { border-top: var(--bw) solid var(--line); }
   .kpi.is-tokens .readout-value { color: var(--ink); }
-  .kpi .readout-caption { border-top: var(--bw) dashed var(--line); margin-top: var(--sp-3); }
 
   /* Quota */
   .quota-card { margin-bottom: var(--gutter); }
@@ -19,10 +18,10 @@
   .quota-windows { list-style: none; display: grid; gap: var(--sp-3); margin-top: var(--sp-3); }
   .quota-window { display: grid; grid-template-columns: 56px minmax(0, 1fr) auto; align-items: center; gap: var(--sp-1) var(--sp-3); }
   .quota-window-label { font: var(--fs-xs) var(--font-mono); color: var(--ink-2); }
-  .quota-used { font: 500 var(--fs-md) var(--font-mono); text-align: right; white-space: nowrap; }
-  .quota-used em { margin-left: var(--sp-2); font-style: normal; font-weight: 400; font-size: var(--fs-2xs); color: var(--ink-3); }
-  .quota-reset { grid-column: 2 / -1; font: var(--fs-2xs) var(--font-mono); color: var(--ink-3); }
-  .quota-source, .quota-message { margin-top: var(--sp-3); font-size: var(--fs-2xs); color: var(--ink-3); overflow-wrap: anywhere; }
+  .quota-used { font: 500 var(--fs-base) var(--font-mono); text-align: right; white-space: nowrap; }
+  .quota-used em { margin-left: var(--sp-2); font-style: normal; font-weight: 400; font-size: var(--fs-xs); color: var(--ink-3); }
+  .quota-reset { grid-column: 2 / -1; font: var(--fs-xs) var(--font-mono); color: var(--ink-3); }
+  .quota-source, .quota-message { margin-top: var(--sp-3); font-size: var(--fs-xs); color: var(--ink-3); overflow-wrap: anywhere; }
   .quota-message { color: var(--warn); }
   .quota-error { padding: var(--sp-3) var(--sp-6) 0; }
 
@@ -81,7 +80,7 @@
   .token-legend dt { display: inline-flex; align-items: center; gap: var(--sp-2); color: var(--ink-2); }
   .token-legend dd { display: inline-flex; align-items: baseline; gap: var(--sp-2); }
   .token-legend strong { font: 500 var(--fs-sm) var(--font-mono); }
-  .token-legend dd span { min-width: 44px; text-align: right; font: var(--fs-2xs) var(--font-mono); color: var(--ink-3); }
+  .token-legend dd span { min-width: 48px; text-align: right; font: var(--fs-xs) var(--font-mono); color: var(--ink-3); }
 
   /* Agent / model ledgers */
   .agent-table-wrap { min-width: 0; padding: 0 var(--sp-3) var(--sp-1); }
@@ -99,11 +98,11 @@
   .agent-chevron { transition: transform var(--dur-2) var(--ease); }
   .agent-toggle[aria-expanded='true'] .agent-chevron { transform: rotate(90deg); color: var(--signal); }
   .agent-label { display: grid; gap: 2px; min-width: 0; }
-  .agent-count { font: var(--fs-2xs) var(--font-mono); color: var(--ink-3); }
-  .agent-model-summary { display: block; padding-left: 16px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: var(--fs-2xs) var(--font-mono); color: var(--ink-3); }
+  .agent-count { font: var(--fs-xs) var(--font-mono); color: var(--ink-3); }
+  .agent-model-summary { display: block; padding-left: 16px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: var(--fs-xs) var(--font-mono); color: var(--ink-3); }
   .cell-value { font: 500 var(--fs-sm) var(--font-mono); white-space: nowrap; }
   .cell-value.is-unpriced { font-weight: 400; padding: 0 var(--sp-1); background: var(--hatch-faint); }
-  .cell-share { display: block; margin-top: 2px; font: var(--fs-2xs) var(--font-mono); color: var(--ink-3); }
+  .cell-share { display: block; margin-top: 2px; font: var(--fs-xs) var(--font-mono); color: var(--ink-3); }
   .cell-muted, .is-muted { color: var(--ink-3); }
   .partial-mark { color: var(--signal-ink); }
   .parts-bar { display: flex; gap: 1px; height: 8px; width: 100%; }
@@ -120,7 +119,7 @@
   .row-info-btn[aria-expanded='true'] { color: var(--signal-ink); background: var(--signal-soft); }
   .row-details-row:hover { background: none !important; }
   .row-details-content { max-width: 640px; margin: var(--sp-1) auto; padding: var(--sp-4) var(--sp-5); border: var(--bw) dashed var(--line-strong); background: var(--surface-2); font-size: var(--fs-xs); }
-  .parts-legend { display: flex; flex-wrap: wrap; gap: var(--sp-2) var(--sp-4); padding: var(--sp-3) var(--sp-3) var(--sp-4); font: var(--fs-2xs) var(--font-mono); color: var(--ink-3); }
+  .parts-legend { display: flex; flex-wrap: wrap; gap: var(--sp-2) var(--sp-4); padding: var(--sp-3) var(--sp-3) var(--sp-4); font: var(--fs-xs) var(--font-mono); color: var(--ink-3); }
   .legend-part { display: inline-flex; align-items: center; gap: 6px; }
   .legend-hint { margin-left: auto; }
   @container (max-width: 650px) {
@@ -147,9 +146,9 @@
   }
   .session-line { display: grid; grid-template-columns: minmax(0, 1fr) 92px 84px; align-items: baseline; gap: var(--sp-3); }
   .session-line .cell-value { text-align: right; }
-  .session-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-md); font-weight: 500; }
+  .session-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-base); font-weight: 500; }
   .session-meta { margin-top: 2px; font-size: var(--fs-xs); color: var(--ink-2); }
-  .session-detail { margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: var(--fs-2xs)/1.7 var(--font-mono); color: var(--ink-3); }
+  .session-detail { margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: var(--fs-xs)/1.7 var(--font-mono); color: var(--ink-3); }
 
   @media (max-width: 1200px) {
     .kpis:not(.is-grid) .readout { padding-left: var(--sp-4); padding-right: var(--sp-4); }
@@ -166,8 +165,6 @@
     .readout, .kpis:not(.is-grid) .readout { padding: var(--sp-3) var(--sp-4); }
     .readout--lg .readout-value, .readout-value { font-size: var(--fs-3xl); }
     .readout-value.is-text { font-size: var(--fs-xl); }
-    .readout-sub { font-size: var(--fs-2xs); }
-    .readout-caption { display: none; }
     .plate-head { padding: var(--sp-3) var(--sp-4); }
     .plate-title { font-size: var(--fs-lg); }
     .plate-body { padding: var(--sp-4); }
@@ -188,7 +185,6 @@
     .session-line { grid-template-columns: minmax(0, 1fr) 58px 62px; gap: var(--sp-2); }
     .session-name { font-size: var(--fs-sm); }
     .session-line .cell-value { font-size: var(--fs-xs); }
-    .session-meta { font-size: var(--fs-2xs); }
   }
   @media (max-width: 380px) {
     .readout-value, .readout--lg .readout-value { font-size: var(--fs-2xl); }
