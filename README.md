@@ -42,6 +42,7 @@ toksight models       # grouped by model
 toksight sessions     # top sessions by cost
 toksight web          # local usage & cost report (heatmap, agents, models, image export)
 toksight refresh      # rescan agents and update the local SQLite database
+toksight quota        # subscription quota windows for Codex and Kimi Code
 toksight reset-prices # clear saved prices/history/caches, then reopen Web to rebuild
 toksight export-db backup.sqlite  # export the complete committed usage database
 toksight import-db backup.sqlite  # merge a backup and deduplicate usage
@@ -85,13 +86,41 @@ zcode   GLM-5.3             41   116K    1.99M        0   43.3K  94.5%   $0.870
 --open           open the printed URL in a browser (web only)
 --no-open        leave the browser closed (web only; default)
 --api-only       web: serve only the JSON API, no static dashboard
---offline        skip network pricing fetches; use saved local prices
+--offline        skip network pricing fetches; use saved local prices (quota: skip the Kimi request)
 --no-color       disable ANSI colors
 ```
 
 Value options accept both forms: `--since 2026-08-01` and `--since=2026-08-01`.
 
 CLI day grouping and date filters use your **local** timezone. The web report has its own adjustable time zone in Settings.
+
+### Subscription quota
+
+`toksight quota` shows the current rate-limit windows of your Codex and Kimi Code subscriptions:
+
+```
+Client     Plan                         Window               Used  Resets
+─────────  ───────────────────────────  ──────  ─────────────────  ────────────────────────────
+Codex CLI  self_serve_business_prolite  week                   4%  2026-11-02 00:46 (in 6d 17h)
+Kimi Code  LEVEL_INTERMEDIATE           5h        69.5% (139/200)  2026-10-26 09:33 (in 2h 33m)
+Kimi Code  LEVEL_INTERMEDIATE           week    10.4% (214/2,048)  2026-10-30 07:23 (in 4d)
+Kimi Code  LEVEL_INTERMEDIATE           month                0.6%  2026-11-16 16:00 (in 21d 9h)
+
+Codex CLI: from local session logs, last seen 2026-10-26 06:16 (43m ago)
+```
+
+- **Codex** is read offline from the newest `rate_limits` in `~/.codex/sessions` (`CODEX_HOME`
+  honored). Windows are named by length (`5h`, `week`, otherwise e.g. `2d`); some plans only have
+  a weekly window. A window whose reset time has passed shows as reset instead of a stale percentage.
+- **Kimi Code** has no local quota data, so `toksight quota` calls `GET https://api.kimi.com/coding/v1/usages`
+  with the access token from `~/.kimi-code/credentials/kimi-code.json` (`KIMI_CODE_HOME` honored).
+  The token is only sent to Kimi's API host and never printed or stored. toksight never refreshes it;
+  if it has expired, open Kimi Code to refresh it and retry.
+- `--client codex` / `--client kimi` limits the clients, `--offline` skips the Kimi request, and
+  `--json` prints `{ tool, version, generatedAt, quotas }`.
+
+The web report shows the same data in a **Subscription quota** card on Today. Kimi Code is only
+queried when you click **Refresh Kimi quota** (`POST /api/quota/refresh`); `GET /api/quota` stays local.
 
 ## Pricing
 
@@ -306,7 +335,8 @@ server-local default. Unknown, duplicate or invalid parameters
 return HTTP 400. `POST /api/refresh` updates the database and returns its refresh time and entry
 count and collection warnings. The web API's additive `snapshot` field exposes the refresh time
 and count. `POST /api/prices/update` refreshes LiteLLM prices locally without rescanning
-usage. Cross-origin write requests are rejected.
+usage. `GET /api/quota` returns local quota data and `POST /api/quota/refresh` also queries Kimi Code.
+Cross-origin write requests are rejected.
 
 ### Dashboard bundle
 
@@ -340,7 +370,8 @@ toksight is local-first: the CLI and web report only **read** your agents' sessi
 writes toksight's own SQLite database under its config directory; price fetches may update local
 cache files. toksight does not upload usage or write back to agent files. If you change
 `--host`, other clients on that network may read the report/API. External requests download
-the LiteLLM price table; `--offline` disables these requests. Report images are
+the LiteLLM price table; `--offline` disables these requests. `toksight quota` and the web
+**Refresh Kimi quota** button also call the Kimi Code usage API with your local Kimi Code token. Report images are
 rendered in your browser and saved only where you download them.
 
 ## JSON output
@@ -352,6 +383,9 @@ filtered entries, so `--client` / `--since` / `--until` apply to it like every o
 Each `models` row is grouped by agent and display name, with `modelIds` listing the original IDs;
 `pricing.modelRates` keeps per-ID pricing details. Display grouping never changes request costs.
 `toksight refresh --json` instead returns the database path, refresh time, entry count and warnings.
+`toksight quota --json` returns `{ tool, version, generatedAt, quotas }`; each quota has `client`, `plan`,
+`source` (`local`/`api`), `fetchedAt`, `observedAt`, `windows` (`id`, `label`, `windowMinutes`, `usedPercent`,
+optional `used`/`limit`/`remaining`, `resetsAt`, `reset`) and an optional `error` `{ code, message }`.
 
 `warnings` surfaces collection problems (a directory that cannot be read, a SQLite database that
 exists but cannot be opened) and data caveats — notably, entries without a timestamp that were

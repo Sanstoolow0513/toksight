@@ -16,6 +16,9 @@ GET /api/data -> 读取快照 -> 查询范围与筛选 -> buildPayload + Web 聚
 POST /api/refresh -> collectAll -> 事务替换快照
 数据库备份 -> 验证并合并 toksight SQLite -> 后续报告读取
 
+toksight quota / GET /api/quota -> Codex rollout rate_limits（本地）+ 内存中的上次 Kimi 结果
+POST /api/quota/refresh、quota（无 --offline）-> 另外请求 Kimi Code /usages
+
 frontend/ 源码 -> Next 静态导出 frontend/out/ -> src/webserver.js 提供页面与同源 API
 ```
 
@@ -41,6 +44,7 @@ frontend/ 源码 -> Next 静态导出 frontend/out/ -> src/webserver.js 提供�
 | `src/contextpricing.js` | LiteLLM 标准长上下文字段与 tiered_pricing 范围表的解析、验证和逐请求选价 |
 | `src/webservice.js`、`src/webquery.js` | Web 快照服务、查询范围交集、共享刷新任务 |
 | `src/webdata.js`、`src/comparison.js` | Web 补充聚合、等日历天数的相邻周期比较 |
+| `src/quota.js`、`src/quotamodel.js`、`src/codexquota.js`、`src/kimiquota.js` | 订阅额度：通用模型、Codex 本地日志、Kimi Code 显式联网查询（见[订阅额度](quota.md)） |
 | `src/webserver.js` | 静态资源与本机 HTTP API |
 | `frontend/app/`、`frontend/components/`、`frontend/lib/` | 新版工作台、图表与设置组件；`useWorkspace.js` 管页面状态，日期与聚合计算独立可测 |
 

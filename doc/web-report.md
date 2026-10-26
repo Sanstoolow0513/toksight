@@ -15,6 +15,8 @@
 | `/api/setup` | POST | 首次建库或保存自动更新偏好；参数为布尔 offline / autoUpdate |
 | `/api/export/db` | GET/HEAD | 下载独立 SQLite 备份 |
 | `/api/import/db` | POST | 验证并合并 SQLite 备份 |
+| `/api/quota` | GET/HEAD | Codex 本地额度 + 内存中上次 Kimi 结果，不联网；见[订阅额度](quota.md) |
+| `/api/quota/refresh` | POST | 查询 Kimi Code 额度（离线启动时跳过），按写路由做 Origin 检查 |
 
 默认回环绑定时，所有已定义 API 路由都拒绝非 localhost 的 Host 头，防止 DNS rebinding；写路由还拒绝跨站 Origin / Fetch 请求。Next 开发代理允许本机不同端口。显式 `--host 0.0.0.0` 意味着主动对局域网开放，不适用回环 Host 限制。新增 API 必须纳入相同检查；不提供修改 Agent 配置的写路由。
 
@@ -39,6 +41,8 @@ Next App Router 从 `frontend/` 静态导出为 `frontend/out/`，生产由 CLI 
 价格与历史都在同一 SQLite 读事务内获取，不触发采集或联网。`usePriceCatalog` 只在价格页挂载，取消
 旧请求并检查序号，页面关闭清理轮询；目录每分钟及回到前台重读，单项历史按需读取。手机表格在自己的
 可聚焦滚动区横向查看，不扩大页面宽度。切到价格或设置会停止用量报告请求。
+
+今日概览 KPI 下方的 `QuotaCard`（`useQuota`）显示 Codex / Kimi Code 订阅额度，只有“刷新 Kimi 额度”按钮会联网；卡片不进入 PNG 导出，细节见[订阅额度](quota.md)。
 
 Today 请求 `period=custom&since=<今天>&until=<今天>&timezone=<IANA>`，`TodayDashboard` 展示四项统一 KPI；每张卡由标题区与灰色内嵌数值区组成。
 Tokens 与费用在昨日有非零基数时展示相对变化，文案明确比较昨日全天；费用比较要求两期请求均已定价。

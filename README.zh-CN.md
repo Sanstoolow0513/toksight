@@ -41,6 +41,7 @@ toksight models       # 按模型统计
 toksight sessions     # 按成本排序的会话
 toksight web          # 本地用量与成本报告（热力图、Agent、模型，可导出图片）
 toksight refresh      # 重新扫描 Agent 并更新本地 SQLite 数据库
+toksight quota        # Codex 与 Kimi Code 的订阅额度窗口
 toksight reset-prices # 清除旧单价、历史与缓存，再打开 Web 重新建库
 toksight export-db backup.sqlite  # 导出完整的已提交用量数据库
 toksight import-db backup.sqlite  # 合并备份并去重
@@ -84,13 +85,39 @@ zcode   GLM-5.3             41   116K    1.99M        0   43.3K  94.5%   $0.870
 --open           用浏览器打开打印出的地址（仅 web）
 --no-open        不打开浏览器（仅 web；默认）
 --api-only       web：只提供 JSON API，不托管静态页面
---offline        跳过联网价格拉取，使用已保存的本地价格
+--offline        跳过联网价格拉取，使用已保存的本地价格（quota：不请求 Kimi）
 --no-color       关闭 ANSI 颜色
 ```
 
 带值参数支持两种写法：`--since 2026-08-01` 与 `--since=2026-08-01`。
 
 CLI 按天分组和日期过滤使用**本地时区**。网页可在设置里单独调整统计时区。
+
+### 订阅额度
+
+`toksight quota` 显示 Codex 与 Kimi Code 订阅当前的限流窗口：
+
+```
+Client     Plan                         Window               Used  Resets
+─────────  ───────────────────────────  ──────  ─────────────────  ────────────────────────────
+Codex CLI  self_serve_business_prolite  week                   4%  2026-11-02 00:46 (in 6d 17h)
+Kimi Code  LEVEL_INTERMEDIATE           5h        69.5% (139/200)  2026-10-26 09:33 (in 2h 33m)
+Kimi Code  LEVEL_INTERMEDIATE           week    10.4% (214/2,048)  2026-10-30 07:23 (in 4d)
+Kimi Code  LEVEL_INTERMEDIATE           month                0.6%  2026-11-16 16:00 (in 21d 9h)
+
+Codex CLI: from local session logs, last seen 2026-10-26 06:16 (43m ago)
+```
+
+- **Codex** 离线读取 `~/.codex/sessions`（支持 `CODEX_HOME`）中最新的 `rate_limits`。窗口按长度命名
+  （`5h`、`week`，其他如 `2d`）；部分套餐只有周窗口。重置时间已过的窗口显示为已重置，不显示过期百分比。
+- **Kimi Code** 本地没有额度数据，`toksight quota` 会读取 `~/.kimi-code/credentials/kimi-code.json`
+  （支持 `KIMI_CODE_HOME`）中的访问令牌，请求 `GET https://api.kimi.com/coding/v1/usages`。令牌只发往
+  Kimi 的 API 主机，不会打印或保存；toksight 不刷新令牌，过期时请打开 Kimi Code 刷新后重试。
+- `--client codex` / `--client kimi` 限定客户端，`--offline` 跳过 Kimi 请求，`--json` 输出
+  `{ tool, version, generatedAt, quotas }`。
+
+网页今日概览的“订阅额度”卡片显示同样的数据。只有点击“刷新 Kimi 额度”（`POST /api/quota/refresh`）
+才会查询 Kimi Code；`GET /api/quota` 只读本地数据。
 
 ## 定价
 
@@ -254,6 +281,7 @@ API 可以这样调用：`GET /api/data?period=custom&since=2026-09-01&until=202
 不传时保持服务端本地时区。未知、重复或无效参数返回 HTTP 400。`POST /api/refresh`
 会更新数据库，并返回刷新时间、记录数和采集警告；网页 API 新增的 `snapshot` 字段包含刷新时间和记录数。
 `POST /api/prices/update` 不扫描用量，由本机更新公开价格来源。
+`GET /api/quota` 返回本地额度数据，`POST /api/quota/refresh` 还会查询 Kimi Code。
 跨来源写入请求会被拒绝。
 
 ### 仪表盘构建产物
@@ -285,7 +313,8 @@ npm run web:ci && npm run web:build && node bin/toksight.js web
 toksight 本地优先：CLI 与网页报告只**读取**各 Agent 的会话文件。刷新会写入 toksight 自己的
 SQLite 数据库，价格抓取可能更新本地缓存；toksight 不会上传用量数据，也不会写回 Agent 文件。
 如果修改 `--host`，同一网络中的其他客户端可能读取报告和 API。
-外部请求仅用于下载 LiteLLM 价格表；`--offline` 可关闭联网价格请求。
+外部请求用于下载 LiteLLM 价格表；`--offline` 可关闭联网价格请求。`toksight quota` 与网页的“刷新 Kimi 额度”
+按钮还会用本机 Kimi Code 令牌请求 Kimi Code 用量 API。
 报告图片在浏览器里生成，只保存到你下载的位置。
 
 ## JSON 输出
@@ -297,6 +326,9 @@ entries 构建，`--client` / `--since` / `--until` 对它与其余切片一样�
 `models` 按 Agent 和展示名称分行，`modelIds` 列出原始 ID；`pricing.modelRates` 保留
 每个 ID 的单价细节。名称合并不会改变逐条请求算出的费用。
 `toksight refresh --json` 则返回数据库路径、刷新时间、记录数和采集警告。
+`toksight quota --json` 返回 `{ tool, version, generatedAt, quotas }`；每项包含 `client`、`plan`、`source`
+（`local`/`api`）、`fetchedAt`、`observedAt`、`windows`（`id`、`label`、`windowMinutes`、`usedPercent`、可选的
+`used`/`limit`/`remaining`、`resetsAt`、`reset`）以及可选的 `error` `{ code, message }`。
 
 `warnings` 会披露采集问题（无法读取的目录、存在但打不开的 SQLite 数据库）和数据口径问题——
 尤其是被 `--since` / `--until` 过滤排除的“无时间戳”条目，会在这里报告而不是无声消失。

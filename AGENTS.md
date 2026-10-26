@@ -7,7 +7,7 @@
 开发知识从 [doc/README.md](doc/README.md) 按主题查：
 
 - [架构与模块](doc/architecture.md) · [采集器](doc/collectors.md) · [数据契约](doc/data-contract.md)
-- [存储与定价](doc/storage-pricing.md) · [Web 报告](doc/web-report.md) · [开发与发布](doc/development-release.md)
+- [存储与定价](doc/storage-pricing.md) · [Web 报告](doc/web-report.md) · [订阅额度](doc/quota.md) · [开发与发布](doc/development-release.md)
 
 用户用法以 `README.md` / `README.zh-CN.md` 为准；Web 视觉与交互以 `design-spec.md` 为准。修改一个主题时同步更新对应文档，避免在规则文件复制完整机制。
 
