@@ -21,6 +21,21 @@ const MONTHS_LONG_EN = ['January', 'February', 'March', 'April', 'May', 'June', 
 // Chinese strings to EN users (and vice versa).
 export const tables = {
   'zh-CN': {
+    quotaTitle: "订阅额度",
+    quotaNote: "Codex 读取本机会话日志；Kimi Code 仅在手动刷新时联网查询",
+    quotaRefresh: "刷新 Kimi 额度",
+    quotaRefreshing: "正在查询…",
+    quota5h: "5 小时",
+    quotaWeek: "每周",
+    quotaMonth: "每月",
+    quotaResetsAt: "{time} 重置 · {span}后",
+    quotaRolledOver: "窗口已重置，用量待更新",
+    quotaResetUnknown: "重置时间未知",
+    quotaLocal: "来自本地日志 · 最近记录 {time}",
+    quotaApi: "来自 Kimi Code API · 查询于 {time}",
+    quotaNotFetched: "尚未查询，点击“刷新 Kimi 额度”联网获取",
+    quotaOffline: "离线模式下不查询 Kimi 额度",
+    quotaExpired: "登录已过期，请打开 Kimi Code 刷新后重试",
     skipContent: "跳转到主要内容",
     home: "首页",
     personalWorkspace: "个人工作台",
@@ -313,6 +328,21 @@ export const tables = {
     sessionUntitled: '未命名会话',
   },
   en: {
+    quotaTitle: 'Subscription quota',
+    quotaNote: 'Codex from local session logs; Kimi Code is queried only when you refresh',
+    quotaRefresh: 'Refresh Kimi quota',
+    quotaRefreshing: 'Querying…',
+    quota5h: '5h',
+    quotaWeek: 'Weekly',
+    quotaMonth: 'Monthly',
+    quotaResetsAt: 'resets {time} · in {span}',
+    quotaRolledOver: 'Window has reset; usage pending',
+    quotaResetUnknown: 'Reset time unknown',
+    quotaLocal: 'From local logs · last seen {time}',
+    quotaApi: 'From the Kimi Code API · fetched {time}',
+    quotaNotFetched: 'Not queried yet. Use “Refresh Kimi quota” to fetch it online',
+    quotaOffline: 'Kimi quota is not queried in offline mode',
+    quotaExpired: 'Sign-in expired. Open Kimi Code to refresh, then retry',
     skipContent: "Skip to content",
     home: "Home",
     personalWorkspace: "My workspace",
@@ -634,6 +664,17 @@ export function dayLabel(locale, key, withYear = false) {
 export function weekdayLabel(locale, key) {
   const name = WEEKDAYS[locale === 'en' ? 'en' : 'zh-CN'][weekdayIndex(key)];
   return locale === 'en' ? name : `周${name}`;
+}
+
+// Countdown span, two largest units: "3天4小时" / "3d 4h"; "<1m" below a minute.
+export function spanLabel(locale, ms) {
+  const minutes = Math.floor(Math.max(0, Number(ms) || 0) / 60000);
+  const zh = locale !== 'en';
+  if (minutes < 1) return zh ? '不到 1 分钟' : '<1m';
+  const d = Math.floor(minutes / 1440), h = Math.floor((minutes % 1440) / 60), m = minutes % 60;
+  const unit = zh ? { d: ' 天', h: ' 小时', m: ' 分' } : { d: 'd', h: 'h', m: 'm' };
+  const parts = d ? [[d, 'd'], [h, 'h']] : h ? [[h, 'h'], [m, 'm']] : [[m, 'm']];
+  return parts.filter(([n], i) => i === 0 || n).map(([n, u]) => `${n}${unit[u]}`).join(' ');
 }
 
 // Rounded to whole minutes: "1 小时 20 分" / "1h 20m"; "<1m" below a minute.

@@ -1,7 +1,8 @@
 // Minimal zero-dependency HTTP server for `toksight web`.
 // Serves the prebuilt static dashboard and a SQLite-backed JSON API. GETs
 // read a committed snapshot; POST /api/refresh collects and writes,
-// POST /api/prices/update checks LiteLLM first-party rates.
+// POST /api/prices/update checks LiteLLM first-party rates. GET /api/quota
+// reads local Codex limits; POST /api/quota/refresh also queries Kimi Code.
 
 import http from 'node:http';
 import { isIP } from 'node:net';
@@ -229,7 +230,7 @@ export function createWebServer({
     // 127.0.0.1 is still remoteAddress-loopback, but its Host header is not.
     const localHostHeader = isLocalHostHeader(req.headers.host);
 
-    if (['/api/data', '/api/refresh', '/api/prices', '/api/prices/update', '/api/prices/reset', '/api/prices/status', '/api/setup', '/api/import/db', '/api/export/db'].includes(pathname)) {
+    if (['/api/data', '/api/refresh', '/api/prices', '/api/prices/update', '/api/prices/reset', '/api/prices/status', '/api/setup', '/api/import/db', '/api/export/db', '/api/quota', '/api/quota/refresh'].includes(pathname)) {
       // Loopback-bound servers (the default) reject foreign Host headers;
       // a user who deliberately binds --host 0.0.0.0 exposes the dashboard
       // to the LAN on purpose, so the Host check would only break that.
@@ -245,7 +246,11 @@ export function createWebServer({
       const setup = pathname === '/api/setup';
       const importingDb = pathname === '/api/import/db';
       const exportingDb = pathname === '/api/export/db';
-      const writing = refresh || priceUpdate || priceReset || setup || importingDb;
+      const quota = pathname === '/api/quota';
+      // Not a write, but it spends the user's Kimi token on a network call, so
+      // it gets the same POST + Origin checks as the write routes.
+      const quotaRefresh = pathname === '/api/quota/refresh';
+      const writing = refresh || priceUpdate || priceReset || setup || importingDb || quotaRefresh;
       const allowed = writing ? req.method === 'POST' : req.method === 'GET' || req.method === 'HEAD';
       if (!allowed) {
         sendJson(res, 405, { error: 'method not allowed', code: 'METHOD_NOT_ALLOWED' }, req.method, { allow: writing ? 'POST' : 'GET, HEAD' });
@@ -257,7 +262,8 @@ export function createWebServer({
       }
       try {
         if ((priceReset && !getData.resetPrices) || (refresh && !getData.refresh) || (priceUpdate && !getData.updatePrices) ||
-          (importingDb && !getData.importDatabase) || (exportingDb && !getData.exportDatabase) || (setup && !getData.setup) || (priceStatus && !getData.priceStatus) || (prices && !getData.prices)) {
+          (importingDb && !getData.importDatabase) || (exportingDb && !getData.exportDatabase) || (setup && !getData.setup) || (priceStatus && !getData.priceStatus) || (prices && !getData.prices)
+          || (quota && !getData.quota) || (quotaRefresh && !getData.refreshQuota)) {
           sendJson(res, 501, { error: 'operation is not configured', code: 'NOT_IMPLEMENTED' }, req.method);
           return;
         }
@@ -268,7 +274,7 @@ export function createWebServer({
           res.end(req.method === 'HEAD' ? undefined : bytes);
           return;
         }
-        const payload = priceReset ? await getData.resetPrices() : refresh ? await getData.refresh() : priceUpdate ? await getData.updatePrices()
+        const payload = quota ? await getData.quota() : quotaRefresh ? await getData.refreshQuota() : priceReset ? await getData.resetPrices() : refresh ? await getData.refresh() : priceUpdate ? await getData.updatePrices()
           : setup ? await getData.setup(await readSetupBody(req)) : priceStatus ? await getData.priceStatus() : prices ? await getData.prices(url.searchParams)
           : importingDb ? await getData.importDatabase(await readDatabaseBody(req)) : await getData(url.searchParams);
         sendJson(res, 200, payload, req.method);

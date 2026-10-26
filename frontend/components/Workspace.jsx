@@ -51,7 +51,7 @@ export default function Workspace() {
   else content = <div ref={w.reportRef} className={`report ${view}-report${w.reportBusy ? ' is-loading' : ''}${report.error ? ' is-stale' : ''}`} aria-busy={w.reportBusy}>
     <div className="report-context"><span>{view === 'today' ? dayLabel(locale, w.shown.since, true) : tx('rangeSummary')}</span>
       <span>{report.agent ? w.shared.agentLabel(report.agent) : tx('filterAllAgents')} · {data.timezone}</span></div>
-    {view === 'today' ? <TodayDashboard data={data} day={w.shown.since} {...w.shared} open={w.openAgents} onToggle={w.onToggleAgent} onCalendar={() => navigate('calendar')} />
+    {view === 'today' ? <TodayDashboard data={data} day={w.shown.since} quotaRevision={w.refreshRevision} {...w.shared} open={w.openAgents} onToggle={w.onToggleAgent} onCalendar={() => navigate('calendar')} />
       : <CalendarView {...w.shared} data={data} period={w.shown} today={today} firstDay={w.firstDay} day={w.calendarDay} onPick={w.setSelectedDay}
         dayReport={w.dayReport} dayNav={w.selectedNav} onStep={w.onStepDay} onPeriod={w.onPeriod} />}
     <ReportFooter data={data} tx={tx} />
