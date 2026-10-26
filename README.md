@@ -248,7 +248,7 @@ The web endpoints are `GET /api/export/db` (SQLite download) and `POST /api/impo
 bytes, merge statistics as JSON); both retain the local Host check and import requires a permitted
 origin. Transfers work offline and never write agent files.
 
-**Reset price database** beside **Update prices** at the top of the **Prices** page clears saved rates, observed price history,
+**Reset price database** beside **Update prices** in the top bar of the **Prices** page clears saved rates, observed price history,
 the downloaded LiteLLM cache and stored fallback rates, then returns to price setup.
 The confirmation dialog shows what will be cleared and keeps any error visible for retry.
 Confirm the reset and choose **Build price database** to fetch fresh prices, or continue locally
@@ -281,9 +281,10 @@ The UI lives in `frontend/` and follows its own "Instrument Ledger" design langu
 plates with registration ticks, serif readouts with monospace tabular figures, hatching for missing data and a single
 signal orange, in warm-paper light and carbon dark themes with a collapsible index sidebar.
 The dashboard opens on **Today**, with **Calendar**, **Prices** and **Settings** in the sidebar.
-Theme (light / dark / system) and 中文 / EN controls live in the top bar. On phones, a sticky toolbar and horizontal
-navigation keep all four views within reach. **Refresh database** and **Export image** sit above reports;
-**Update prices** lives on the Prices page. See `design-spec.md` for the visual specification.
+There are no page banners: content starts right under the top bar, which holds the current page name, the page
+actions (**Export image** and **Refresh database** on reports; **Reset price database** and **Update prices** on Prices)
+and the theme (light / dark / system) and 中文 / EN controls. On phones, the actions become icon buttons and a sticky
+horizontal navigation keeps all four views within reach. See `design-spec.md` for the visual specification.
 
 - **Today** emphasizes tokens and reference cost, with cache hit rate and requests alongside, followed by hourly
   activity with Tokens / Cost controls, a token-mix spectrum bar, expandable agents and models, and up to ten sessions

@@ -23,16 +23,16 @@
 ## 页面与数据流
 
 首次未完成引导时，主内容区显示 `PriceSetup`，可立即下载价格或本地继续，状态保存在数据库。
-价格页提供完整目录、价格/历史版本数、最近记录变化时间、自动更新开关及页首“重置价格库”入口（与更新单价并列）；`usePriceDatabase` 独立加载状态。
+价格页提供完整目录、价格/历史版本数、最近记录变化时间、自动更新开关及顶栏“重置价格库”入口（与更新单价并列）；`usePriceDatabase` 独立加载状态。
 `PriceReset` 使用原生 dialog，提供范围说明、取消、忙状态和失败重试；成功后关闭弹窗并返回建库引导。
 离线时禁用联网更新；本地继续不能在下一次 GET 自动下载。具体来源和历史语义见[本机价格库](local-pricing.md)。
 
 Next App Router 从 `frontend/` 静态导出为 `frontend/out/`，生产由 CLI 托管；旧 `web/` 已移除。
 `app/page.js` 挂载 `Workspace`，`lib/useWorkspace.js` 集中管理筛选、时区、刷新、图片导出、价格初始化和数据库传输状态。
-`AppHeader` 为固定顶部工具栏，提供品牌、当前页面、配色和语言；配色菜单支持 Escape 关闭和焦点返回。
+`AppHeader` 为固定顶部工具栏，提供品牌、当前页名（页面唯一 `h1`，正文不再有大标题、眉标和介绍行）、`PageActions` 页面操作、配色和语言；配色菜单支持 Escape 关闭和焦点返回。
 `Sidebar` 分为数据洞察和工作台管理两组，支持折叠，底部提供本机说明与时区入口；≤700px 改为吸附横向导航。
-视觉为“刻度账本”设计语言（令牌见 `frontend/app/styles/tokens.css`）：坐标纸底面上的发丝边读数板（2px 圆角、四角套准角标、无投影），52px 读数条顶栏与 232px 编号索引侧栏；导航和分段选中为墨底反白加信号橙方块，信号橙只用于选中标记、峰值、输入 token 与焦点，缺失 / 未来 / 剩余额度用阴影线，热图为五档墨色浓度。样式按 `@layer` 分为 tokens / base / primitives / shell / components / pages / utilities。
-`ReportActions` 提供刷新和图片导出；更新单价与重置集中在价格页。`Settings` 提供外观、语言、时区、SQLite 备份 / 合并。
+视觉为“刻度账本”设计语言（令牌见 `frontend/app/styles/tokens.css`）：坐标纸底面上的发丝边读数板（2px 圆角、四角套准角标、无投影），56px 读数条顶栏与 232px 索引侧栏；根字号 16px、正文 15px，任何文字不小于 12px；导航和分段选中为墨底反白加信号橙方块，信号橙只用于选中标记、峰值、输入 token 与焦点，缺失 / 未来 / 剩余额度用阴影线，热图为五档墨色浓度。样式按 `@layer` 分为 tokens / base / primitives / shell / components / pages / utilities。
+`PageActions` 在顶栏提供刷新和图片导出，价格页换为更新单价与重置，≤760px 收为图标按钮；卡片专属操作（刷新 Kimi 额度）留在卡片内。`Settings` 提供外观、语言、时区、SQLite 备份 / 合并。
 共享原语位于 `components/ui/`：`Segmented`（配色、语言、指标、月 / 年、快捷范围与 Agent 标签共用，支持方向键、Home / End 与单一 Tab 焦点）、`Button` / `IconButton`、`Panel`、`Stat`、`Meter`（额度窗口，`role="meter"`）、`Badge`、`Field` 与 `Tooltip` + `useTip`（小时柱、热图格和账表行共用的指针 / 焦点定位）。视觉与交互以 `design-spec.md` 为准。
 
 `PriceCatalog` 从独立的 `/api/prices` 读取第一方 LiteLLM 目录，支持模型搜索、提供商筛选和每页 50 条。
