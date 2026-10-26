@@ -19,6 +19,7 @@ import { dayLabel, durationLabel, periodLabel, weekdayLabel } from '@/lib/i18n';
 
 const icon = { size: 15, strokeWidth: 2, 'aria-hidden': true };
 const SESSION_LIMIT = 10;
+const countLabel = (tx, key, n) => tx(n === 1 ? `${key}One` : key, { n: fmtInt(n) });
 function SessionRow({ row, index, agentLabel, locale, tx, timezone }) {
   const meta = [
     agentLabel(row.client),
@@ -49,17 +50,19 @@ function SessionRow({ row, index, agentLabel, locale, tx, timezone }) {
 }
 
 // The same day anatomy is used in the overview and the calendar detail.
-export function DayBody({ data, day, sortBy, onSort, locale, tx, agentLabel, open, onToggle, overview = false }) {
+// `quota` (Today only) sits beside the token mix, with the hourly chart below.
+export function DayBody({ data, day, sortBy, onSort, locale, tx, agentLabel, open, onToggle, overview = false, quota = null }) {
   const [expanded, setExpanded] = useState(false);
   const sessions = useMemo(() => sessionRows(data.topSessions, SESSION_LIMIT), [data.topSessions]);
   const visible = expanded ? sessions : sessions.slice(0, 5);
   return <div className={'day-sections' + (overview ? ' is-overview' : '')}>
-    <div className="analysis-grid"><ActivityChart data={data} tx={tx} /><TokenBreakdown data={data} tx={tx} /></div>
+    {overview ? <div className="overview-grid">{quota}<TokenBreakdown data={data} tx={tx} /><ActivityChart data={data} tx={tx} /></div>
+      : <div className="analysis-grid"><ActivityChart data={data} tx={tx} /><TokenBreakdown data={data} tx={tx} /></div>}
     {!data.totals?.requests ? <div className="day-empty plate plate--inset"><h3>{tx('noSessions')}</h3><p>{tx('noSessionsNote')}</p></div> : null}
-    {Object.keys(data.clients ?? {}).length ? <Panel className="day-section section-agents" title={tx('cardAgents')} count={`${Object.keys(data.clients).length} AGENTS`}>
+    {Object.keys(data.clients ?? {}).length ? <Panel className="day-section section-agents" title={tx('cardAgents')} count={countLabel(tx, 'countAgents', Object.keys(data.clients).length)}>
       <AgentTable clients={data.clients} models={data.models} pricing={data.pricing} sortBy={sortBy} onSort={onSort} agentLabel={agentLabel} tx={tx} open={open} onToggle={onToggle} />
     </Panel> : null}
-    {hasModelComparison(data.models) ? <Panel className="day-section section-models" title={tx('cardModels')} count={`${data.models.length} MODELS`}>
+    {hasModelComparison(data.models) ? <Panel className="day-section section-models" title={tx('cardModels')} count={countLabel(tx, 'rowModels', data.models.length)}>
       <ModelTable models={data.models} pricing={data.pricing} sortBy={sortBy} onSort={onSort} agentLabel={agentLabel} tx={tx} />
     </Panel> : null}
     {sessions.length ? <Panel className="day-section section-sessions" title={tx('secSessions')}

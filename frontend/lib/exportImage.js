@@ -2,7 +2,7 @@
 
 // Capture the visible Today or Calendar report, including day details.
 // Navigation and actions stay outside this node; inline controls are filtered.
-// `.is-exporting` paints the opaque graph-paper ground under the plates.
+// `.is-exporting` paints an opaque page background under the panels.
 
 export async function exportReportImage(node, filename) {
   const { domToPng } = await import('modern-screenshot');
