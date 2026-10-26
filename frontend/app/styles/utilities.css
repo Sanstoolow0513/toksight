@@ -2,7 +2,6 @@
 @layer utilities {
   .visually-hidden { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
   .spin { animation: spin 1s linear infinite; }
-  .mono { font-family: var(--font-mono); }
   @keyframes spin { to { transform: rotate(360deg); } }
   @keyframes pulse { to { opacity: .45; } }
   @keyframes rise { from { transform: scaleY(0); } }

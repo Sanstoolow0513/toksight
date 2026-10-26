@@ -1,6 +1,6 @@
 import { cx } from './cx';
 
-// Label + control. The label is a mono caps annotation; `inline` puts it
+// Label + control. The label uses the shared caption style; `inline` puts it
 // beside the control.
 export default function Field({ label, inline = false, hideLabel = false, className, children }) {
   return <label className={cx('field', inline && 'field--inline', className)}>

@@ -1,4 +1,4 @@
-/* toksight · Instrument Ledger. Layer order is fixed here; each file below
+/* toksight · Plain Workbench. Layer order is fixed here; each file below
    wraps its rules in one of these layers (see design-spec.md). */
 @layer reset, tokens, base, primitives, shell, components, pages, utilities;
 

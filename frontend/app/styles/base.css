@@ -17,18 +17,13 @@
   body {
     margin: 0;
     min-height: 100vh;
-    background-color: var(--bg);
-    /* Graph-paper ground: the report sits on a measurement grid. */
-    background-image:
-      linear-gradient(var(--grid-line) var(--bw), transparent var(--bw)),
-      linear-gradient(90deg, var(--grid-line) var(--bw), transparent var(--bw));
-    background-size: var(--grid-size) var(--grid-size);
+    background: var(--bg);
     color: var(--ink);
     font: var(--fs-base)/var(--lh-body) var(--font-sans);
     font-variant-numeric: tabular-nums;
     -webkit-font-smoothing: antialiased;
   }
-  h1, h2, h3, h4 { font-weight: 400; }
+  h1, h2, h3, h4 { font-weight: var(--fw-strong); }
   :focus-visible { outline: var(--bw-strong) solid var(--signal); outline-offset: 2px; }
   ::selection { background: var(--signal-soft); color: var(--ink); }
   button:disabled, input:disabled, select:disabled { cursor: not-allowed; }

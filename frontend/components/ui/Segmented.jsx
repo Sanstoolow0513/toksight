@@ -3,10 +3,10 @@ import { cx } from './cx';
 // The single segmented control: theme, language, metric, calendar mode,
 // quick ranges and agent tabs all use it. A radiogroup with one Tab stop;
 // arrow keys, Home and End move and select.
-export default function Segmented({ label, value, options, onChange, size = 'md', mono = false, wrap = false, block = false, className }) {
+export default function Segmented({ label, value, options, onChange, size = 'md', wrap = false, block = false, className }) {
   const selected = options.some((option) => option.value === value);
   return (
-    <div className={cx('seg', size === 'sm' && 'seg--sm', mono && 'seg--mono', wrap && 'seg--wrap', block && 'seg--block', className)} role="radiogroup" aria-label={label}>
+    <div className={cx('seg', size === 'sm' && 'seg--sm', wrap && 'seg--wrap', block && 'seg--block', className)} role="radiogroup" aria-label={label}>
       {options.map((o, current) => (
         <button
           key={o.value}

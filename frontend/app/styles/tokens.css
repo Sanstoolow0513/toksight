@@ -1,31 +1,28 @@
 /* The layer order must be declared before any layer appears in the bundle. */
 @layer reset, tokens, base, primitives, shell, components, pages, utilities;
 
-/* Instrument Ledger tokens. Every colour, size, radius, line and motion value
+/* Plain Workbench tokens. Every colour, size, radius, line and motion value
    used by primitives and components is declared here (see design-spec.md). */
 @layer tokens {
   :root {
     color-scheme: light;
-    /* Ink and paper */
-    --bg: #efede6;
-    --grid-line: rgb(21 21 18 / .05);
-    --grid-size: 24px;
-    --surface: #f9f8f4;
-    --surface-2: rgb(21 21 18 / .035);
-    --surface-3: rgb(21 21 18 / .07);
-    --surface-raised: #fff;
-    --ink: #151512;
-    --ink-2: rgb(21 21 18 / .78);
-    --ink-3: rgb(21 21 18 / .68);
-    --ink-inverse: #f9f8f4;
-    --line: rgb(21 21 18 / .12);
-    --line-strong: rgb(21 21 18 / .26);
-    --tick: rgb(21 21 18 / .4);
-    /* The single signal colour */
-    --signal: #f2600c;
-    --signal-ink: #ad3f00;
-    --signal-soft: rgb(242 96 12 / .1);
-    --signal-wash: rgb(242 96 12 / .05);
+    /* Neutral surfaces: a plain page, panels as a light tint step. */
+    --bg: #f3f3f1;
+    --surface: #ffffff;
+    --surface-2: rgb(24 24 22 / .035);
+    --surface-3: rgb(24 24 22 / .07);
+    --surface-raised: #ffffff;
+    --ink: #18181a;
+    --ink-2: rgb(24 24 26 / .78);
+    --ink-3: rgb(24 24 26 / .66);
+    --ink-inverse: #ffffff;
+    --line: rgb(24 24 26 / .09);
+    --line-strong: rgb(24 24 26 / .18);
+    /* The single accent colour */
+    --signal: #e8590c;
+    --signal-ink: #b03f00;
+    --signal-soft: rgb(232 89 12 / .12);
+    --signal-wash: rgb(232 89 12 / .05);
     /* Semantic */
     --ok: #2f7a55;
     --warn: #8a5a00;
@@ -33,54 +30,54 @@
     --danger: #b23a2b;
     --danger-soft: rgb(178 58 43 / .08);
     /* Heat ramp (ink density) */
-    --heat-0: rgb(21 21 18 / .04);
-    --heat-1: rgb(21 21 18 / .12);
-    --heat-2: rgb(21 21 18 / .26);
-    --heat-3: rgb(21 21 18 / .5);
-    --heat-4: rgb(21 21 18 / .86);
-    --heat-ink-hi: #f9f8f4;
+    --heat-0: rgb(24 24 26 / .045);
+    --heat-1: rgb(24 24 26 / .12);
+    --heat-2: rgb(24 24 26 / .26);
+    --heat-3: rgb(24 24 26 / .5);
+    --heat-4: rgb(24 24 26 / .84);
+    --heat-ink-hi: #ffffff;
     /* Data colours */
     --c-input: var(--signal);
-    --c-cache-read: #2a2a25;
-    --c-cache-write: #8d8b83;
-    --c-output: #c9c6bb;
-    --chart-ink: rgb(21 21 18 / .78);
+    --c-cache-read: #2b2b2e;
+    --c-cache-write: #8c8c90;
+    --c-output: #c8c8cb;
+    --chart-ink: rgb(24 24 26 / .72);
     --agent-claude: #b0603f;
     --agent-codex: #2f7f6a;
-    --agent-opencode: #77756c;
+    --agent-opencode: #77767a;
     --agent-kimi: #3f6db3;
     --agent-zcode: #8c5aa8;
-    --agent-other: #8a887f;
-    /* Hatching for absence: future days, remaining quota, unpriced */
-    --hatch: repeating-linear-gradient(-45deg, var(--line-strong) 0 1px, transparent 1px 5px);
-    --hatch-faint: repeating-linear-gradient(-45deg, var(--line) 0 1px, transparent 1px 5px);
+    --agent-other: #8a898e;
+    /* Absence (future days, remaining quota, unpriced): a flat fill, not a pattern. */
+    --empty: var(--surface-3);
+    --empty-faint: var(--surface-2);
     /* Elevation: only floating layers */
-    --shadow-pop: 4px 4px 0 rgb(21 21 18 / .1), 0 14px 36px rgb(21 21 18 / .14);
-    --scrim: rgb(21 21 18 / .42);
+    --shadow-pop: 0 1px 2px rgb(0 0 0 / .06), 0 8px 24px rgb(0 0 0 / .1);
+    --shadow-thumb: 0 1px 2px rgb(0 0 0 / .12);
+    --scrim: rgb(24 24 26 / .4);
 
-    /* Type */
-    --font-display: var(--font-instrument), 'Songti SC', 'Noto Serif CJK SC', 'Source Han Serif SC', 'STSong', Georgia, serif;
-    --font-sans: var(--font-geist-sans), 'PingFang SC', 'Microsoft YaHei', 'Noto Sans CJK SC', 'Segoe UI', sans-serif;
-    --font-mono: var(--font-geist-mono), 'Cascadia Code', Consolas, 'PingFang SC', monospace;
-    /* Root is 16px; body copy is 15px. --fs-2xs is the floor: nothing is
-       set smaller, and it is reserved for incidental marks (axis ticks,
-       heat-cell day numbers, footer). Labels and captions start at --fs-xs. */
+    /* Type: one sans family everywhere, with an explicit CJK sans stack so
+       Chinese never falls back to a serif. Mono only for code-like strings. */
+    --font-cjk: 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei UI', 'Microsoft YaHei', 'Noto Sans SC', 'Noto Sans CJK SC', 'Source Han Sans SC';
+    --font-sans: var(--font-geist-sans), -apple-system, 'Segoe UI', var(--font-cjk), sans-serif;
+    --font-mono: var(--font-geist-mono), ui-monospace, 'Cascadia Code', Consolas, var(--font-cjk), monospace;
+    /* Root is 16px; body copy is 15px; --fs-xs (13px) is the floor. */
     --fs-root: 16px;
-    --fs-2xs: 12px;
     --fs-xs: 13px;
     --fs-sm: 14px;
     --fs-base: 15px;
-    --fs-lg: 17px;
-    --fs-xl: 21px;
-    --fs-2xl: 26px;
-    --fs-3xl: 34px;
-    --fs-4xl: 46px;
-    --fs-5xl: 58px;
-    --lh-tight: 1.05;
-    --lh-snug: 1.3;
-    --lh-body: 1.55;
-    --track-label: .05em;
-    --track-display: -.01em;
+    --fs-lg: 16px;
+    --fs-xl: 18px;
+    --fs-2xl: 22px;
+    --fs-3xl: 26px;
+    --fs-4xl: 30px;
+    --fw-regular: 400;
+    --fw-medium: 500;
+    --fw-strong: 600;
+    --lh-tight: 1.15;
+    --lh-snug: 1.35;
+    --lh-body: 1.5;
+    --track-tight: -.015em;
 
     /* Space (4px base) */
     --sp-1: 4px;
@@ -91,76 +88,76 @@
     --sp-6: 24px;
     --sp-7: 32px;
     --sp-8: 40px;
-    --sp-9: 48px;
-    --sp-10: 64px;
 
-    /* Radius, lines */
+    /* Radius: one scale */
     --r-0: 0;
-    --r-1: 2px;
+    --r-sm: 4px;
+    --r-1: 6px;
+    --r-2: 8px;
     --r-pill: 999px;
     --bw: 1px;
     --bw-strong: 2px;
-    --tick-len: 7px;
 
     /* Control sizes */
-    --ctl-sm: 30px;
-    --ctl-md: 36px;
+    --ctl-sm: 28px;
+    --ctl-md: 34px;
     --ctl-lg: 40px;
 
     /* Motion */
     --dur-1: 120ms;
     --dur-2: 200ms;
-    --dur-3: 420ms;
+    --dur-3: 360ms;
     --ease: cubic-bezier(.2, .7, .1, 1);
 
     /* Shell */
-    --header-h: 56px;
-    --rail-w: 232px;
+    --header-h: 52px;
+    --rail-w: 220px;
     --content-max: 1600px;
-    --gutter: var(--sp-6);
+    --gutter: var(--sp-4);
+    --pad-x: var(--sp-4);
+    --pad-y: var(--sp-3);
   }
 
   :root[data-theme='dark'] {
     color-scheme: dark;
-    --bg: #0d0e0c;
-    --grid-line: rgb(236 233 223 / .04);
-    --surface: #151613;
-    --surface-2: rgb(236 233 223 / .04);
-    --surface-3: rgb(236 233 223 / .08);
-    --surface-raised: #1d1e1a;
-    --ink: #ece9df;
-    --ink-2: rgb(236 233 223 / .8);
-    --ink-3: rgb(236 233 223 / .66);
-    --ink-inverse: #151613;
-    --line: rgb(236 233 223 / .11);
-    --line-strong: rgb(236 233 223 / .24);
-    --tick: rgb(236 233 223 / .38);
+    --bg: #111113;
+    --surface: #1a1a1d;
+    --surface-2: rgb(236 236 240 / .04);
+    --surface-3: rgb(236 236 240 / .08);
+    --surface-raised: #222226;
+    --ink: #ececf0;
+    --ink-2: rgb(236 236 240 / .8);
+    --ink-3: rgb(236 236 240 / .64);
+    --ink-inverse: #18181a;
+    --line: rgb(236 236 240 / .08);
+    --line-strong: rgb(236 236 240 / .18);
     --signal: #ff7a2e;
     --signal-ink: #ff9a5c;
-    --signal-soft: rgb(255 122 46 / .14);
+    --signal-soft: rgb(255 122 46 / .16);
     --signal-wash: rgb(255 122 46 / .06);
     --ok: #74c49a;
     --warn: #e3b765;
     --warn-soft: rgb(227 183 101 / .12);
     --danger: #ff8f80;
     --danger-soft: rgb(255 143 128 / .1);
-    --heat-0: rgb(236 233 223 / .05);
-    --heat-1: rgb(236 233 223 / .13);
-    --heat-2: rgb(236 233 223 / .27);
-    --heat-3: rgb(236 233 223 / .52);
-    --heat-4: rgb(236 233 223 / .88);
-    --heat-ink-hi: #151613;
-    --c-cache-read: #e4e1d6;
-    --c-cache-write: #8f8c82;
-    --c-output: #4a4943;
-    --chart-ink: rgb(236 233 223 / .78);
+    --heat-0: rgb(236 236 240 / .05);
+    --heat-1: rgb(236 236 240 / .13);
+    --heat-2: rgb(236 236 240 / .27);
+    --heat-3: rgb(236 236 240 / .52);
+    --heat-4: rgb(236 236 240 / .86);
+    --heat-ink-hi: #18181a;
+    --c-cache-read: #e2e2e6;
+    --c-cache-write: #8e8e94;
+    --c-output: #4a4a50;
+    --chart-ink: rgb(236 236 240 / .74);
     --agent-claude: #e0906d;
     --agent-codex: #6cc5a8;
-    --agent-opencode: #a9a79e;
+    --agent-opencode: #a9a8ae;
     --agent-kimi: #86aef0;
     --agent-zcode: #c49ae0;
-    --agent-other: #9c9a91;
-    --shadow-pop: 4px 4px 0 rgb(0 0 0 / .5), 0 18px 44px rgb(0 0 0 / .5);
+    --agent-other: #9c9ba1;
+    --shadow-pop: 0 1px 2px rgb(0 0 0 / .4), 0 10px 30px rgb(0 0 0 / .45);
+    --shadow-thumb: 0 1px 2px rgb(0 0 0 / .5);
     --scrim: rgb(0 0 0 / .6);
   }
 }

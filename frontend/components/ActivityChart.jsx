@@ -6,7 +6,7 @@ import { Panel, Segmented, TipRow, TipTitle, Tooltip, useTip } from './ui';
 
 const hourText = (hour) => `${String(hour).padStart(2, '0')}:00`;
 
-// 24 local-hour columns on a tick ruler; the peak hour carries the signal colour.
+// 24 local-hour columns; the peak hour carries the accent colour.
 export default function ActivityChart({ data, tx }) {
   const [metric, setMetric] = useState('tokens');
   const { tip, hide, atElement } = useTip();
@@ -27,7 +27,6 @@ export default function ActivityChart({ data, tx }) {
           {bar === peak ? <span className="peak-flag" aria-hidden="true">{format(max)}</span> : null}
           <div className="activity-bar" style={{ height: value(bar) > 0 ? `max(3px, ${value(bar) / max * 100}%)` : 0 }} />
         </div>)}</div>
-        <div className="activity-ruler" aria-hidden="true" />
         <div className="activity-axis" aria-hidden="true">{[0, 6, 12, 18, 24].map((hour) => <span key={hour}>{hourText(hour)}</span>)}</div>
       </div>
       {current ? <Tooltip x={tip.x} y={tip.y}><TipTitle>{hourText(current.hour)} – {hourText(current.hour + 1)}</TipTitle>

@@ -27,7 +27,7 @@ export default function ReportFilters({ period, today, agent, clients, onAgent, 
   return (
     <section className="report-filters plate plate--inset no-export" aria-label={tx('filterTitle')}>
       <div className="filter-row">
-        <Segmented size="sm" mono label={tx('filterQuick')} value={period.preset} onChange={(preset) => onPeriod(quickPeriod(preset, today))}
+        <Segmented size="sm" label={tx('filterQuick')} value={period.preset} onChange={(preset) => onPeriod(quickPeriod(preset, today))}
           className="quick-ranges" options={QUICK_RANGES.map((preset) => ({ value: preset, label: preset.toUpperCase(), title: tx(`range${preset}`) }))} />
         <Field inline label="Agent" className="agent-filter">
           <select value={agent} onChange={(e) => onAgent(e.target.value)}>

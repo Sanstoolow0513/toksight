@@ -1,125 +1,122 @@
-/* Today and day-detail components: readout strip, quota, hourly ruler,
-   token spectrum, agent/model ledgers and the session list. */
+/* Today and day-detail components: metrics row, quota, hourly chart, token
+   mix, agent/model tables and the session list. */
 @layer components {
   .kpis { margin-bottom: var(--gutter); }
   .kpis.is-grid { --cols: 2; }
   .kpis.is-grid .readout:nth-child(odd) { border-left: 0; }
   .kpis.is-grid .readout:nth-child(n + 3) { border-top: var(--bw) solid var(--line); }
-  .kpi.is-tokens .readout-value { color: var(--ink); }
 
   /* Quota */
-  .quota-card { margin-bottom: var(--gutter); }
-  .quota-clients { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); }
-  .quota-client { min-width: 0; padding: var(--sp-4) var(--sp-6) var(--sp-4); border-left: var(--bw) dashed var(--line); }
-  .quota-client:first-child { border-left: 0; }
+  .quota-clients { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 0 var(--sp-6); padding: var(--sp-2) var(--pad-x) var(--pad-y); }
+  .quota-client { min-width: 0; padding: var(--sp-1) 0; }
   .quota-client-head { display: flex; justify-content: space-between; align-items: center; gap: var(--sp-3); }
-  .agent-title { display: inline-flex; align-items: center; gap: var(--sp-2); min-width: 0; flex-wrap: wrap; }
-  .agent-name { font-weight: 500; font-size: var(--fs-sm); }
-  .quota-windows { list-style: none; display: grid; gap: var(--sp-3); margin-top: var(--sp-3); }
-  .quota-window { display: grid; grid-template-columns: 56px minmax(0, 1fr) auto; align-items: center; gap: var(--sp-1) var(--sp-3); }
-  .quota-window-label { font: var(--fs-xs) var(--font-mono); color: var(--ink-2); }
-  .quota-used { font: 500 var(--fs-base) var(--font-mono); text-align: right; white-space: nowrap; }
-  .quota-used em { margin-left: var(--sp-2); font-style: normal; font-weight: 400; font-size: var(--fs-xs); color: var(--ink-3); }
-  .quota-reset { grid-column: 2 / -1; font: var(--fs-xs) var(--font-mono); color: var(--ink-3); }
-  .quota-source, .quota-message { margin-top: var(--sp-3); font-size: var(--fs-xs); color: var(--ink-3); overflow-wrap: anywhere; }
+  .agent-title { display: inline-flex; align-items: center; gap: var(--sp-2); min-width: 0; max-width: 100%; white-space: nowrap; }
+  .agent-title > .agent-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .agent-name { font-weight: var(--fw-medium); font-size: var(--fs-sm); }
+  .quota-windows { list-style: none; display: grid; gap: var(--sp-2); margin-top: var(--sp-2); }
+  .quota-window { display: grid; grid-template-columns: 52px minmax(0, 1fr) auto; align-items: center; gap: 2px var(--sp-3); }
+  .quota-window-label { font-size: var(--fs-xs); color: var(--ink-2); }
+  .quota-used { font: var(--fw-medium) var(--fs-sm) var(--font-sans); text-align: right; white-space: nowrap; }
+  .quota-used em { margin-left: var(--sp-2); font-style: normal; font-weight: var(--fw-regular); font-size: var(--fs-xs); color: var(--ink-3); }
+  .quota-reset { grid-column: 2 / -1; font-size: var(--fs-xs); color: var(--ink-3); }
+  .quota-source, .quota-message { margin-top: var(--sp-2); font-size: var(--fs-xs); color: var(--ink-3); overflow-wrap: anywhere; }
   .quota-message { color: var(--warn); }
-  .quota-error { padding: var(--sp-3) var(--sp-6) 0; }
+  .quota-error { padding: var(--sp-2) var(--pad-x) 0; }
 
-  /* Layout of a day */
+  /* Layout of a day. Today: quota beside the token mix, hourly chart below;
+     without quota, hourly and mix share the row. */
   .day-sections { display: grid; gap: var(--gutter); }
+  /* Placed by line numbers (not template areas) so the PNG export clones it faithfully. */
+  .overview-grid { display: grid; gap: var(--gutter); grid-template-columns: minmax(0, 3fr) minmax(300px, 2fr); }
+  .overview-grid > .quota-card { grid-column: 1; grid-row: 1; }
+  .overview-grid > .section-breakdown { grid-column: 2; grid-row: 1; }
+  .overview-grid > .section-hourly { grid-column: 1 / -1; grid-row: 2; }
+  /* Without quota (none configured, or in the exported image) hourly and mix share one row. */
+  .overview-grid:not(:has(.quota-card)), .is-exporting .overview-grid { grid-template-columns: minmax(0, 2fr) minmax(300px, 1fr); }
+  :is(.overview-grid:not(:has(.quota-card)), .is-exporting .overview-grid) > .section-hourly { grid-column: 1; grid-row: 1; }
   .analysis-grid { display: grid; grid-template-columns: minmax(0, 2fr) minmax(280px, 1fr); gap: var(--gutter); }
   .day-section { container-type: inline-size; }
-  .day-empty { padding: var(--sp-7); text-align: center; }
-  .day-empty h3 { font: var(--fs-xl) var(--font-display); }
-  .day-empty p { margin-top: var(--sp-2); font-size: var(--fs-sm); color: var(--ink-2); }
+  .day-empty { padding: var(--sp-6); text-align: center; }
+  .day-empty h3 { font: var(--fw-strong) var(--fs-base) var(--font-sans); }
+  .day-empty p { margin-top: var(--sp-1); font-size: var(--fs-sm); color: var(--ink-2); }
 
-  /* Hourly ruler chart */
-  .activity-chart { display: flex; gap: var(--sp-3); height: 236px; padding: var(--sp-6) var(--sp-6) 0 var(--sp-4); }
-  .chart-scale { display: flex; flex-direction: column; justify-content: space-between; flex-shrink: 0; min-width: 40px; padding-bottom: 34px; font: var(--fs-2xs)/1 var(--font-mono); color: var(--ink-3); text-align: right; }
+  /* Hourly chart */
+  .activity-chart { display: flex; gap: var(--sp-2); height: 196px; padding: var(--sp-5) var(--pad-x) 0 var(--sp-2); }
+  .chart-scale { display: flex; flex-direction: column; justify-content: space-between; flex-shrink: 0; min-width: 44px; padding-bottom: 26px; font: var(--fs-xs)/1 var(--font-sans); color: var(--ink-3); text-align: right; }
   .activity-plot { position: relative; flex: 1; min-width: 0; }
-  .activity-guides { position: absolute; inset: 0 0 34px; display: flex; flex-direction: column; justify-content: space-between; pointer-events: none; }
-  .activity-guides i { border-top: var(--bw) dashed var(--line); }
-  .activity-bars { position: relative; display: flex; align-items: flex-end; gap: 3px; height: calc(100% - 34px); }
+  .activity-guides { position: absolute; inset: 0 0 26px; display: flex; flex-direction: column; justify-content: space-between; pointer-events: none; }
+  .activity-guides i { border-top: var(--bw) solid var(--line); }
+  .activity-bars { position: relative; display: flex; align-items: flex-end; gap: 3px; height: calc(100% - 26px); border-bottom: var(--bw) solid var(--line-strong); }
   .activity-hour { position: relative; flex: 1; min-width: 0; height: 100%; display: flex; align-items: flex-end; outline-offset: 1px; }
-  .activity-hour:hover { background: var(--signal-wash); }
+  .activity-hour:hover { background: var(--surface-2); }
   .activity-bar {
-    width: 100%; min-width: 0; background: var(--chart-ink); transform-origin: bottom;
+    width: 100%; min-width: 0; border-radius: 2px 2px 0 0; background: var(--chart-ink); transform-origin: bottom;
     animation: rise var(--dur-3) var(--ease) both;
     transition: background-color var(--dur-1) var(--ease);
   }
   .activity-hour.is-peak .activity-bar, .activity-hour:hover .activity-bar, .activity-hour:focus-visible .activity-bar { background: var(--signal); }
   .peak-flag {
     position: absolute; left: 50%; top: -20px; transform: translateX(-50%); z-index: 1;
-    padding: 0 var(--sp-1); background: var(--signal); color: var(--ink-inverse); font: 500 var(--fs-2xs)/16px var(--font-mono); white-space: nowrap;
+    padding: 0 var(--sp-1); border-radius: var(--r-sm); background: var(--signal); color: #fff; font: var(--fw-medium) var(--fs-xs)/18px var(--font-sans); white-space: nowrap;
   }
-  .activity-ruler {
-    height: 10px; border-top: var(--bw) solid var(--ink-3);
-    background:
-      repeating-linear-gradient(90deg, var(--tick) 0 1px, transparent 1px calc(100% / 4)) left top / calc(100% + 1px) 10px no-repeat,
-      repeating-linear-gradient(90deg, var(--line-strong) 0 1px, transparent 1px calc(100% / 24)) left top / calc(100% + 1px) 5px no-repeat;
-  }
-  .activity-axis { display: flex; justify-content: space-between; height: 24px; padding-top: var(--sp-1); font: var(--fs-2xs) var(--font-mono); color: var(--ink-3); }
+  .activity-axis { display: flex; justify-content: space-between; height: 26px; padding-top: var(--sp-1); font-size: var(--fs-xs); color: var(--ink-3); }
   .activity-footer {
     display: flex; justify-content: space-between; flex-wrap: wrap; gap: var(--sp-2);
-    margin: var(--sp-2) var(--sp-6) 0; padding: var(--sp-3) 0 var(--sp-4); border-top: var(--bw) dashed var(--line);
-    font: var(--fs-2xs) var(--font-mono); color: var(--ink-3);
+    padding: var(--sp-1) var(--pad-x) var(--pad-y); font-size: var(--fs-xs); color: var(--ink-3);
   }
   .activity-footer > span { display: inline-flex; align-items: center; gap: var(--sp-2); }
   .activity-footer .swatch { --swatch: var(--chart-ink); }
-  .peak-label { padding: 0 var(--sp-1); border: var(--bw) solid currentColor; font-weight: 400; color: var(--signal-ink); }
+  .peak-label { padding: 0 var(--sp-1); border-radius: var(--r-sm); background: var(--signal-soft); font-weight: var(--fw-medium); color: var(--signal-ink); }
 
-  /* Token spectrum */
-  .token-breakdown { display: flex; flex-direction: column; gap: var(--sp-3); padding: var(--sp-5) var(--sp-6) var(--sp-5); }
+  /* Token mix */
+  .token-breakdown { display: flex; flex-direction: column; gap: var(--sp-3); padding: var(--sp-2) var(--pad-x) var(--pad-y); }
   .token-total { display: flex; align-items: baseline; gap: var(--sp-2); }
-  .token-total strong { font: var(--fs-4xl)/1 var(--font-display); font-weight: 400; letter-spacing: var(--track-display); }
-  .spectrum { display: flex; gap: 2px; height: 44px; padding: 3px; border: var(--bw) solid var(--line-strong); background: var(--hatch-faint); }
-  .spectrum > i { width: auto; height: 100%; min-width: 2px; animation: rise var(--dur-3) var(--ease) both; transform-origin: bottom; }
-  .spectrum-scale { display: flex; justify-content: space-between; margin-top: calc(-1 * var(--sp-2)); font: var(--fs-2xs) var(--font-mono); color: var(--ink-3); }
-  .token-legend { display: grid; gap: var(--sp-2); margin-top: var(--sp-2); }
+  .token-total strong { font: var(--fw-strong) var(--fs-2xl)/1.1 var(--font-sans); letter-spacing: var(--track-tight); }
+  .spectrum { display: flex; gap: 2px; height: 12px; border-radius: var(--r-sm); overflow: hidden; background: var(--empty-faint); }
+  .spectrum > i { width: auto; height: 100%; min-width: 2px; border-radius: 0; }
+  .token-legend { display: grid; gap: var(--sp-1); }
   .token-legend .leader { margin: 0; font-size: var(--fs-sm); }
   .token-legend dt { display: inline-flex; align-items: center; gap: var(--sp-2); color: var(--ink-2); }
   .token-legend dd { display: inline-flex; align-items: baseline; gap: var(--sp-2); }
-  .token-legend strong { font: 500 var(--fs-sm) var(--font-mono); }
-  .token-legend dd span { min-width: 48px; text-align: right; font: var(--fs-xs) var(--font-mono); color: var(--ink-3); }
+  .token-legend strong { font-weight: var(--fw-medium); }
+  .token-legend dd span { min-width: 48px; text-align: right; font-size: var(--fs-xs); color: var(--ink-3); }
 
-  /* Agent / model ledgers */
-  .agent-table-wrap { min-width: 0; padding: 0 var(--sp-3) var(--sp-1); }
+  /* Agent / model tables */
+  .agent-table-wrap { min-width: 0; padding: var(--sp-1) var(--sp-1) 0; }
   .agent-table { table-layout: fixed; }
   .agent-table .col-name { width: 30%; text-align: left; }
   .agent-table .col-mix { width: 15%; }
   .agent-table .col-cache { width: 14%; }
   .agent-table .col-req { width: 9%; }
   .agent-table .col-info { width: 40px; padding: var(--sp-1); text-align: center; }
-  .agent-row th:first-child { box-shadow: inset 3px 0 0 var(--agent, transparent); }
   .agent-row.is-flat-model th:first-child { box-shadow: none; }
   .is-expandable { cursor: pointer; }
   .agent-toggle { display: flex; align-items: center; gap: var(--sp-2); width: 100%; min-width: 0; padding: 2px 0; text-align: left; }
   .agent-caret { width: 14px; flex-shrink: 0; color: var(--ink-3); }
   .agent-chevron { transition: transform var(--dur-2) var(--ease); }
   .agent-toggle[aria-expanded='true'] .agent-chevron { transform: rotate(90deg); color: var(--signal); }
-  .agent-label { display: grid; gap: 2px; min-width: 0; }
-  .agent-count { font: var(--fs-xs) var(--font-mono); color: var(--ink-3); }
-  .agent-model-summary { display: block; padding-left: 16px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: var(--fs-xs) var(--font-mono); color: var(--ink-3); }
-  .cell-value { font: 500 var(--fs-sm) var(--font-mono); white-space: nowrap; }
-  .cell-value.is-unpriced { font-weight: 400; padding: 0 var(--sp-1); background: var(--hatch-faint); }
-  .cell-share { display: block; margin-top: 2px; font: var(--fs-xs) var(--font-mono); color: var(--ink-3); }
+  .agent-label { display: grid; gap: 0; min-width: 0; }
+  .agent-count { font-size: var(--fs-xs); color: var(--ink-3); }
+  .agent-model-summary { display: block; padding-left: 16px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-xs); color: var(--ink-3); }
+  .cell-value { font-weight: var(--fw-medium); white-space: nowrap; }
+  .cell-value.is-unpriced { font-weight: var(--fw-regular); padding: 0 var(--sp-1); border-radius: var(--r-sm); background: var(--empty-faint); }
+  .cell-share { display: inline; margin-left: var(--sp-2); font-size: var(--fs-xs); color: var(--ink-3); }
   .cell-muted, .is-muted { color: var(--ink-3); }
   .partial-mark { color: var(--signal-ink); }
-  .parts-bar { display: flex; gap: 1px; height: 8px; width: 100%; }
-  .parts-bar > i { width: auto; height: 100%; min-width: 1px; }
-  .cache-cell { display: inline-flex; align-items: center; gap: var(--sp-2); font: var(--fs-xs) var(--font-mono); white-space: nowrap; }
-  .cache-ticks { position: relative; display: inline-block; width: 30px; height: 8px; background: repeating-linear-gradient(90deg, var(--line-strong) 0 2px, transparent 2px 3px); }
-  .cache-ticks > i { position: absolute; inset: 0 auto 0 0; width: calc(var(--value) * 1%); background: repeating-linear-gradient(90deg, var(--ink) 0 2px, transparent 2px 3px); }
+  .parts-bar { display: flex; gap: 1px; height: 6px; width: 100%; border-radius: 2px; overflow: hidden; }
+  .parts-bar > i { width: auto; height: 100%; min-width: 1px; border-radius: 0; }
+  .cache-cell { display: inline-flex; align-items: center; gap: var(--sp-2); white-space: nowrap; }
+  .cache-ticks { position: relative; display: inline-block; width: 32px; height: 6px; border-radius: var(--r-pill); overflow: hidden; background: var(--empty); }
+  .cache-ticks > i { position: absolute; inset: 0 auto 0 0; width: calc(var(--value) * 1%); background: var(--ink-2); }
   .model-group { background: var(--surface-2); }
-  .model-group th:first-child { box-shadow: inset 3px 0 0 color-mix(in srgb, var(--agent) 45%, transparent); }
-  .model-name { display: block; padding-left: 30px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: var(--fs-xs) var(--font-mono); }
+  .model-name { display: block; padding-left: 30px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-sm); }
   .model-name.is-flat { display: flex; align-items: center; gap: var(--sp-2); padding-left: 0; }
   .model-text { overflow: hidden; text-overflow: ellipsis; }
   .row-info-btn { color: var(--ink-3); }
   .row-info-btn[aria-expanded='true'] { color: var(--signal-ink); background: var(--signal-soft); }
   .row-details-row:hover { background: none !important; }
-  .row-details-content { max-width: 640px; margin: var(--sp-1) auto; padding: var(--sp-4) var(--sp-5); border: var(--bw) dashed var(--line-strong); background: var(--surface-2); font-size: var(--fs-xs); }
-  .parts-legend { display: flex; flex-wrap: wrap; gap: var(--sp-2) var(--sp-4); padding: var(--sp-3) var(--sp-3) var(--sp-4); font: var(--fs-xs) var(--font-mono); color: var(--ink-3); }
+  .row-details-content { max-width: 640px; margin: var(--sp-1) auto; padding: var(--sp-3) var(--sp-4); border-radius: var(--r-1); background: var(--surface-2); font-size: var(--fs-xs); }
+  .parts-legend { display: flex; flex-wrap: wrap; gap: var(--sp-1) var(--sp-4); padding: var(--sp-2) var(--pad-x) var(--pad-y); font-size: var(--fs-xs); color: var(--ink-3); }
   .legend-part { display: inline-flex; align-items: center; gap: 6px; }
   .legend-hint { margin-left: auto; }
   @container (max-width: 650px) {
@@ -127,32 +124,32 @@
     .agent-table .col-name { width: 38%; }
     .agent-table .col-cache { width: 20%; }
     .legend-hint { display: none; }
+    .cell-share { display: block; margin-left: 0; }
+    .agent-title { flex-wrap: wrap; row-gap: 0; white-space: normal; }
+    .agent-count { flex-basis: 100%; padding-left: 16px; }
   }
   @container (max-width: 440px) {
     .agent-table .col-cache { display: none; }
     .agent-table .col-name { width: 44%; }
     .agent-table th, .agent-table td { padding-left: 6px; padding-right: 6px; }
-    .agent-table .cell-value { font-size: var(--fs-xs); }
   }
 
   /* Sessions */
-  .session-list { list-style: none; padding: 0 var(--sp-6) var(--sp-2); }
-  .session-row { position: relative; padding: var(--sp-3) 0 var(--sp-3) 40px; border-bottom: var(--bw) solid var(--line); }
+  .session-list { list-style: none; padding: var(--sp-1) var(--pad-x) var(--sp-1); }
+  .session-row { position: relative; padding: var(--sp-2) 0 var(--sp-2) 34px; border-bottom: var(--bw) solid var(--line); }
   .session-row:last-child { border-bottom: 0; }
   .session-index {
-    position: absolute; left: 0; top: var(--sp-3);
-    width: 28px; padding: 1px 0; text-align: center; font: var(--fs-2xs) var(--font-mono); color: var(--ink-2);
-    border: var(--bw) solid var(--line-strong); box-shadow: inset 0 -2px 0 var(--agent);
+    position: absolute; left: 0; top: var(--sp-2);
+    width: 24px; text-align: center; font: var(--fw-medium) var(--fs-xs)/22px var(--font-sans); color: var(--ink-2);
+    border-radius: var(--r-sm); background: var(--surface-3); box-shadow: inset 0 -2px 0 var(--agent);
   }
   .session-line { display: grid; grid-template-columns: minmax(0, 1fr) 92px 84px; align-items: baseline; gap: var(--sp-3); }
   .session-line .cell-value { text-align: right; }
-  .session-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-base); font-weight: 500; }
-  .session-meta { margin-top: 2px; font-size: var(--fs-xs); color: var(--ink-2); }
-  .session-detail { margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: var(--fs-xs)/1.7 var(--font-mono); color: var(--ink-3); }
+  .session-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-sm); font-weight: var(--fw-medium); }
+  .session-meta { font-size: var(--fs-xs); color: var(--ink-2); }
+  .session-detail { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: var(--fs-xs)/1.6 var(--font-mono); color: var(--ink-3); }
 
   @media (max-width: 1200px) {
-    .kpis:not(.is-grid) .readout { padding-left: var(--sp-4); padding-right: var(--sp-4); }
-    .readout--lg .readout-value { font-size: var(--fs-4xl); }
     .analysis-grid { grid-template-columns: minmax(0, 1.5fr) minmax(260px, 1fr); }
   }
   @media (max-width: 1000px) {
@@ -160,31 +157,19 @@
     .kpis:not(.is-grid) .readout:nth-child(odd) { border-left: 0; }
     .kpis:not(.is-grid) .readout:nth-child(n + 3) { border-top: var(--bw) solid var(--line); }
     .analysis-grid { grid-template-columns: minmax(0, 1fr); }
+    .overview-grid, .overview-grid:not(:has(.quota-card)) { grid-template-columns: minmax(0, 1fr); }
+    .overview-grid > :is(.quota-card, .section-breakdown, .section-hourly),
+    :is(.overview-grid:not(:has(.quota-card)), .is-exporting .overview-grid) > .section-hourly { grid-column: 1; grid-row: auto; }
   }
   @media (max-width: 700px) {
-    .readout, .kpis:not(.is-grid) .readout { padding: var(--sp-3) var(--sp-4); }
-    .readout--lg .readout-value, .readout-value { font-size: var(--fs-3xl); }
-    .readout-value.is-text { font-size: var(--fs-xl); }
-    .plate-head { padding: var(--sp-3) var(--sp-4); }
-    .plate-title { font-size: var(--fs-lg); }
-    .plate-body { padding: var(--sp-4); }
-    .day-sections, .analysis-grid { gap: var(--sp-4); }
-    .kpis, .quota-card { margin-bottom: var(--sp-4); }
+    .readout--lg .readout-value { font-size: var(--fs-3xl); }
+    .readout-value.is-text { font-size: var(--fs-lg); }
     .quota-clients { grid-template-columns: minmax(0, 1fr); }
-    .quota-client { padding: var(--sp-3) var(--sp-4); border-left: 0; border-top: var(--bw) dashed var(--line); }
-    .quota-client:first-child { border-top: 0; }
-    .activity-chart { height: 200px; padding: var(--sp-6) var(--sp-4) 0 var(--sp-2); gap: var(--sp-2); }
+    .activity-chart { height: 176px; padding-right: var(--pad-x); gap: var(--sp-1); }
     .activity-bars { gap: 2px; }
-    .chart-scale { min-width: 34px; }
-    .activity-footer { margin: var(--sp-2) var(--sp-4) 0; }
-    .token-breakdown { padding: var(--sp-4); }
-    .token-total strong { font-size: var(--fs-3xl); }
-    .agent-table-wrap { padding: 0 var(--sp-1); }
-    .session-list { padding: 0 var(--sp-4) var(--sp-1); }
-    .session-row { padding-left: 36px; }
+    .chart-scale { min-width: 40px; }
+    .session-row { padding-left: 32px; }
     .session-line { grid-template-columns: minmax(0, 1fr) 58px 62px; gap: var(--sp-2); }
-    .session-name { font-size: var(--fs-sm); }
-    .session-line .cell-value { font-size: var(--fs-xs); }
   }
   @media (max-width: 380px) {
     .readout-value, .readout--lg .readout-value { font-size: var(--fs-2xl); }

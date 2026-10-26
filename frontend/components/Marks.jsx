@@ -36,7 +36,7 @@ export function PartsLegend({ tx, children }) {
   );
 }
 
-// Cache hit as a 10-cell tick gauge.
+// Cache hit as a short bar gauge.
 export function CacheRing({ rate }) {
   if (rate == null) return <span className="cell-muted">—</span>;
   return (
