@@ -33,7 +33,7 @@ Next App Router 从 `frontend/` 静态导出为 `frontend/out/`，生产由 CLI 
 `Sidebar` 分为数据洞察和工作台管理两组，底部依次为本机说明、时区入口与收起按钮；≤700px 改为吸附横向导航。
 视觉为“素面工作台”设计语言（令牌见 `frontend/app/styles/tokens.css`）：纯色底面上无外框的平面面板（统一圆角、内部发丝线分隔、无投影），52px 顶栏与 220px 侧栏；全站一种无衬线字体（Geist + 中文无衬线回退）与 tabular 数字，Mono 仅用于模型 ID 与路径；根字号 16px、正文 15px，任何文字不小于 13px；强调橙只用于选中、峰值、输入 token、今天与焦点，缺失 / 未来 / 剩余额度为浅色平涂，热图为五档灰度。样式按 `@layer` 分为 tokens / base / primitives / shell / components / pages / utilities。
 `PageActions` 在顶栏以图标按钮提供刷新和图片导出，价格页换为更新单价与重置；卡片专属操作（刷新 Kimi 额度）留在卡片内。`Settings` 提供外观、语言、时区、SQLite 备份 / 合并。
-共享原语位于 `components/ui/`：`Segmented`（配色、指标等共用，支持方向键、Home / End 与单一 Tab 焦点）、`Button`、`IconButton` / `IconLink`（`label` 即可访问名称与按钮提示 `AnchorTip`，不用 `title`）、`MenuButton`、`Panel`、`Stat`、`Meter`（额度窗口，`role="meter"`）、`Badge`、`Field` 与 `Tooltip` + `useTip`（小时柱、日历格、周单元和账表行共用的指针 / 焦点定位）。视觉与交互以 `design-spec.md` 为准。
+共享原语位于 `components/ui/`：`Segmented`（配色、指标等共用，支持方向键、Home / End 与单一 Tab 焦点）、`Button`、`IconButton` / `IconLink`（`label` 即可访问名称与按钮提示 `AnchorTip`，不用 `title`）、`MenuButton`、`Panel`、`Stat`、`Meter`（额度窗口，`role="meter"`）、`Badge`、`Field` 与 `Tooltip` + `useTip`（小时柱、日历格、周单元和账表行共用的指针 / 焦点定位；提示为 fixed 定位，显示期间任一祖先或窗口滚动（捕获阶段监听）、滚轮或窗口缩放都会隐藏它，只有锚定在当前焦点元素上的提示在该元素仍处于滚动框内时跟随移动；按钮提示同样在滚动、滚轮与缩放时隐藏）。视觉与交互以 `design-spec.md` 为准。
 
 `PriceCatalog` 从独立的 `/api/prices` 读取第一方 LiteLLM 目录：页头 plate 含搜索、“只看用过的模型”开关（`role="switch"`）、元信息行与设置浮层，下面是厂商筛选标签（`aria-pressed`）和按厂商分区（用过的厂商在前、分区标题吸顶）的卡片网格。
 卡片 Logo 由 `ProviderLogo` 渲染（`frontend/public/logos/`，LobeHub Icons，MIT；单色标志用 CSS mask 跟随主题，彩色标志用 `<img>`，未知厂商为字母块）；模型家族（claude / gemini / kimi / grok）优先于厂商 Logo。
@@ -46,9 +46,9 @@ Next App Router 从 `frontend/` 静态导出为 `frontend/out/`，生产由 CLI 
 
 Today 请求 `period=custom&since=<今天>&until=<今天>&timezone=<IANA>`（所有 Agent），`TodayDashboard` 以 `Kpis` 指标面板开头（标题行为日期、星期与“截至”时间），之后是 `DayBody`，最后是近 30 天的 `TrendCard`（另一条 `since=<今天−29>` 请求）。
 Tokens 与费用在昨日有非零基数时展示相对变化，文案明确比较昨日全天；费用比较要求两期请求均已定价。
-`DayBody` 用于概览：`ActivityChart` 提供 Tokens / 费用切换，24 个本地小时柱、数量轴、键盘提示和带数值标签的强调色峰值；
-`TokenBreakdown` 以单条堆叠条和点引线图例同时显示四种 token 的数量与占比。Agent / 模型仍可排序、展开和查看明细。
-`hasModelComparison` 仅在任一 Agent 有多个模型时保留独立模型排行，单模型名称直接显示在 Agent 行。
+`DayBody` 用于概览：`ActivityChart`（`ChartColumn`，副标“24 小时 · 按统计时区”）提供 Tokens / 费用切换，24 个本地小时柱、数量轴、键盘提示和带数值标签的强调色峰值；
+`TokenBreakdown`（头部右侧“合计”）以单条堆叠条和点引线图例同时显示四种 token 的数量与占比。“Agent 与模型”表（`Layers3`，副标为当前排序，如“按 Tokens 排序”）可排序、展开和查看明细；
+模型只在所属 Agent 下展开，不另设独立模型表，单模型名称直接显示在 Agent 行。
 会话初始五条，可展开 API 返回的前十条，显示当前数量和总会话数；PNG 捕获当前展开状态。
 
 日历使用 `CalendarView`，两栏 `minmax(--cal-col-min, --cal-col) 1fr` 占满视口剩余高度（页面不滚动），≤1200px 改为上下堆叠（日历 70vh）。
@@ -57,7 +57,7 @@ Tokens 与费用在昨日有非零基数时展示相对变化，文案明确比�
 选择规则：单击单选、拖动（指针捕获，距边缘 48px 自动滚动）、Shift 区间、Ctrl/⌘ 增减（至少保留一天）、单击周数选整周（Ctrl/⌘ 追加）、Esc 回到今天；未来日不可选。键盘使用 roving tabindex：方向键 ±1 / ±7 天（大档在行尾右移到周单元，周单元上下移动到相邻周行）、Shift+方向键扩展区间、Home / End、PageUp / PageDown、Enter / 空格、Ctrl+空格。悬停或键盘聚焦显示日 / 周提示，拖动时隐藏。
 `CalendarDetail`（详情栏）通过 `useSelectionReport` 请求选区：连续区间用 `since` / `until`，不连续时追加 `days=`。头部、四项数字与说明行；单日显示时段条；“用量拆分”按 Agent（`agentRows`）与按模型（`mergedModelRows`，同模型跨 Agent 合并、提示列出 Agent），可切换为会话列表（复用 `SessionRow`）。
 
-`AgentTable` 与 `ModelTable` 的每行都提供明细按钮，点击或键盘激活后在行下展开完整统计和模型匹配单价；点击明细不会展开或折叠 Agent。窄表隐藏次要列后仍能查看全部字段，悬停提示保留。
+`AgentTable` 的 Agent 与模型行都提供明细按钮，点击或键盘激活后在行下展开完整统计和模型匹配单价；点击明细不会展开或折叠 Agent。窄表隐藏次要列后仍能查看全部字段，悬停提示保留。
 
 日历选区保存在页面内存（默认今天），刷新页面回到 Today；切换时区会清空选区。选区请求独立于全历史请求，不覆盖日历数据。
 

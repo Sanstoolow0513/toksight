@@ -87,7 +87,8 @@
   .dstats div { display: flex; flex-direction: column; }
   .dstats dd { font-size: var(--fs-xl); font-weight: var(--fw-strong); letter-spacing: var(--track-tight); line-height: 1.3; white-space: nowrap; }
   .dstats dt { font-size: var(--fs-xs); color: var(--ink-3); }
-  .dsub { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-xs); color: var(--ink-3); }
+  /* Sits closer to the stats it explains: 10px row gap less --sp-1 (design: 130px head). */
+  .dsub { margin-top: calc(-1 * var(--sp-1)); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-xs); color: var(--ink-3); }
   .dempty { font-size: var(--fs-sm); color: var(--ink-2); }
   .dstats-skel { height: 64px; }
   .dhead .notice .btn { margin-top: var(--sp-2); }
@@ -115,7 +116,7 @@
   .srow-main > :not(:first-child) { text-align: right; }
   .sname { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; }
   .sname > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .sname.is-mono { font-family: var(--font-mono); }
+  .sname.is-mono { font-family: var(--font-mono); font-size: var(--fs-sm); }
   .snum { font-weight: var(--fw-medium); white-space: nowrap; }
   .sshare { color: var(--ink-3); white-space: nowrap; }
   .sbar { display: block; height: 6px; border-radius: var(--r-pill); background: var(--empty); overflow: hidden; }

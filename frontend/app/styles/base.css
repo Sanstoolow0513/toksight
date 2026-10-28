@@ -27,6 +27,8 @@
   :focus-visible { outline: var(--bw-strong) solid var(--signal); outline-offset: 2px; }
   ::selection { background: var(--signal-soft); color: var(--ink); }
   button:disabled, input:disabled, select:disabled { cursor: not-allowed; }
-  code, .is-mono { font-family: var(--font-mono); font-size: .92em; overflow-wrap: anywhere; }
+  /* Mono runs a touch smaller than the sans text around it, but never under
+     the --fs-xs floor (inline code inside 13px notes stays 13px). */
+  code, .is-mono { font-family: var(--font-mono); font-size: max(.92em, var(--fs-xs)); overflow-wrap: anywhere; }
   sup { line-height: 0; }
 }

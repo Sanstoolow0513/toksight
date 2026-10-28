@@ -4,13 +4,13 @@
 // detail pane. Rendered sections stay in the normal page flow and exports.
 
 import { useMemo, useState } from 'react';
+import { Layers3 } from 'lucide-react';
 import ActivityChart from '@/components/ActivityChart';
 import TokenBreakdown from '@/components/TokenBreakdown';
 import AgentTable from '@/components/AgentTable';
-import ModelTable from '@/components/ModelTable';
 import { CostValue, agentStyle } from '@/components/Marks';
 import { Button, Panel } from '@/components/ui';
-import { hasModelComparison, sessionRows } from '@/lib/report';
+import { sessionRows } from '@/lib/report';
 import { fmtClockRange, fmtInt, fmtTokens } from '@/lib/format';
 import { durationLabel } from '@/lib/i18n';
 
@@ -45,8 +45,8 @@ export function SessionRow({ row, index, agentLabel, locale, tx, timezone }) {
   );
 }
 
-// The overview day anatomy: hourly (2fr) beside the token mix (1fr), then agents/models,
-// sessions and `quota` last.
+// The overview day anatomy: hourly (2fr) beside the token mix (1fr), then the
+// agent table (models nest under their agent), sessions and `quota` last.
 export function DayBody({ data, day, sortBy, onSort, locale, tx, agentLabel, open, onToggle, overview = false, quota = null }) {
   const [expanded, setExpanded] = useState(false);
   const sessions = useMemo(() => sessionRows(data.topSessions, SESSION_LIMIT), [data.topSessions]);
@@ -54,11 +54,9 @@ export function DayBody({ data, day, sortBy, onSort, locale, tx, agentLabel, ope
   return <div className={'day-sections' + (overview ? ' is-overview' : '')}>
     <div className="analysis-grid"><ActivityChart data={data} tx={tx} /><TokenBreakdown data={data} tx={tx} /></div>
     {!data.totals?.requests ? <div className="day-empty plate plate--inset"><h3>{tx('noSessions')}</h3><p>{tx('noSessionsNote')}</p></div> : null}
-    {Object.keys(data.clients ?? {}).length ? <Panel className="day-section section-agents" title={tx('cardAgents')} count={countLabel(tx, 'countAgents', Object.keys(data.clients).length)}>
+    {Object.keys(data.clients ?? {}).length ? <Panel className="day-section section-agents" icon={<Layers3 size={16} aria-hidden="true" />} title={tx('cardAgents')}
+      sub={tx(sortBy === 'cost' ? 'sortedByCost' : 'sortedByTokens')} count={countLabel(tx, 'countAgents', Object.keys(data.clients).length)}>
       <AgentTable clients={data.clients} models={data.models} pricing={data.pricing} sortBy={sortBy} onSort={onSort} agentLabel={agentLabel} tx={tx} open={open} onToggle={onToggle} />
-    </Panel> : null}
-    {hasModelComparison(data.models) ? <Panel className="day-section section-models" title={tx('cardModels')} count={countLabel(tx, 'rowModels', data.models.length)}>
-      <ModelTable models={data.models} pricing={data.pricing} sortBy={sortBy} onSort={onSort} agentLabel={agentLabel} tx={tx} />
     </Panel> : null}
     {sessions.length ? <Panel className="day-section section-sessions" title={tx('secSessions')}
       count={`${visible.length} / ${fmtInt(data.totals.sessions ?? sessions.length)}`}

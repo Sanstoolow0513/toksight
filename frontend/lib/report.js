@@ -164,21 +164,10 @@ function rankedModels(models, sortBy) {
 }
 
 // The payload groups each agent's spelling variants under one display model.
-// Keep agents separate so every row attributes its usage and cost to one agent.
-// Beyond `limit` rows the tail folds into one "others" row.
-export function modelRows(models = [], sortBy = 'tokens', limit = 8) {
-  return foldRanked(rankedModels(models, sortBy), sortBy, limit);
-}
-
-// One model per agent is already explained by the agent rows. A separate
-// ranking becomes useful when an agent has more than one model to compare.
-export function hasModelComparison(models = []) {
-  return new Set(models.map((row) => row.client)).size < models.length;
-}
-
-// Same rows as `modelRows`, split under each agent. Shares stay against every
-// model in the period, so a nested row is comparable with its agent. Past
-// `limit` models the tail folds inside that agent.
+// Rows are ranked across all models, then split under each agent so every row
+// attributes its usage and cost to one agent. Shares stay against every model
+// in the period, so a nested row is comparable with its agent. Past `limit`
+// models the tail folds into one "others" row inside that agent.
 export function modelsByAgent(models = [], sortBy = 'tokens', limit = 8) {
   const grouped = new Map();
   for (const row of rankedModels(models, sortBy)) {

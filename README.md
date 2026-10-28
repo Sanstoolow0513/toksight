@@ -301,7 +301,7 @@ horizontal navigation keeps all four views within reach. See `design-spec.md` fo
   activity with Tokens / Cost controls, a token-mix bar, expandable agents and models, up to ten sessions
   (five initially, with an expand control), quota, and the last-30-days trend at the bottom. Token/cost changes compare
   with the previous full day when a baseline exists. Single-model agents show the model name directly;
-  a separate model ranking appears when an agent uses multiple models. Charts show quantity scales and the hourly peak.
+  multi-model agents expand to list their models (there is no separate model ranking). Charts show quantity scales and the hourly peak.
   Session details include title, usage, cost, time span, active time, directory and models.
 - **Calendar** is one continuous, scrollable list of months from your first record to today (all agents),
   with Monday-start weeks and an eighth ISO-week column (`W43`; `26W1` when the week belongs to another

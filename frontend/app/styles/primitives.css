@@ -77,6 +77,10 @@
     font: var(--fw-strong) var(--fs-base)/var(--lh-snug) var(--font-sans); color: var(--ink);
   }
   .plate-title > svg { color: var(--ink-3); width: 16px; height: 16px; }
+  .plate-title-line { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; }
+  .plate-title-line > .plate-title { flex-shrink: 0; }
+  .plate-sub { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-xs); color: var(--ink-3); }
+  .plate-aside { font-size: var(--fs-xs); color: var(--ink-3); white-space: nowrap; }
   .plate-note { margin-top: 2px; font-size: var(--fs-xs); color: var(--ink-3); }
   .plate-tools { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; justify-content: flex-end; }
   .plate-body { padding: var(--pad-y) var(--pad-x); }

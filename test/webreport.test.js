@@ -4,7 +4,7 @@ import {
   calendarWeeks, compactCalendar, currentPeriod, dayKey, dayNav, eachDayKey, inPeriod, isContiguous, isoWeek, mondayOf, monthsBetween, periodBounds, periodKey, periodNav, periodOf, quickPeriod, rangeKeys, shiftDay, shiftPeriod, validRange, weekdayIndex, weekKeys, weekLabelParts, withMode,
 } from '../frontend/lib/period.js';
 import {
-  agentRows, costPerMillion, dailyMap, hasModelComparison, heatLevel, heatMax, heatSummary, hourlyBars, mergedModelRows, modelRows, modelsByAgent, openingDay, sessionName, sessionRows, sumDays, trendSeries,
+  agentRows, costPerMillion, dailyMap, heatLevel, heatMax, heatSummary, hourlyBars, mergedModelRows, modelsByAgent, openingDay, sessionName, sessionRows, sumDays, trendSeries,
 } from '../frontend/lib/report.js';
 import { fmtClock, fmtClockRange, fmtCostShort, fmtTokens, fmtTokensShort } from '../frontend/lib/format.js';
 
@@ -162,31 +162,6 @@ test('agent rows carry token and cost shares and only the order follows the sort
   assert.deepEqual(byCost.map((r) => r.tokenShare), [500 / 1800, 1300 / 1800]);
 });
 
-test('model rows keep agents separate, fold the tail and keep shares whole', () => {
-  const models = [
-    { client: 'claude', model: 'm-a', ...usage({ inputTokens: 1000 }) },
-    { client: 'opencode', model: 'm-a', ...usage({ pricedRequests: 0 }) },
-    ...Array.from({ length: 9 }, (_, i) => ({ client: 'codex', model: `m-${i}`, ...usage({ outputTokens: 100 - i }) })),
-  ];
-  const { rows, others, count } = modelRows(models, 'tokens', 8);
-  assert.equal(count, 11);
-  assert.equal(rows.length, 7);
-  assert.equal(rows[0].model, 'm-a');
-  assert.equal(rows[0].client, 'claude');
-  assert.equal(rows[0].requests, 1);
-  assert.equal(rows[0].pricing, 'full');
-  assert.equal(others.count, 4);
-  for (const key of ['tokenShare', 'costShare']) {
-    const shares = rows.reduce((sum, r) => sum + r[key], others[key]);
-    assert.ok(Math.abs(shares - 1) < 1e-9, key);
-  }
-  assert.equal(modelRows(models.slice(0, 3), 'tokens', 8).others, null);
-  const sameModel = modelRows(models.slice(0, 2), 'cost').rows;
-  assert.deepEqual(sameModel.map((row) => [row.client, row.model, row.costUsd]), [
-    ['claude', 'm-a', 1], ['opencode', 'm-a', 1],
-  ]);
-});
-
 test('models group under each agent, follow the sort and keep period-wide shares', () => {
   const models = [
     { client: 'claude', model: 'opus', ...usage({ costUsd: 6, inputTokens: 100 }) },
@@ -312,16 +287,6 @@ test('compact formatting fits calendar cells', () => {
   assert.equal(fmtTokensShort(0), '0');
   assert.equal(fmtTokensShort(79_234_567, 2), '79M');
   assert.equal(fmtTokensShort(123_456_789, 2), '120M');
-});
-
-test('model ranking stays available for multi-model agents without repeating one-model agent rows', () => {
-  const model = (client, name) => ({ client, model: name, ...usage() });
-  assert.equal(hasModelComparison(), false);
-  assert.equal(hasModelComparison([model('claude', 'a')]), false);
-  assert.equal(hasModelComparison([model('claude', 'a'), model('codex', 'b')]), false);
-  assert.equal(hasModelComparison([model('claude', 'a'), model('codex', 'a')]), false);
-  assert.equal(hasModelComparison([model('claude', 'a'), model('claude', 'b')]), true);
-  assert.equal(hasModelComparison([model('claude', 'a'), model('claude', 'b'), model('codex', 'c')]), true);
 });
 
 test('ISO weeks follow the Thursday rule across year boundaries on local calendar days', () => {

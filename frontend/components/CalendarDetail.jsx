@@ -71,7 +71,7 @@ function Hourly({ data, tx }) {
   const { bars, max, peak } = useMemo(() => hourlyBars(data.hourly), [data.hourly]);
   return <section className="dcard hourly plate" aria-label={tx('secHourly')}>
     <header className="dcard-head">
-      <ChartColumn {...icon} /><h3>{tx('secHourly')}</h3><span className="dcard-sub">{tx('calHourlySub')}</span>
+      <ChartColumn {...icon} /><h3>{tx('secHourly')}</h3><span className="dcard-sub">{tx('hourlySub')}</span>
       <span className="dcard-aside">{peak ? tx('hourlyPeak', { hour: hourText(peak.hour), value: fmtTokensShort(max) }) : tx('tipIdle')}</span>
     </header>
     <div className="hbars" role="img" aria-label={peak ? tx('hourlyPeak', { hour: hourText(peak.hour), value: fmtTokens(max) }) : tx('tipIdle')}>

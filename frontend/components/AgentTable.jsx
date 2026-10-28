@@ -7,7 +7,7 @@ import { fmtCost, fmtInt, fmtPct, fmtTokens } from '@/lib/format';
 import { useTableColumns } from '@/lib/useTableColumns';
 import { priceSourceLabel } from '@/lib/prices';
 
-export const ROW_TIP_IGNORE = '.row-info-btn,.row-details-content';
+const ROW_TIP_IGNORE = '.row-info-btn,.row-details-content';
 const RATE_PARTS = ['input', 'cacheRead', 'cacheWrite', 'output'];
 const PART_LABELS = ['compInput', 'compCacheRead', 'compCacheWrite', 'compOutput'];
 
@@ -18,9 +18,7 @@ function commonRate(row, rates) {
   return first?.source && found.every((rate) => rate?.source === first.source && RATE_PARTS.every((part) => rate[part] === first[part])) ? first : null;
 }
 
-export { commonRate };
-
-export function SortHeader({ id, sortBy, onSort, children }) {
+function SortHeader({ id, sortBy, onSort, children }) {
   const active = sortBy === id;
   return (
     <th scope="col" className={`num col-num col-${id}`} aria-sort={active ? 'descending' : undefined}>
@@ -32,7 +30,7 @@ export function SortHeader({ id, sortBy, onSort, children }) {
   );
 }
 
-export function Cells({ row, tx }) {
+function Cells({ row, tx }) {
   return (
     <>
       <td className="num col-num">
@@ -56,7 +54,7 @@ export function Cells({ row, tx }) {
 
 // Absolute token classes (with per-million rates for a model whose IDs
 // agree), cache hit, sessions and raw IDs live here instead of in the table.
-export function RowTip({ tip, tx }) {
+function RowTip({ tip, tx }) {
   const { name, row, rate, mono } = tip;
   const ids = row.modelIds ?? [];
   return (
@@ -78,13 +76,13 @@ export function RowTip({ tip, tx }) {
   );
 }
 
-export function RowInfoButton({ id, expanded, onToggle, name, tx }) {
+function RowInfoButton({ id, expanded, onToggle, name, tx }) {
   return <td className="col-info no-export"><button type="button" className="icon-btn icon-btn--sm row-info-btn" aria-expanded={expanded} aria-controls={expanded ? id : undefined}
     aria-label={tx('rowDetails', { name })} title={tx('rowDetails', { name })} onClick={(e) => { e.stopPropagation(); onToggle(); }}>
     <Info size={15} aria-hidden="true" /></button></td>;
 }
 
-export function RowInfo({ id, expanded, tip, tx, columns }) {
+function RowInfo({ id, expanded, tip, tx, columns }) {
   if (!expanded) return null;
   return <tr className="row-details-row no-export"><td colSpan={columns}><div id={id} className="row-details-content" role="region" aria-label={tx('rowDetails', { name: tip.name })}>
     <RowTip tip={tip} tx={tx} />
