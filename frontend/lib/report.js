@@ -218,3 +218,31 @@ export function sessionName(row) {
 export function sessionRows(sessions = [], limit = 10) {
   return sessions.slice(0, limit).map((row) => ({ ...row, name: sessionName(row), pricing: pricing(row) }));
 }
+
+// Totals over some days of a `dailyMap`; `activeDays` counts days with
+// requests. Missing days add nothing, so a week or month is just its keys.
+export function sumDays(days, keys) {
+  const total = Object.fromEntries(SUM_FIELDS.map((field) => [field, 0]));
+  let activeDays = 0;
+  for (const key of keys) {
+    const row = days.get(key);
+    if (!row) continue;
+    for (const field of SUM_FIELDS) total[field] += row[field] || 0;
+    if (row.requests > 0) activeDays += 1;
+  }
+  return { ...total, activeDays };
+}
+
+// The by-model split: one row per model name across agents (the same model
+// used from two agents is one row; `clients` lists them), largest first.
+export function mergedModelRows(models = []) {
+  const merged = new Map();
+  for (const row of models) {
+    if (!merged.has(row.model)) merged.set(row.model, { model: row.model, clients: [], ...Object.fromEntries(SUM_FIELDS.map((f) => [f, 0])) });
+    const target = merged.get(row.model);
+    if (!target.clients.includes(row.client)) target.clients.push(row.client);
+    for (const field of SUM_FIELDS) target[field] += row[field] || 0;
+  }
+  return [...merged.values()].map((row) => ({ ...row, cacheHitRate: cacheHitRate(row) }))
+    .sort((a, b) => b.totalTokens - a.totalTokens || a.model.localeCompare(b.model));
+}

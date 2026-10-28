@@ -11,7 +11,7 @@ import { createWebServer } from '../src/webserver.js';
 import { readStoredPriceFor } from '../src/usageimports.js';
 import { parseArgs } from '../src/args.js';
 import { readProviderBindings, bindProvider } from '../src/providerbindings.js';
-import { fmtUnitPrice, priceSourceUrl } from '../frontend/lib/prices.js';
+import { fmtTokenLimit, fmtUnitPrice, modelLogo, priceSourceUrl, providerLogo } from '../frontend/lib/prices.js';
 
 const sourceUrl = 'https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json';
 const usage = (extra = {}) => ({ client: 'codex', sessionId: 'session', model: 'gpt-example', timestamp: Date.parse('2026-10-02T00:00:00Z'), inputTokens: 1e6,
@@ -69,9 +69,24 @@ test('price catalog and history API read saved LiteLLM and custom rates without 
 test('price display preserves tiny token rates, free rates and safe source links', () => {
   assert.equal(fmtUnitPrice(0), '$0');
   assert.equal(fmtUnitPrice(0.03e-6), '$0.03');
-  assert.equal(fmtUnitPrice(1e-12), '$0.000001');
+  assert.equal(fmtUnitPrice(10e-6), '$10.00');
+  assert.equal(fmtUnitPrice(0.275e-6), '$0.275');
+  assert.equal(fmtUnitPrice(15.625e-6), '$15.625');
+  assert.equal(fmtUnitPrice(0.0375e-6), '$0.0375');
+  assert.equal(fmtUnitPrice(1.23456e-6), '$1.2346', 'at most four decimals');
+  assert.equal(fmtUnitPrice(1500e-6), '$1,500.00');
+  assert.equal(fmtUnitPrice(1e-12), '<$0.0001', 'tiny non-zero rates are not shown as free');
   assert.equal(fmtUnitPrice(null), '—');
+  assert.equal(fmtTokenLimit(272000), '272K');
+  assert.equal(fmtTokenLimit(1048576), '1M');
   assert.equal(priceSourceUrl({ official: { url: 'javascript:alert(1)' } }), null);
+  assert.deepEqual(providerLogo('openai'), { file: 'openai', mono: true });
+  assert.deepEqual(providerLogo('google'), { file: 'google-color', mono: false });
+  assert.equal(providerLogo('user'), null);
+  assert.deepEqual(modelLogo({ name: 'claude-opus-4-7', provider: 'anthropic' }), { file: 'claude-color', mono: false });
+  assert.deepEqual(modelLogo({ name: 'xai/grok-4.5', provider: 'xai' }), { file: 'grok', mono: true });
+  assert.deepEqual(modelLogo({ name: 'moonshot/kimi-k3', provider: 'moonshot' }), { file: 'kimi-color', mono: false });
+  assert.deepEqual(modelLogo({ name: 'gpt-5.5', provider: 'openai' }), { file: 'openai', mono: true });
   assert.equal(priceSourceUrl({ official: { url: 'https://example.test/prices' } }), 'https://example.test/prices');
 });
 

@@ -315,3 +315,44 @@ test('web API forwards filters and returns useful 400 errors', async () => {
     assert.equal((await invalid.json()).code, 'BAD_QUERY');
   } finally { await server.close(); }
 });
+
+test('days= keeps only the listed local days of the range, in the report time zone', async () => {
+  const get = createWebDataService(base, { database: memoryDatabase(), now: () => Date.parse('2026-09-10T12:00:00Z'), collect: async () => raw([
+    entry({ timestamp: Date.parse('2026-09-01T10:00:00Z'), inputTokens: 1 }),
+    entry({ timestamp: Date.parse('2026-09-03T10:00:00Z'), inputTokens: 2 }),
+    entry({ timestamp: Date.parse('2026-09-05T10:00:00Z'), inputTokens: 4 }),
+    // 2026-09-06 in Shanghai, 2026-09-05 in Los Angeles.
+    entry({ timestamp: Date.parse('2026-09-05T20:00:00Z'), inputTokens: 8 }),
+  ]) });
+  try {
+    const all = await get(query('period=custom&since=2026-09-01&until=2026-09-06&timezone=Asia%2FShanghai'));
+    assert.equal(all.totals.inputTokens, 15);
+    assert.equal(all.view.days, null);
+    const picked = await get(query('period=custom&since=2026-09-01&until=2026-09-06&timezone=Asia%2FShanghai&days=2026-09-06,2026-09-01,2026-09-01'));
+    assert.equal(picked.totals.inputTokens, 9);
+    assert.deepEqual(picked.daily.map((r) => r.date), ['2026-09-01', '2026-09-06']);
+    assert.deepEqual(picked.view.days, ['2026-09-01', '2026-09-06'], 'sorted and de-duplicated');
+    const la = await get(query('period=custom&since=2026-09-01&until=2026-09-06&timezone=America%2FLos_Angeles&days=2026-09-05'));
+    assert.equal(la.totals.inputTokens, 12, 'days follow the requested zone');
+    const outside = await get(query('period=custom&since=2026-09-01&until=2026-09-02&days=2026-09-05'));
+    assert.equal(outside.totals.requests, 0, 'days never widen since/until');
+    for (const value of ['days=', 'days=2026-09-31', 'days=2026-9-01', 'days=2026-09-01,', 'days=2026-09-01&days=2026-09-02', 'days=2026-09-01,x',
+      'days=' + Array.from({ length: 4001 }, () => '2026-09-01').join(',')]) {
+      await assert.rejects(get(query('period=custom&since=2026-09-01&until=2026-09-06&' + value)), (err) => err.status === 400 && err.code === 'BAD_QUERY', value.slice(0, 40));
+    }
+  } finally { get.close(); }
+  assert.deepEqual(resolveWebQuery(query('period=all'), base).days, null);
+});
+
+test('web API returns 400 for a malformed days list', async () => {
+  const server = createWebServer({ port: 0, outDir: os.tmpdir(), getData: service([entry()]) });
+  const { url } = await server.start();
+  try {
+    const bad = await fetch(url + '/api/data?period=custom&since=2026-09-01&until=2026-09-08&days=2026-02-30');
+    assert.equal(bad.status, 400);
+    assert.equal((await bad.json()).code, 'BAD_QUERY');
+    const ok = await fetch(url + '/api/data?period=custom&since=2026-09-01&until=2026-09-08&days=2026-09-08');
+    assert.equal(ok.status, 200);
+    assert.equal((await ok.json()).totals.requests, 1);
+  } finally { await server.close(); }
+});

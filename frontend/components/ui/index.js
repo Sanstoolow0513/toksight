@@ -1,6 +1,7 @@
-export { default as Button, IconButton, buttonClass, iconButtonClass } from './Button';
+export { default as Button, IconButton, IconLink, buttonClass, iconButtonClass } from './Button';
+export { default as MenuButton } from './Menu';
 export { default as Segmented } from './Segmented';
-export { default as Tooltip, useTip, TipTitle, TipRow } from './Tooltip';
+export { default as Tooltip, AnchorTip, useButtonTip, useTip, TipTitle, TipRow } from './Tooltip';
 export { default as Panel } from './Panel';
 export { default as Badge } from './Badge';
 export { default as Stat } from './Stat';

@@ -1,9 +1,8 @@
 'use client';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useToasts } from '@/components/Toasts';
-import { useDayReport, useReport } from '@/lib/useReport';
-import { dayKey, dayNav, detectedTimezone, inPeriod, periodBounds, periodKey, periodOf, quickPeriod, shiftDay, validTimezone } from '@/lib/period';
-import { dailyMap, openingDay } from '@/lib/report';
+import { useRangeReport, useReport, useSelectionReport } from '@/lib/useReport';
+import { dayKey, detectedTimezone, isContiguous, periodKey, quickPeriod, shiftDay, validTimezone } from '@/lib/period';
 import { fmtInt } from '@/lib/format';
 import { DEFAULT_LOCALE, t } from '@/lib/i18n';
 import { exportReportImage } from '@/lib/exportImage';
@@ -15,8 +14,6 @@ export function useWorkspace() {
   const [view, setView] = useState('today');
   const [locale, setLocale] = useState(DEFAULT_LOCALE);
   const [theme, setTheme] = useState(null);
-  const [period, setPeriod] = useState(null);
-  const [agent, setAgent] = useState('');
   const [now, setNow] = useState(null);
   const [timezonePref, setTimezonePref] = useState(null);
   const [systemZone, setSystemZone] = useState(null);
@@ -33,41 +30,64 @@ export function useWorkspace() {
   const [databaseFile, setDatabaseFile] = useState(null);
   const [databaseError, setDatabaseError] = useState(null);
   const [refreshRevision, setRefreshRevision] = useState(0);
-  const [selectedDay, setSelectedDay] = useState(null);
+  // Calendar: the selected local days (sorted), the range anchor, the zoom
+  // level and the first active day of the whole history (from scopeRange).
+  const [selection, setSelection] = useState(null);
+  const [anchor, setAnchor] = useState(null);
+  const [calendarZoom, setCalendarZoom] = useState('large');
+  const [firstDays, setFirstDays] = useState({});
   const reportRef = useRef(null);
   const toasts = useToasts();
   const { push: pushToast } = toasts;
   const tx = useCallback((key, vars) => t(locale, key, vars), [locale]);
   const reportView = view === 'today' || view === 'calendar';
-  const activePeriod = !prices.status?.completed || !reportView || !today ? null : view === 'today' ? quickPeriod('1d', today)
-    : period?.preset ? quickPeriod(period.preset, today) : period;
-  const report = useReport(activePeriod, refreshRevision, agent, timezone);
-  const data = report.timezone === timezone ? report.data : null;
+  const ready = Boolean(prices.status?.completed) && Boolean(today);
+
+  // Today: one local day for all agents, plus the last 30 days for the trend.
+  const activePeriod = ready && view === 'today' ? quickPeriod('1d', today) : null;
+  const report = useReport(activePeriod, refreshRevision, timezone);
+  const trend = useRangeReport(ready && view === 'today' ? shiftDay(today, -29) : null, today, refreshRevision, timezone);
+
+  // Calendar: the full history in one request (until the first day is known,
+  // today alone, which reports it), and the selection's details.
+  const firstDay = timezone ? firstDays[timezone] ?? null : null;
+  const historyOn = ready && view === 'calendar';
+  const history = useRangeReport(historyOn ? (firstDay && firstDay < today ? firstDay : today) : null, today, refreshRevision, timezone);
+  const scopeFirstAt = [report, history].map((r) => r.data?.timezone === timezone ? r.data?.scopeRange : undefined).find((range) => range !== undefined);
+  const scopeFirstDay = scopeFirstAt === undefined ? undefined : scopeFirstAt?.firstAt != null ? dayKey(new Date(scopeFirstAt.firstAt), timezone) : today;
+  useEffect(() => {
+    if (scopeFirstDay && timezone && firstDays[timezone] !== scopeFirstDay) setFirstDays((previous) => ({ ...previous, [timezone]: scopeFirstDay }));
+  }, [scopeFirstDay, timezone, firstDays]);
+  const calendarStart = firstDay ? `${(firstDay < today ? firstDay : today).slice(0, 7)}-01` : today;
+  const historyComplete = Boolean(history.data && firstDay && history.since === (firstDay < today ? firstDay : today) && history.until === today);
+  const selectable = useCallback((key) => Boolean(today && calendarStart) && key >= calendarStart && key <= today, [today, calendarStart]);
+  const selected = useMemo(() => {
+    const keys = (selection ?? []).filter(selectable);
+    return keys.length ? keys : today ? [today] : [];
+  }, [selection, selectable, today]);
+  const contiguous = isContiguous(selected);
+  const selectionReport = useSelectionReport(historyOn ? selected : null, contiguous, refreshRevision, timezone);
+
+  const current = view === 'calendar' ? history : report;
+  const data = view === 'calendar' ? (historyComplete ? history.data : null) : report.timezone === timezone ? report.data : null;
   const shown = report.period;
-  const pending = Boolean(activePeriod) && (JSON.stringify(activePeriod) !== JSON.stringify(shown) || agent !== report.agent || timezone !== report.timezone);
-  const reportBusy = report.loading || (pending && !report.error);
-  const days = useMemo(() => dailyMap(data?.daily), [data?.daily]);
-  const calendarDay = view === 'calendar' && data && shown
-    ? openingDay(days, { ...periodBounds(shown), today, selected: selectedDay }) : null;
-  const dayReport = useDayReport(calendarDay, refreshRevision, report.agent ?? agent, timezone);
-  const dayPending = view === 'calendar' && (dayReport.day !== calendarDay || !dayReport.data || dayReport.loading || Boolean(dayReport.error));
-  const firstAt = data?.scopeRange?.firstAt;
-  const firstDay = firstAt != null ? dayKey(new Date(firstAt), timezone) : null;
-  const bounds = shown?.mode === 'custom' ? periodBounds(shown) : null;
-  const selectedNav = calendarDay ? dayNav(calendarDay, { firstDay: bounds?.since ?? firstDay, today: bounds && bounds.until < today ? bounds.until : today }) : {};
+  const pending = view === 'today' ? Boolean(activePeriod) && (JSON.stringify(activePeriod) !== JSON.stringify(shown) || timezone !== report.timezone)
+    : historyOn && !historyComplete;
+  const reportBusy = current.loading || (pending && !current.error);
+  const selectionPending = view === 'calendar' && (selectionReport.key !== selected.join(',') || !selectionReport.data || selectionReport.loading || Boolean(selectionReport.error));
   const updatingPrices = priceUpdating || Boolean(prices.status?.updating);
   const busy = prices.busy || refreshing || updatingPrices || Boolean(databaseBusy) || exporting;
-  const hasData = Boolean(data && shown && (view !== 'today' || shown.preset === '1d'));
+  const hasData = view === 'calendar' ? Boolean(data) : Boolean(data && shown && shown.preset === '1d');
 
   useEffect(() => {
     const zone = detectedTimezone(), pref = prefs.readTimezone();
     setLocale(prefs.readLocale());
     setTheme(prefs.readTheme());
     setAgentSort(prefs.readAgentSort());
+    setCalendarZoom(prefs.readCalendarZoom());
     setTimezonePref(pref);
     setSystemZone(zone);
     setNow(Date.now());
-    setPeriod(periodOf(dayKey(new Date(), pref === 'auto' ? zone : pref), prefs.readMode()));
     const tick = () => { setNow(Date.now()); setSystemZone(detectedTimezone()); };
     const clock = setInterval(tick, 30000);
     window.addEventListener('focus', tick);
@@ -83,15 +103,7 @@ export function useWorkspace() {
     return () => media.removeEventListener('change', apply);
   }, [theme]);
   useEffect(() => { document.documentElement.lang = locale; document.title = tx('docTitle'); }, [locale, tx]);
-  useEffect(() => {
-    if (!today) return;
-    setPeriod((p) => {
-      if (!p || p.preset) return p;
-      if (periodBounds(p).since > today) return periodOf(today, 'month');
-      return p.mode === 'custom' && p.until > today ? { ...p, until: today } : p;
-    });
-  }, [today]);
-  const staleError = hasData ? report.error : null;
+  const staleError = hasData ? current.error : null;
   useEffect(() => { if (staleError) pushToast({ key: 'report-error', tone: 'error', message: ['errorBody', { error: staleError }] }); }, [staleError, pushToast]);
   const warningText = data?.warnings?.join('\n') ?? '';
   const lastWarning = useRef('');
@@ -101,23 +113,28 @@ export function useWorkspace() {
     const items = warningText.split('\n');
     pushToast({ key: 'warnings', tone: 'warn', message: ['warnings', { n: items.length }], details: { items } });
   }, [warningText, pushToast]);
-  const labels = useMemo(() => new Map((report.data?.view?.availableClients ?? []).map((c) => [c.id, c.label])), [report.data]);
+  const clientList = report.data?.view?.availableClients ?? history.data?.view?.availableClients;
+  const labels = useMemo(() => new Map((clientList ?? []).map((c) => [c.id, c.label])), [clientList]);
   const agentLabel = useCallback((id) => labels.get(id) ?? id, [labels]);
-  const onPeriod = (value) => { setPeriod(value); setSelectedDay(null); };
-  const onAgent = (value) => { setAgent(value); setSelectedDay(null); };
   const onTheme = (value) => { prefs.writeTheme(value); setTheme(value); };
   const onLocale = (value) => { prefs.writeLocale(value); setLocale(value); };
   const onTimezone = (value) => {
     if (value !== 'auto' && !validTimezone(value)) return;
-    prefs.writeTimezone(value); setTimezonePref(value); setNow(Date.now()); setSelectedDay(null);
-    const day = dayKey(new Date(), value === 'auto' ? systemZone : value);
-    if (period && periodBounds(period).since > day) setPeriod(periodOf(day, 'month'));
+    prefs.writeTimezone(value); setTimezonePref(value); setNow(Date.now()); setSelection(null); setAnchor(null);
   };
   const onAgentSort = (value) => { prefs.writeAgentSort(value); setAgentSort(value); };
   const onToggleAgent = (id) => setOpenAgents((previous) => { const next = new Set(previous); if (!next.delete(id)) next.add(id); return next; });
+  const onCalendarZoom = useCallback((value) => { prefs.writeCalendarZoom(value); setCalendarZoom(value); }, []);
+  // Selections are sorted unique keys; `anchor` is where Shift ranges start.
+  const onSelect = useCallback((keys, nextAnchor) => {
+    const next = [...new Set(keys)].filter(selectable).sort();
+    if (!next.length) return;
+    setSelection(next);
+    if (nextAnchor !== undefined) setAnchor(nextAnchor);
+  }, [selectable]);
   const showLatest = (timestamp) => {
     const day = dayKey(new Date(Math.min(timestamp, Date.now())), timezone);
-    setPeriod(periodOf(day, 'month')); setSelectedDay(day); setView('calendar');
+    setSelection([day]); setAnchor(day); setView('calendar');
   };
   const onRefresh = async () => {
     setRefreshing(true);
@@ -217,18 +234,13 @@ export function useWorkspace() {
     } finally { setDatabaseBusy(null); }
   };
 
-  const onStepDay = (delta) => {
-    if (!calendarDay || (delta < 0 ? !selectedNav.canPrev : !selectedNav.canNext)) return;
-    const next = shiftDay(calendarDay, delta);
-    setSelectedDay(next);
-    if (shown.mode !== 'custom' && !inPeriod(next, shown)) setPeriod(periodOf(next, shown.mode));
-  };
-  const canExport = reportView && hasData && !reportBusy && !pending && !dayPending && !report.error && !busy;
+  const canExport = reportView && hasData && !reportBusy && !pending && !(view === 'calendar' && selectionPending) && !current.error && !busy;
   const onExport = async () => {
     if (!canExport || !reportRef.current) return;
     setExporting(true);
     try {
-      await exportReportImage(reportRef.current, 'toksight-' + (report.agent || 'all') + '-' + periodKey(shown) + (view === 'calendar' ? '-' + calendarDay : '') + '.png');
+      const name = view === 'calendar' ? `toksight-calendar-${selected[0]}${selected.length > 1 ? '_' + selected.at(-1) : ''}.png` : `toksight-all-${periodKey(shown)}.png`;
+      await exportReportImage(reportRef.current, name);
     } catch (err) {
       pushToast({ key: 'export', tone: 'error', message: ['exportFailed', { error: String(err?.message || err) }] });
     } finally { setExporting(false); }
@@ -236,12 +248,12 @@ export function useWorkspace() {
   const shared = { locale, tx, agentLabel, sortBy: agentSort, onSort: onAgentSort };
   return {
     prices, view, setView, locale, theme, timezone, timezonePref, systemZone, now, today,
-    period, activePeriod, agent, report, data, shown, reportBusy, reportView, hasData,
-    calendarDay, dayReport, selectedNav, firstDay, reportRef, shared, openAgents,
+    activePeriod, report, trend, history, current, data, shown, reportBusy, reportView, hasData,
+    selected, anchor, contiguous, selectionReport, calendarStart, calendarZoom, reportRef, shared, openAgents,
     busy, refreshing, updatingPrices, exporting, canExport, refreshRevision,
     databaseBusy, databaseFile, databaseError, priceResetOpen, priceResetError, toasts, tx,
-    onPeriod, onAgent, onTheme, onLocale, onTimezone, onToggleAgent, onRefresh, onUpdatePrices,
-    onResetPrices, onSetup, onSelectDatabase, onImportDatabase, onExportDatabase, onStepDay,
-    onExport, setSelectedDay, setPriceResetOpen, setPriceResetError, setDatabaseFile,
+    onTheme, onLocale, onTimezone, onToggleAgent, onRefresh, onUpdatePrices, onSelect, onCalendarZoom,
+    onResetPrices, onSetup, onSelectDatabase, onImportDatabase, onExportDatabase,
+    onExport, setPriceResetOpen, setPriceResetError, setDatabaseFile,
   };
 }

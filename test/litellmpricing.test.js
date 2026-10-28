@@ -5,8 +5,9 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { DatabaseSync } from 'node:sqlite';
-import { computeCost, getPricing } from '../src/pricing.js';
-import { createPriceLookup, priceRecord } from '../src/pricecatalog.js';
+import { buildLitellmMap, computeCost, getPricing } from '../src/pricing.js';
+import { createPriceLookup, decodePriceRecord, encodePriceMetadata, priceRecord } from '../src/pricecatalog.js';
+import { priceSignature } from '../src/pricehistory.js';
 import { createUsageDatabase as createDatabase } from '../src/database.js';
 import { readDatabaseBackup } from '../src/dbtransfer.js';
 import { readStoredPriceFor } from '../src/usageimports.js';
@@ -307,4 +308,20 @@ test('first-party range tables reach saved reports and offline backups with the 
   target.importDatabase(db.exportDatabase());
   closeTo(target.read().entries[0].costUsd, db.read().entries[0].costUsd);
   assert.equal(readStoredPriceFor(db.file)(request.model, request.client, request).input, 1.8e-6);
+});
+
+test('LiteLLM context limits are kept as display-only price fields', () => {
+  const { records } = buildLitellmMap({
+    'gpt-limits': { mode: 'chat', litellm_provider: 'openai', input_cost_per_token: 1e-6, output_cost_per_token: 2e-6, max_input_tokens: 272000, max_tokens: 128000 },
+    'gpt-bad-limits': { mode: 'chat', litellm_provider: 'openai', input_cost_per_token: 1e-6, output_cost_per_token: 2e-6, max_input_tokens: '272k', max_tokens: -1 },
+  });
+  const good = records.find((r) => r.name === 'gpt-limits'), bad = records.find((r) => r.name === 'gpt-bad-limits');
+  assert.equal(good.maxInputTokens, 272000);
+  assert.equal(good.maxTokens, 128000);
+  assert.equal('maxInputTokens' in bad || 'maxTokens' in bad, false);
+  const stored = decodePriceRecord({ ...good, metadataJson: encodePriceMetadata(good) });
+  assert.equal(stored.maxInputTokens, 272000);
+  assert.equal(stored.maxTokens, 128000);
+  const { maxInputTokens, maxTokens, ...plain } = good;
+  assert.equal(priceSignature(good), priceSignature(plain), 'limits never create a rate revision');
 });

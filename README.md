@@ -264,10 +264,14 @@ status with `completed: false` and rejects a reset with HTTP 409 while that serv
 
 The **Update prices** button calls `POST /api/prices/update` to download LiteLLM prices
 on this machine, bypassing the 7-day interval. **Prices** in the left navigation shows
-current official first-party rates in USD per million tokens, one row per model: catalog IDs that
-name the same model at the same rates (provider prefixes, dated snapshots) are merged. It shows the
-models you used by default; untick **Only models you used** to browse the full catalog. Select a
-model to see its catalog IDs, channel and billing conditions such as context tiers. This page also controls automatic updates.
+current official first-party rates in USD per million tokens as one card per model, grouped by
+provider (providers you used first) with provider chips and a search box: catalog IDs that
+name the same model at the same rates (provider prefixes, dated snapshots) are merged. Cards show
+input, cache read/write and output rates (2–4 decimals), a long-context tier badge and, when known,
+the maximum input. It shows the models you used by default; turn off **Only models you used** to
+browse the full catalog, where each provider previews five cards with a **View all** tile. Expand
+**Price details** on a card for tiers and other billing conditions, catalog IDs, the log names that
+matched it, and its source. The settings button in the page head holds price sources and automatic updates.
 Browsing prices reads only the local database. When automatic updates are enabled, the server
 checks hourly as well as on startup/report requests; expired sources refresh and failed checks
 retry after an hour. Checks stop when the server closes. Price changes revalue the applicable
@@ -275,33 +279,41 @@ requests without rescanning usage or replacing reported amounts. `--offline` pre
 updates. Continuing with local prices during setup defers the first automatic check for an hour.
 `GET /api/prices/status` returns setup/update status; `POST /api/setup` completes setup or updates
 the automatic-update preference. `GET /api/prices` reads the catalog (`records`, plus `models`: one merged row per model with
-`names`, `ids` and `used`); add `key=<record id>` to read a model's revisions, newest first. API token rates remain USD per token. These endpoints
+`names`, `ids` and `used`); add `key=<record id>` to read a model's revisions, newest first. API token rates remain USD per token.
+Records may carry `maxInputTokens` / `maxTokens` (LiteLLM's `max_input_tokens` / `max_tokens`, positive
+integers, omitted when unknown; they never create a price revision), and each merged model row carries
+`usedAs`: the sorted model names from your logs that resolved to it (`[]` when unused). These endpoints
 use the existing Host/Origin checks.
 
 The UI lives in `frontend/` and follows a plain, dense "Plain Workbench" design language: one sans-serif family (bundled
 Geist with a Chinese sans fallback) and tabular figures throughout, flat panels on a plain page, one accent colour, and
 light and dark themes with a collapsible sidebar.
-The dashboard opens on **Today**, with **Calendar**, **Prices** and **Settings** in the sidebar.
-There are no page banners: content starts right under the top bar, which holds the current page name, the page
-actions (**Export image** and **Refresh database** on reports; **Reset price database** and **Update prices** on Prices)
-and the theme (light / dark / system) and 中文 / EN controls. On phones, the actions become icon buttons and a sticky
+The dashboard opens on **Today**, with **Calendar**, **Prices** and **Settings** in the sidebar; the sidebar foot shows
+the privacy note, the reporting time zone and the collapse button.
+There are no page banners: content starts right under the top bar, which holds the logo (back to Today), the page
+actions (**Export image** and **Refresh database** on reports; **Reset price database** and **Update prices** on Prices),
+the theme menu (light / dark / system), the 中文 / EN switch and the GitHub link. Every top-bar control is an icon
+button whose name appears in a tooltip on hover or keyboard focus. On phones, a sticky
 horizontal navigation keeps all four views within reach. See `design-spec.md` for the visual specification.
 
-- **Today** emphasizes tokens and reference cost, with cache hit rate and requests alongside, followed by hourly
-  activity with Tokens / Cost controls, a token-mix bar, expandable agents and models, and up to ten sessions
-  (five initially, with an expand control). Token/cost changes compare with the previous full day when a baseline exists. Single-model agents show the model name directly;
+- **Today** covers all agents. A KPI panel headed by the date and "as of" time shows tokens and reference cost,
+  with cache hit rate and requests alongside, followed by hourly
+  activity with Tokens / Cost controls, a token-mix bar, expandable agents and models, up to ten sessions
+  (five initially, with an expand control), quota, and the last-30-days trend at the bottom. Token/cost changes compare
+  with the previous full day when a baseline exists. Single-model agents show the model name directly;
   a separate model ranking appears when an agent uses multiple models. Charts show quantity scales and the hourly peak.
-  Pick all agents or a single agent. Session details include title, usage, cost, time span,
-  active time, directory and models.
-- **Calendar** shows the heatmap and day details directly, side by side on wide screens and
-  stacked on narrow screens. Click or keyboard-activate a date to switch details; ‹ / › moves
-  one day at a time. There is no overlay, card dragging or paged detail deck. Month/year navigation,
-  month jump, **1D / 7D / MTD / 30D**, inclusive custom dates and Agent filters remain available.
-  Range totals appear above the calendar. On narrow screens, selecting a day scrolls to its details,
-  which follow the calendar before the trends; **Back to calendar** returns to the selected cell.
-  A range-trend shortcut remains available. Short ranges use a
-  calendar; long ranges use week grids grouped by year. Trends use hours for a single day,
-  days up to 62 elapsed dates, and months for longer ranges, with missing dates filled as zero.
+  Session details include title, usage, cost, time span, active time, directory and models.
+- **Calendar** is one continuous, scrollable list of months from your first record to today (all agents),
+  with Monday-start weeks and an eighth ISO-week column (`W43`; `26W1` when the week belongs to another
+  year). Cells show tokens and cost shaded on one heat scale for the whole history. Two zoom levels — large
+  (one month per row) and compact (three months per row, colour only) — switch with the zoom buttons,
+  Ctrl/⌘ + wheel, pinch or `+` / `-`, with an animated transition (skipped under reduced motion); the level
+  is remembered. Click a day, drag or Shift+click for a range, Ctrl/⌘+click to add or remove days, click a
+  week number for the whole week (Ctrl/⌘ appends it); arrows, Home/End, PageUp/PageDown, Enter and Esc
+  (back to today) work from the keyboard. The detail pane beside it shows the selection's totals, the hourly
+  strip for a single day, and the usage split by agent and by model (the same model used from several agents is
+  one row); **View sessions** swaps the split for the sessions list. Below 1200px the calendar (70% of the
+  viewport height) stacks above the details.
 - **Settings** contains appearance, language, the reporting time zone, and database import/export.
 
 The time zone defaults to the browser's detected zone and can be set explicitly, for example
@@ -316,11 +328,10 @@ an agent to expand its models. Each row's **ⓘ** button opens inline details by
 including token classes, requests and sessions, even when a narrow table hides those columns;
 model details also show matching unit rates. Hover hints remain available.
 Models beyond the first seven fold into an eighth summary row.
-Theme, language, time zone, calendar mode and table sorting are remembered in `localStorage`.
-Date and Agent filters stay in page memory; reloading opens Today. Reset in Calendar returns
-to the current month and all agents.
+Theme, language, time zone, calendar zoom level and table sorting are remembered in `localStorage`.
+The calendar selection stays in page memory; reloading opens Today.
 
-**Export image** saves the visible Today report, or the Calendar range and selected day details,
+**Export image** saves the visible Today report, or the months visible in the Calendar plus the detail pane,
 as one PNG with date, Agent, time zone and footer. Controls and temporary row details are excluded; expanded models stay
 expanded in the image. Export waits until all displayed data has loaded. Cost totals combine
 reported amounts and estimates; they are not a subscription bill. Unpriced models remain listed
@@ -330,11 +341,14 @@ Startup filters (`--client`, `--since`, `--until`, `--today/--week/--month`) bou
 server can see; the report never widens that scope.
 
 The API accepts e.g. `GET /api/data?period=custom&since=2026-09-01&until=2026-09-30` (what the
-report requests; day details ask for a single day the same way) or `?client=claude&period=7d`. `period` is `all` (default) / `today` / `7d` /
+report requests; the calendar asks for its selection the same way) or `?client=claude&period=7d`. `period` is `all` (default) / `today` / `7d` /
 `30d` / `month` / `custom` (`custom` needs both `since` and `until`); `since`/`until` may also be
 used alone; presets cannot combine with explicit dates. Optional `timezone=Asia%2FShanghai` selects
 an IANA reporting zone for filters and all calendar/hour aggregates; omission preserves the
-server-local default. Unknown, duplicate or invalid parameters
+server-local default. Optional `days=2026-10-06,2026-10-08` (comma-separated `YYYY-MM-DD` local
+days in the reporting zone, at most 4000; sorted and de-duplicated) keeps only those days within the
+other filters — it never widens them — and the response's `view.days` echoes the list (`null` when absent).
+Unknown, duplicate or invalid parameters (including a malformed `days` list)
 return HTTP 400. `POST /api/refresh` updates the database and returns its refresh time and entry
 count and collection warnings. The web API's additive `snapshot` field exposes the refresh time
 and count. `POST /api/prices/update` refreshes LiteLLM prices locally without rescanning
@@ -470,3 +484,6 @@ See the [release guide](doc/release.md) for branch protection, npm Trusted Publi
 ## License
 
 MIT. Not affiliated with Zhipu AI, Anthropic, OpenAI or any agent vendor.
+
+Provider and model logos on the Prices page come from [LobeHub Icons](https://github.com/lobehub/lobe-icons)
+(MIT License, © LobeHub); see `frontend/public/logos/LICENSE.txt`. The marks remain the trademarks of their owners.

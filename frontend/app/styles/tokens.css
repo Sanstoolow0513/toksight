@@ -116,6 +116,23 @@
     --gutter: var(--sp-4);
     --pad-x: var(--sp-4);
     --pad-y: var(--sp-3);
+
+    /* Calendar */
+    --cal-col: 54%;
+    --cal-col-min: 600px;
+    --cal-cell-h: 104px;
+    --cal-cell-compact: 19px;
+    --cal-gap: 6px;
+    --cal-gap-compact: 3px;
+    --r-xs: 3px;
+    --hourly-h: 52px;
+
+    /* Prices */
+    --price-card-min: 330px;
+    --logo-tile: 40px;
+    --chip-h: 30px;
+    --switch-w: 30px;
+    --switch-h: 18px;
   }
 
   :root[data-theme='dark'] {

@@ -1,18 +1,14 @@
 'use client';
 
 import { useState } from 'react';
-import { CalendarDays, RefreshCw, TriangleAlert } from 'lucide-react';
+import { RefreshCw, TriangleAlert } from 'lucide-react';
 import { useWorkspace } from '@/lib/useWorkspace';
-import { dayLabel, weekdayLabel } from '@/lib/i18n';
-import { periodOf } from '@/lib/period';
 import AppHeader from './AppHeader';
 import Sidebar from './Sidebar';
-import { Button, Segmented } from './ui';
-import { AgentDot } from './Marks';
+import { Button } from './ui';
 import TodayDashboard from './TodayDashboard';
 import Settings from './Settings';
 import PageActions from './PageActions';
-import ReportFilters from './ReportFilters';
 import ReportFooter from './ReportFooter';
 import CalendarView from './CalendarView';
 import PriceSetup from './PriceSetup';
@@ -48,14 +44,12 @@ export default function Workspace() {
     onAutoUpdate={(autoUpdate) => void w.onSetup({ offline: true, autoUpdate })} />;
   else if (view === 'settings') content = <Settings tx={tx} timezone={timezone} timezonePref={w.timezonePref} systemZone={w.systemZone} onTimezone={w.onTimezone} now={w.now}
     locale={locale} theme={w.theme} onTheme={w.onTheme} onLocale={w.onLocale} loading={busy} databaseBusy={w.databaseBusy} onImportDatabase={w.onSelectDatabase} onExportDatabase={w.onExportDatabase} />;
-  else if (!w.hasData && report.error) content = <ErrorState tx={tx} error={report.error} onRetry={() => void report.reload()} />;
+  else if (!w.hasData && w.current.error) content = <ErrorState tx={tx} error={w.current.error} onRetry={() => void w.current.reload()} />;
   else if (!w.hasData) content = <Skeleton tx={tx} />;
-  else content = <div ref={w.reportRef} className={`report ${view}-report${w.reportBusy ? ' is-loading' : ''}${report.error ? ' is-stale' : ''}`} aria-busy={w.reportBusy}>
-    <div className="report-context"><span>{view === 'today' ? dayLabel(locale, w.shown.since, true) : tx('rangeSummary')}</span>
-      <span>{report.agent ? w.shared.agentLabel(report.agent) : tx('filterAllAgents')} · {data.timezone}</span></div>
-    {view === 'today' ? <TodayDashboard data={data} day={w.shown.since} quotaRevision={w.refreshRevision} {...w.shared} open={w.openAgents} onToggle={w.onToggleAgent} onCalendar={() => navigate('calendar')} />
-      : <CalendarView {...w.shared} data={data} period={w.shown} today={today} firstDay={w.firstDay} day={w.calendarDay} onPick={w.setSelectedDay}
-        dayReport={w.dayReport} dayNav={w.selectedNav} onStep={w.onStepDay} onPeriod={w.onPeriod} />}
+  else content = <div ref={w.reportRef} className={`report ${view}-report${w.reportBusy ? ' is-loading' : ''}${w.current.error ? ' is-stale' : ''}`} aria-busy={w.reportBusy}>
+    {view === 'today' ? <TodayDashboard data={data} day={w.shown.since} today={today} trend={w.trend} quotaRevision={w.refreshRevision} {...w.shared} open={w.openAgents} onToggle={w.onToggleAgent} onCalendar={() => navigate('calendar')} />
+      : <CalendarView data={data} today={today} start={w.calendarStart} selected={w.selected} anchor={w.anchor} zoom={w.calendarZoom} onZoom={w.onCalendarZoom}
+        onSelect={w.onSelect} report={w.selectionReport} agentLabel={w.shared.agentLabel} locale={locale} tx={tx} />}
     <ReportFooter data={data} tx={tx} />
   </div>;
 
@@ -68,17 +62,8 @@ export default function Workspace() {
     <AppHeader view={view} onView={navigate} locale={locale} theme={w.theme} onTheme={w.onTheme} onLocale={w.onLocale} tx={tx} actions={actions} />
     <Sidebar view={view} onView={navigate} timezone={timezone} collapsed={collapsed} onCollapse={() => setCollapsed(!collapsed)} tx={tx} />
     <main className="main" id="main-content" tabIndex={-1}>
-      <div className="workspace-content">
-        {ready && view === 'today' ? <div className="overview-toolbar no-export">
-          <Segmented size="sm" label={tx('colAgent')} value={w.agent || ''} onChange={(id) => w.onAgent(id)} wrap className="agent-tabs" options={[
-            { value: '', label: tx('filterAllAgents') },
-            ...(report.data?.view?.availableClients ?? []).map((client) => ({ value: client.id, label: client.label, icon: <AgentDot id={client.id} /> })),
-          ]} />
-          <div className="today-date"><CalendarDays size={14} aria-hidden="true" />{today ? `${dayLabel(locale, today, true)} · ${weekdayLabel(locale, today)}` : '…'}</div>
-        </div> : null}
-        {ready && view === 'calendar' && w.activePeriod && today ? <ReportFilters period={w.activePeriod} today={today} agent={w.agent} clients={report.data?.view?.availableClients ?? []}
-          onAgent={w.onAgent} onPeriod={w.onPeriod} onReset={() => { w.onAgent(''); w.onPeriod(periodOf(today, 'month')); }} tx={tx} /> : null}
-        {w.reportView && (w.reportBusy || (report.error && w.hasData)) ? <div className="filter-status" role="status">
+      <div className={`workspace-content${ready && view === 'prices' ? ' is-prices' : ''}${ready && view === 'calendar' ? ' is-calendar' : ''}`}>
+        {view === 'today' && (w.reportBusy || (report.error && w.hasData)) ? <div className="filter-status" role="status">
           {w.reportBusy ? <><span className="status-led" aria-hidden="true" />{tx('filterLoading')}</> : <>{tx('filterFailed')} <Button variant="text" onClick={() => void report.reload()}>{tx('retry')}</Button></>}
         </div> : null}
         {content}

@@ -10,7 +10,7 @@ export const THEMES = ['light', 'dark', 'system'];
 const KEYS = {
   locale: 'toksight-locale',
   theme: 'toksight-theme',
-  mode: 'toksight-period-mode',
+  calendarZoom: 'toksight-calendar-zoom',
   agentSort: 'toksight-agent-sort',
   timezone: 'toksight-timezone',
 };
@@ -43,10 +43,12 @@ export function readTheme() {
 }
 export const writeTheme = (v) => write(KEYS.theme, v);
 
-export function readMode() {
-  return read(KEYS.mode) === 'year' ? 'year' : 'month';
+export const CALENDAR_ZOOMS = ['compact', 'large'];
+export function readCalendarZoom() {
+  const v = read(KEYS.calendarZoom);
+  return CALENDAR_ZOOMS.includes(v) ? v : 'large';
 }
-export const writeMode = (v) => write(KEYS.mode, v);
+export const writeCalendarZoom = (v) => write(KEYS.calendarZoom, v);
 
 export function readAgentSort() {
   const v = read(KEYS.agentSort);

@@ -145,3 +145,75 @@ export function calendarWeeks(since, until) {
   if (week.length) weeks.push([...week, ...Array(7 - week.length).fill(null)]);
   return weeks;
 }
+
+// ---- ISO weeks and the continuous calendar ------------------------------
+// Pure civil-date arithmetic on integer day numbers (days since 1970-01-01 in
+// the proleptic Gregorian calendar), so no clock or zone can shift a day.
+function dayNumber(key) {
+  let [y, m, d] = key.split('-').map(Number);
+  y -= m <= 2 ? 1 : 0;
+  const era = Math.floor(y / 400), yoe = y - era * 400;
+  const doy = Math.floor((153 * (m + (m > 2 ? -3 : 9)) + 2) / 5) + d - 1;
+  const doe = yoe * 365 + Math.floor(yoe / 4) - Math.floor(yoe / 100) + doy;
+  return era * 146097 + doe - 719468;
+}
+function fromDayNumber(n) {
+  const z = n + 719468, era = Math.floor(z / 146097), doe = z - era * 146097;
+  const yoe = Math.floor((doe - Math.floor(doe / 1460) + Math.floor(doe / 36524) - Math.floor(doe / 146096)) / 365);
+  const doy = doe - (365 * yoe + Math.floor(yoe / 4) - Math.floor(yoe / 100)), mp = Math.floor((5 * doy + 2) / 153);
+  const d = doy - Math.floor((153 * mp + 2) / 5) + 1, m = mp + (mp < 10 ? 3 : -9);
+  return `${era * 400 + yoe + (m <= 2 ? 1 : 0)}-${pad(m)}-${pad(d)}`;
+}
+// Monday = 0 … Sunday = 6 (1970-01-01 was a Thursday).
+const isoWeekday = (n) => ((n % 7) + 7 + 3) % 7;
+
+// ISO 8601 week: weeks start on Monday and week 1 holds January 4th, so the
+// week belongs to the year of its Thursday.
+export function isoWeek(key) {
+  const n = dayNumber(key), thursday = n - isoWeekday(n) + 3;
+  const year = Number(fromDayNumber(thursday).slice(0, 4));
+  const jan4 = dayNumber(`${year}-01-04`);
+  return { year, week: 1 + (thursday - (jan4 - isoWeekday(jan4) + 3)) / 7 };
+}
+
+export function mondayOf(key) {
+  const n = dayNumber(key);
+  return fromDayNumber(n - isoWeekday(n));
+}
+
+// The seven days (Monday to Sunday) of the week containing `key`.
+export function weekKeys(key) {
+  const monday = dayNumber(mondayOf(key));
+  return Array.from({ length: 7 }, (_, i) => fromDayNumber(monday + i));
+}
+
+// "W43", or "26W1" when the week could be read against the wrong year: its
+// ISO year differs from the month block's year, or it spans New Year.
+export function weekLabelParts(key, blockYear) {
+  const days = weekKeys(key), { year, week } = isoWeek(days[0]);
+  const prefixed = year !== blockYear || days[0].slice(0, 4) !== days[6].slice(0, 4);
+  return { year, week, prefix: prefixed ? String(year).slice(2) : null };
+}
+
+// Every { year, month } from the month of `first` to the month of `last`.
+export function monthsBetween(first, last) {
+  const out = [];
+  let [y, m] = first.split('-').map(Number);
+  const [ly, lm] = last.split('-').map(Number);
+  while (y < ly || (y === ly && m <= lm)) {
+    out.push({ year: y, month: m });
+    m += 1;
+    if (m > 12) { m = 1; y += 1; }
+  }
+  return out;
+}
+
+// Inclusive days between two keys in either order.
+export function rangeKeys(a, b) {
+  return a <= b ? eachDayKey(a, b) : eachDayKey(b, a);
+}
+
+// Sorted unique keys that form one unbroken run of days.
+export function isContiguous(keys) {
+  return keys.length > 0 && dayNumber(keys.at(-1)) - dayNumber(keys[0]) === keys.length - 1;
+}

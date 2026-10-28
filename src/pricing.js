@@ -108,6 +108,13 @@ async function loadLitellmPricing(cacheFile, { offline = false, force = false, n
     fetchedAt: cached?.fetchedAt ?? null };
 }
 
+// Context limits shown on the price page; they never affect cost.
+const tokenLimit = (n) => Number.isSafeInteger(n) && n > 0 ? n : undefined;
+function litellmLimits(v) {
+  const maxInputTokens = tokenLimit(v.max_input_tokens), maxTokens = tokenLimit(v.max_tokens);
+  return { ...(maxInputTokens ? { maxInputTokens } : {}), ...(maxTokens ? { maxTokens } : {}) };
+}
+
 export function buildLitellmMap(data) {
   if (!data || typeof data !== 'object') return null;
   const entries = [];
@@ -118,7 +125,7 @@ export function buildLitellmMap(data) {
     if (!provider) continue;
     const rates = normalizeLitellmPrice(v);
     if (!rates) continue;
-    entries.push([key, { ...rates, source: 'litellm', provider }]);
+    entries.push([key, { ...rates, source: 'litellm', provider, ...litellmLimits(v) }]);
   }
   return { records: recordsFromEntries(entries) };
 }

@@ -46,8 +46,9 @@ export function applyOfficialRules(record, entry) {
 
 export const historyPriceKey = (row) => JSON.stringify([row.scope, row.source, priceModelKey(row.name), null]);
 export function priceSignature(record) {
-  // Fetch timestamps, labels and retained flags never create a rate revision.
-  const { official, ...rest } = record;
+  // Fetch timestamps, labels, retained flags and display-only context limits
+  // never create a rate revision.
+  const { official, maxInputTokens, maxTokens, ...rest } = record;
   const { retained, ...officialRules } = official ?? {};
   return JSON.stringify({ ...rest, ...(official ? { official: officialRules } : {}) });
 }

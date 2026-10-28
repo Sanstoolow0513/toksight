@@ -5,6 +5,13 @@
   .kpis.is-grid { --cols: 2; }
   .kpis.is-grid .readout:nth-child(odd) { border-left: 0; }
   .kpis.is-grid .readout:nth-child(n + 3) { border-top: var(--bw) solid var(--line); }
+  /* Overview KPI panel: a caption row (date · as of, comparison basis) over the four readouts. */
+  .kpis-head {
+    display: flex; justify-content: space-between; gap: var(--sp-3); flex-wrap: wrap;
+    padding: var(--sp-3) var(--pad-x) 0; font-size: var(--fs-xs); color: var(--ink-3);
+  }
+  .kpi-panel .readout dt { flex-direction: row-reverse; justify-content: flex-end; }
+  .overview-trend { margin-top: var(--gutter); }
 
   /* Quota */
   .quota-clients { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 0 var(--sp-6); padding: var(--sp-2) var(--pad-x) var(--pad-y); }
@@ -23,17 +30,9 @@
   .quota-message { color: var(--warn); }
   .quota-error { padding: var(--sp-2) var(--pad-x) 0; }
 
-  /* Layout of a day. Today: quota beside the token mix, hourly chart below;
-     without quota, hourly and mix share the row. */
+  /* Layout of a day: hourly chart (2fr) beside the token mix (1fr), then
+     agents/models, sessions and (Today) quota. */
   .day-sections { display: grid; gap: var(--gutter); }
-  /* Placed by line numbers (not template areas) so the PNG export clones it faithfully. */
-  .overview-grid { display: grid; gap: var(--gutter); grid-template-columns: minmax(0, 3fr) minmax(300px, 2fr); }
-  .overview-grid > .quota-card { grid-column: 1; grid-row: 1; }
-  .overview-grid > .section-breakdown { grid-column: 2; grid-row: 1; }
-  .overview-grid > .section-hourly { grid-column: 1 / -1; grid-row: 2; }
-  /* Without quota (none configured, or in the exported image) hourly and mix share one row. */
-  .overview-grid:not(:has(.quota-card)), .is-exporting .overview-grid { grid-template-columns: minmax(0, 2fr) minmax(300px, 1fr); }
-  :is(.overview-grid:not(:has(.quota-card)), .is-exporting .overview-grid) > .section-hourly { grid-column: 1; grid-row: 1; }
   .analysis-grid { display: grid; grid-template-columns: minmax(0, 2fr) minmax(280px, 1fr); gap: var(--gutter); }
   .day-section { container-type: inline-size; }
   .day-empty { padding: var(--sp-6); text-align: center; }
@@ -157,9 +156,6 @@
     .kpis:not(.is-grid) .readout:nth-child(odd) { border-left: 0; }
     .kpis:not(.is-grid) .readout:nth-child(n + 3) { border-top: var(--bw) solid var(--line); }
     .analysis-grid { grid-template-columns: minmax(0, 1fr); }
-    .overview-grid, .overview-grid:not(:has(.quota-card)) { grid-template-columns: minmax(0, 1fr); }
-    .overview-grid > :is(.quota-card, .section-breakdown, .section-hourly),
-    :is(.overview-grid:not(:has(.quota-card)), .is-exporting .overview-grid) > .section-hourly { grid-column: 1; grid-row: auto; }
   }
   @media (max-width: 700px) {
     .readout--lg .readout-value { font-size: var(--fs-3xl); }

@@ -4,7 +4,9 @@ import { fmtCost, fmtInt, fmtPct, fmtTokens } from '@/lib/format';
 import { Stat } from './ui';
 
 // The four readouts of a day or range, as one strip divided by hairlines.
-export default function Kpis({ data, tx, size = 'md', grid = false }) {
+// `head` adds a caption row (date and "as of" on the left, the comparison
+// basis on the right) inside the same panel.
+export default function Kpis({ data, tx, size = 'md', grid = false, head = null }) {
   const totals = data.totals ?? {};
   const unpriced = data.pricing?.unpricedModels ?? [];
   const rate = costPerMillion(totals);
@@ -20,8 +22,13 @@ export default function Kpis({ data, tx, size = 'md', grid = false }) {
     { kind: 'cache', Icon: Zap, label: tx('kpiCache'), value: fmtPct(data.cacheHitRate), sub: tx('kpiCacheSub', { tokens: fmtTokens(totals.cacheReadTokens) }) },
     { kind: 'requests', Icon: MessagesSquare, label: tx('kpiRequests'), value: fmtInt(totals.requests), sub: tx('kpiRequestsSub', { n: fmtInt(totals.sessions) }) },
   ];
-  return <dl className={'kpis readouts plate' + (grid ? ' is-grid' : '')}>{items.map(({ kind, Icon, label, value, textValue, sub, change }) => <Stat key={kind} className={'kpi is-' + kind}
+  const stats = items.map(({ kind, Icon, label, value, textValue, sub, change }) => <Stat key={kind} className={'kpi is-' + kind}
     size={size} label={label} icon={<Icon size={15} strokeWidth={1.6} aria-hidden="true" />} value={value} textValue={textValue} scale={size === 'lg'}
     delta={change != null ? { dir: change < 0 ? 'down' : 'up', text: fmtPct(Math.abs(change)), title: tx('compareFullDay') } : null}
-    sub={sub} />)}</dl>;
+    sub={sub} />);
+  if (!head) return <dl className={'kpis readouts plate' + (grid ? ' is-grid' : '')}>{stats}</dl>;
+  return <section className="kpis kpi-panel plate" aria-label={head}>
+    <div className="kpis-head"><span>{head}</span>{previous ? <span>{tx('compareFullDay')}</span> : null}</div>
+    <dl className="readouts">{stats}</dl>
+  </section>;
 }

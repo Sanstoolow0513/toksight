@@ -31,15 +31,19 @@
   .btn--text:hover:not(:disabled) { color: var(--signal-ink); text-decoration: underline; text-underline-offset: 3px; }
   .btn--sm { min-height: var(--ctl-sm); padding: 0 var(--sp-2); font-size: var(--fs-xs); }
   .btn:disabled { opacity: .45; }
+  /* IconButton: the one icon-only control. md 34px / sm 28px on a surface
+     fill (ghost: none); 17px / 16px icons at stroke 1.6. */
   .icon-btn {
-    display: inline-flex; align-items: center; justify-content: center; gap: var(--sp-1);
-    min-width: var(--ctl-md); height: var(--ctl-md); padding: 0 var(--sp-1);
-    border: var(--bw) solid transparent; border-radius: var(--r-1); color: var(--ink-2);
-    transition: background-color var(--dur-1) var(--ease), color var(--dur-1) var(--ease), border-color var(--dur-1) var(--ease);
+    position: relative; display: inline-grid; place-items: center; flex-shrink: 0;
+    width: var(--ctl-md); height: var(--ctl-md); padding: 0;
+    border-radius: var(--r-1); background: var(--surface); color: var(--ink-2);
+    transition: background-color var(--dur-1) var(--ease), color var(--dur-1) var(--ease);
   }
+  .icon-btn > svg { width: 17px; height: 17px; stroke-width: 1.6; }
   .icon-btn:hover:not(:disabled) { background: var(--surface-3); color: var(--ink); }
-  .icon-btn--sm { min-width: var(--ctl-sm); height: var(--ctl-sm); }
-  .icon-btn--outline { border-color: var(--line-strong); background: var(--surface); }
+  .icon-btn--sm { width: var(--ctl-sm); height: var(--ctl-sm); }
+  .icon-btn--sm > svg { width: 16px; height: 16px; }
+  .icon-btn--ghost { background: transparent; }
   .icon-btn:disabled { opacity: .4; }
 
   /* Segmented: the only single-choice switch. A tinted track with a raised thumb. */
@@ -133,6 +137,13 @@
   .tip-note, .tip-muted { margin-top: var(--sp-2); font-size: var(--fs-xs); opacity: .85; overflow-wrap: anywhere; }
   .tip-note.is-mono { font-family: var(--font-mono); }
   .tooltip .swatch { box-shadow: 0 0 0 1px currentColor; }
+  /* Control tooltip: raised label right-aligned under its button. */
+  .btn-tip {
+    position: fixed; z-index: 110; pointer-events: none; white-space: nowrap;
+    padding: 6px 10px; border-radius: var(--r-1); background: var(--surface-raised); box-shadow: var(--shadow-pop);
+    font-size: var(--fs-xs); line-height: 1.4; color: var(--ink); animation: slide-in var(--dur-1) var(--ease);
+  }
+  .btn-tip small { margin-left: 6px; font-size: var(--fs-xs); color: var(--ink-3); }
 
   /* Fields */
   :where(input:not([type='checkbox'], [type='radio'], [type='file']), select) {

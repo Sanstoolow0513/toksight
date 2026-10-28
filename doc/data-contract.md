@@ -24,7 +24,7 @@ CLI 的 `--since` / `--until` 与按天聚合保持机器本地时区。Web 可�
 
 按所选时区的日历天运算。`Intl.DateTimeFormat` 提供该时区的年月日 / 小时；缓存的日界查找处理午夜缺失或重复，整日范围包含最后一毫秒。每一天仍使用 24 个钟面小时桶，重复小时合并、跳过小时为零，界面不区分夏令 / 冬令子视图。前端 `frontend/lib/period.js` 用所选时区生成真实时间的日期键，月 / 年 / 周与日步进只对民用日期标签运算；UTC 仅充当标签运算的临时日历，不能用真实时间的 UTC 日期替代当地日期。
 
-Web 查询 `period` 接受 `all`、`today`、`7d`、`30d`、`month`、`custom`，另有 `client`、`since`、`until`、`timezone`。`custom` 必须同时带起止日；预设周期不能带起止日。未知 / 重复参数、无效日期或时区均返回 HTTP 400。查询与启动时的客户端、绝对时间范围取交集，不能扩大启动范围。`scopeRange` 反映启动范围内的活动边界，与当前查询周期无关。`timezone` 返回本次报告实际使用的时区；CLI JSON 的字段语义保持不变。
+Web 查询 `period` 接受 `all`、`today`、`7d`、`30d`、`month`、`custom`，另有 `client`、`since`、`until`、`timezone`、`days`。`custom` 必须同时带起止日；预设周期不能带起止日。`days` 是逗号分隔的 `YYYY-MM-DD` 本地日列表（按 `timezone` 解释，最多 4000 个，服务端排序去重），只保留这些日期的记录，并与其他筛选取交集，不会扩大范围；响应的 `view.days` 回显规范化后的列表，未传时为 `null`。前端日历的不连续选区以 `since` / `until` 包住首尾日并附 `days`。未知 / 重复参数、无效日期、格式错误的 `days` 或时区均返回 HTTP 400。查询与启动时的客户端、绝对时间范围取交集，不能扩大启动范围。`scopeRange` 反映启动范围内的活动边界，与当前查询周期无关。`timezone` 返回本次报告实际使用的时区；CLI JSON 的字段语义保持不变。
 
 ## JSON 形状
 
@@ -45,7 +45,8 @@ LiteLLM 长上下文估价逐请求选档；同一原始 ID 跨多个实际单�
 订阅额度由 `toksight quota --json` 与 `GET /api/quota` 独立返回 `{ tool, version, generatedAt, quotas }`，不并入报告载荷；`QuotaSnapshot` 字段见[订阅额度](quota.md)。
 
 价格目录独立由 `GET /api/prices` 返回，不并入报告载荷。`records` 保持 USD/token 的四项基础单价、缓存回退
-布尔值与 contextTiers 元数据，附加来源隔离的 `id`、本机 `observedAt` 和 `revisions`。
+布尔值与 contextTiers 元数据，附加来源隔离的 `id`、本机 `observedAt` 和 `revisions`；LiteLLM 给出时还有 `maxInputTokens` / `maxTokens`（正安全整数，未知时省略，不参与价格签名、不产生新修订）。
+`models` 每行（按模型合并）增加 `usedAs`：日志中解析到该模型的原始模型名，排序后的数组，未使用时为 `[]`。
 `updates` 保留每个来源的获取/检查时间及状态，`status` 给出本地建库状态。传单个 `key=<id>` 时改为返回
 `history`（从新到旧的 observedAt / record）；页面仅在展示时转换为美元/百万 token。这些字段不改变 CLI JSON。
 

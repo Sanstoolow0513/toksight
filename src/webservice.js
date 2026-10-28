@@ -3,7 +3,7 @@ import { activityRange, buildHeatmap, buildTrend, buildTrendByAgent, buildWebExt
 import { buildComparison } from './comparison.js';
 import { buildCostCoverage } from './costcoverage.js';
 import { resolveWebQuery } from './webquery.js';
-import { calendarDaysBetween, endOfDay, startOfDay, stepDay, weekday } from './dates.js';
+import { calendarDaysBetween, dateKey, endOfDay, startOfDay, stepDay, weekday } from './dates.js';
 import { localDate } from './aggregate.js';
 import { createUsageDatabase } from './database.js';
 import { getPricing, PRICE_REFRESH_MS } from './pricing.js';
@@ -111,6 +111,10 @@ export function createWebDataService(base, { collect = collectAll, env, home, da
     const raw = await snapshot();
     const timezone = opts.timezone;
     const filtered = filterEntries(raw.entries, opts);
+    if (opts.days) {
+      const wanted = new Set(opts.days);
+      filtered.entries = filtered.entries.filter((entry) => wanted.has(dateKey(entry.timestamp, timezone)));
+    }
     const ctx = { ...raw, opts, entries: filtered.entries, warnings: [...raw.warnings, ...filtered.warnings, ...startupPricingWarnings] };
     const scope = filterEntries(raw.entries, { ...base, clients: opts.clients }).entries;
     const payload = { ...buildPayload(ctx), ...buildWebExtras(ctx.entries, { top: opts.top, now: time, timezone }) };
@@ -142,6 +146,7 @@ export function createWebDataService(base, { collect = collectAll, env, home, da
       view: {
         period: opts.period, today: localDate(time, timezone), availableClients: opts.availableClients,
         since: opts.since == null ? null : localDate(opts.since, timezone), until: opts.until == null ? null : localDate(opts.until, timezone),
+        days: opts.days,
         startup: { clients: base.clients, since: base.since == null ? null : localDate(base.since, timezone), until: base.until == null ? null : localDate(base.until, timezone) },
       },
     };

@@ -51,7 +51,8 @@ export function reportModelName(name, client = null, rate = null) {
 }
 
 export function priceRecord({ scope = 'default', source, name, provider = null, pool = null, input, output,
-  cacheRead, cacheWrite, cacheReadFallback = false, cacheWriteFallback = false, contextTiers = null, official = null }) {
+  cacheRead, cacheWrite, cacheReadFallback = false, cacheWriteFallback = false, contextTiers = null, official = null,
+  maxInputTokens = null, maxTokens = null }) {
   if (scope !== 'default') return null;
   const modelId = modelIdentity(name).id;
   if (!modelId || !Number.isFinite(input) || !Number.isFinite(output) ||
@@ -59,7 +60,14 @@ export function priceRecord({ scope = 'default', source, name, provider = null, 
       [input, output, cacheRead, cacheWrite].some((n) => n < 0) || !validContextTiers(contextTiers) || !validOfficialPrice(official)) return null;
   return { scope, source, modelId, name, provider, pool, input, output, cacheRead, cacheWrite,
     cacheReadFallback: Boolean(cacheReadFallback), cacheWriteFallback: Boolean(cacheWriteFallback),
-    ...(contextTiers?.length ? { contextTiers } : {}), ...(official ? { official } : {}) };
+    ...(contextTiers?.length ? { contextTiers } : {}), ...(official ? { official } : {}), ...priceLimits({ maxInputTokens, maxTokens }) };
+}
+
+// Optional catalog context limits (positive token counts). Display-only: they
+// are kept out of price signatures and never change a rate.
+export const PRICE_LIMIT_FIELDS = ['maxInputTokens', 'maxTokens'];
+export function priceLimits(source) {
+  return Object.fromEntries(PRICE_LIMIT_FIELDS.filter((field) => Number.isSafeInteger(source?.[field]) && source[field] > 0).map((field) => [field, source[field]]));
 }
 
 // Keep billing keys separate from report identities. In particular, dated
@@ -114,8 +122,9 @@ function addAlias(index, key, record) {
 }
 
 export function encodePriceMetadata(record) {
-  return JSON.stringify(record.contextTiers?.length || record.official ? { ...(record.contextTiers?.length ? { contextTiers: record.contextTiers } : {}),
-      ...(record.official ? { official: record.official } : {}) } : null);
+  const limits = priceLimits(record);
+  return JSON.stringify(record.contextTiers?.length || record.official || Object.keys(limits).length ? { ...(record.contextTiers?.length ? { contextTiers: record.contextTiers } : {}),
+      ...(record.official ? { official: record.official } : {}), ...limits } : null);
 }
 
 export function decodePriceRecord({ metadataJson, ...record }) {
@@ -125,7 +134,8 @@ export function decodePriceRecord({ metadataJson, ...record }) {
   if (metadata != null && (typeof metadata !== 'object' || Array.isArray(metadata) || !validContextTiers(metadata.contextTiers) || !validOfficialPrice(metadata.official))) {
     throw new Error('invalid context price metadata');
   }
-  return { ...record, ...(metadata?.contextTiers?.length ? { contextTiers: metadata.contextTiers } : {}), ...(metadata?.official ? { official: metadata.official } : {}) };
+  return { ...record, ...(metadata?.contextTiers?.length ? { contextTiers: metadata.contextTiers } : {}), ...(metadata?.official ? { official: metadata.official } : {}),
+    ...priceLimits(metadata) };
 }
 
 export function createPriceLookup(records) {

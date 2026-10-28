@@ -162,9 +162,10 @@ export function createUsageDatabase({ file, env, home } = {}) {
     }
   }
 
-  // Catalog IDs that price at least one request in the committed snapshot.
+  // Catalog IDs that price at least one request in the committed snapshot,
+  // each with the log model names that resolved to it.
   function usedPriceIds(records, snapshot) {
-    const used = new Set();
+    const used = new Map();
     if (!snapshot?.entries?.length || !records.length) return used;
     const lookup = createPriceLookup(records);
     const seen = new Set();
@@ -174,7 +175,10 @@ export function createUsageDatabase({ file, env, home } = {}) {
       if (seen.has(probe)) continue;
       seen.add(probe);
       const rate = lookup(entry.model, entry.client, { pricingProvider: entry.pricingProvider, providerId: entry.providerId });
-      if (rate) used.add(historyPriceKey(rate));
+      if (!rate) continue;
+      const id = historyPriceKey(rate);
+      if (!used.has(id)) used.set(id, new Set());
+      used.get(id).add(entry.model);
     }
     return used;
   }

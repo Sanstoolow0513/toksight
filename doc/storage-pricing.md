@@ -36,7 +36,8 @@ occurrence 序号保留相同请求的多次出现，防止重叠备份双算。
 - Kimi Code 的 kimi-code/k3、kimi-code/k3-256k 使用 moonshot/kimi-k3 参考别名，保留原始用量 ID。精确端点和用户覆盖优先，不使用第三方 K3 报价；滚动端点不推断历史底层模型。
 - 四类 USD/token 费率为 input、output、cacheRead、cacheWrite。缓存价缺失退回输入价，costCoverage 披露受影响请求。缓存读取不计入新鲜输入，缓存写入不进入命中率分母。
 - src/contextpricing.js 解析标准 `*_above_N_tokens` / `*_above_Nk_tokens` 字段及 `tiered_pricing` 连续范围表，以单次 input + cacheRead + cacheWrite 选择最高阈值；输出和会话累计量不参与。xAI 阈值包含边界。档位缺少输出/缓存价沿用已公布基础价；基础缓存价也缺失时使用档位输入价。不推断缓存时长、Priority、Flex、Batch 条件。
-- model_prices.metadata_json 保存 contextTiers 等可选元数据，encodePriceMetadata / decodePriceRecord 统一编码和校验。备份验证非负费率、阈值和回退标志；旧库无元数据时使用基础价。
+- model_prices.metadata_json 保存 contextTiers 与 maxInputTokens / maxTokens 等可选元数据，encodePriceMetadata / decodePriceRecord 统一编码和校验。上下文上限只作展示，priceSignature 不包含它们，因此只改上限不会产生价格历史修订。备份验证非负费率、阈值和回退标志；旧库无元数据时使用基础价。
+- usedPriceIds 返回价格 id 到日志原始模型名集合的映射，pricegroups 据此为 GET /api/prices 的合并模型行生成 usedAs。
 - 同一原始 ID 跨多个实际费率时，pricing.modelRates 标记 variableRates、source 为 null 并省略单一单价。每条请求仍按其适用历史版本和档位算费。costCoverage 区分 reported、user、litellm 和 unknown。
 
 完成引导且开启自动更新后，Web 按小时、启动及报告读取检查 LiteLLM 是否到期；手动更新强制检查。

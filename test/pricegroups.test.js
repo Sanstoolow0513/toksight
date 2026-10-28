@@ -68,3 +68,41 @@ test('price catalog adds one-row-per-model `models` with used flags and drops le
   try { assert.equal(check.prepare("SELECT count(*) n FROM model_prices WHERE source NOT IN ('litellm', 'user')").get().n, 0); }
   finally { check.close(); }
 });
+
+test('groupPriceRecords lists the log model names each group priced as usedAs', () => {
+  const rows = [rate('claude-opus-4-7-20260416', 'anthropic', 5e-6), rate('claude-opus-4-7', 'anthropic', 5e-6), rate('gpt-5.5', 'openai', 2e-6)];
+  const used = new Map([['anthropic:claude-opus-4-7', new Set(['claude-opus-4-7'])], ['anthropic:claude-opus-4-7-20260416', new Set(['claude-opus-4-7-20260416', 'anthropic/claude-opus-4-7'])]]);
+  const models = groupPriceRecords(rows, used);
+  const opus = models.find((m) => m.name === 'claude-opus-4-7');
+  assert.equal(opus.used, true);
+  assert.deepEqual(opus.usedAs, ['anthropic/claude-opus-4-7', 'claude-opus-4-7', 'claude-opus-4-7-20260416']);
+  assert.deepEqual(models.find((m) => m.name === 'gpt-5.5').usedAs, []);
+  // A plain Set (older callers) still marks use and leaves usedAs empty.
+  assert.deepEqual(groupPriceRecords(rows, new Set(['openai:gpt-5.5'])).map((m) => [m.name, m.used, m.usedAs]),
+    [['gpt-5.5', true, []], ['claude-opus-4-7', false, []]]);
+});
+
+test('price catalog models carry context limits and the log names they priced', async (t) => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'toksight-pricelimits-'));
+  t.after(async () => { await rm(dir, { recursive: true, force: true }); });
+  const make = (name, extra = {}) => priceRecord({ source: 'litellm', provider: 'openai', name, input: 1e-6, output: 0, cacheRead: 0, cacheWrite: 0, ...extra });
+  const db = createUsageDatabase({ file: path.join(dir, 'usage.sqlite') });
+  try {
+    const entry = (model) => ({ client: 'codex', sessionId: 's', model, timestamp: Date.now(), inputTokens: 10, outputTokens: 1, reasoningTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, costUsd: null, directory: null, title: null });
+    db.replace({ entries: [entry('gpt-example'), entry('GPT-Example-2026-01-01')], warnings: [], reportedCosts: new WeakSet(), pricing: { sources: {}, configDir: '/fixture', priceFor: () => null } });
+    db.updatePriceCatalog({ records: [make('gpt-example', { maxInputTokens: 272000, maxTokens: 128000 }), make('gpt-example-2026-01-01', { maxInputTokens: 272000 })], sources: ['litellm'], sourceDetails: {} }, '2026-09-08T12:00:00.000Z');
+    const catalog = db.priceCatalog();
+    const record = catalog.records.find((r) => r.name === 'gpt-example');
+    assert.equal(record.maxInputTokens, 272000);
+    assert.equal(record.maxTokens, 128000);
+    const [model] = catalog.models;
+    assert.equal(model.maxInputTokens, 272000);
+    assert.deepEqual(model.usedAs, ['GPT-Example-2026-01-01', 'gpt-example']);
+    // A later catalog that only changes context limits is not a new rate revision.
+    db.updatePriceCatalog({ records: [make('gpt-example', { maxInputTokens: 400000 }), make('gpt-example-2026-01-01')], sources: ['litellm'], sourceDetails: {} }, '2026-09-09T12:00:00.000Z');
+    const next = db.priceCatalog();
+    assert.equal(next.records.find((r) => r.name === 'gpt-example').maxInputTokens, 400000);
+    assert.equal(next.records.find((r) => r.name === 'gpt-example').revisions, 1);
+    assert.equal(next.records.find((r) => r.name === 'gpt-example-2026-01-01').maxInputTokens, undefined);
+  } finally { db.close(); }
+});

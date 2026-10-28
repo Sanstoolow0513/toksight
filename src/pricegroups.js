@@ -29,6 +29,8 @@ function better(a, b) {
   return false;
 }
 
+// `usedIds` is a Set of used catalog IDs or a Map from each used ID to the log
+// model names it priced; the Map also fills `usedAs`.
 export function groupPriceRecords(records, usedIds = new Set()) {
   const groups = new Map();
   for (const record of records ?? []) {
@@ -46,5 +48,6 @@ export function groupPriceRecords(records, usedIds = new Set()) {
     names: members.map((row) => row.name).sort(),
     ids: members.map((row) => row.id),
     used: members.some((row) => usedIds.has(row.id)),
+    usedAs: usedIds instanceof Map ? [...new Set(members.flatMap((row) => [...(usedIds.get(row.id) ?? [])]))].sort() : [],
   })).sort((a, b) => Number(b.used) - Number(a.used) || a.name.localeCompare(b.name) || a.source.localeCompare(b.source));
 }
