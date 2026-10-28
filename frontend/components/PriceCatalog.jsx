@@ -8,7 +8,7 @@ import { usePriceCatalog } from '@/lib/usePriceCatalog';
 import { Badge, Button, IconButton, MenuButton, cx } from './ui';
 import ProviderLogo from './ProviderLogo';
 
-const parts = [['input', 'compInput'], ['output', 'compOutput'], ['cacheRead', 'compCacheRead'], ['cacheWrite', 'compCacheWrite']];
+const parts = [['input', 'compInput'], ['output', 'compOutput'], ['cacheRead', 'compCacheRead'], ['cacheWrite', 'priceCacheWriteShort']];
 const PREVIEW = 5;
 const clock = (value) => `${String(Math.floor(value / 100)).padStart(2, '0')}:${String(value % 100).padStart(2, '0')}`;
 const dayNames = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
@@ -21,7 +21,7 @@ function Rate({ record, part, tx }) {
 // Four unit prices (USD per million tokens), as a strip of cells.
 function RateGrid({ record, tx, sub = false }) {
   return <dl className={cx('pgrid', sub && 'pgrid--sub')}>{parts.map(([part, label]) => <div className="pcell" key={part}>
-    <dt>{tx(label)}</dt><dd><Rate record={record} part={part} tx={tx} /></dd></div>)}</dl>;
+    <dt title={tx(label)}>{tx(label)}</dt><dd><Rate record={record} part={part} tx={tx} /></dd></div>)}</dl>;
 }
 
 // Conditions other than long-context tiers (those have their own grids).

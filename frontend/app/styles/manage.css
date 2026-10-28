@@ -56,7 +56,7 @@
   .pgrid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border-radius: var(--r-1); background: var(--surface-2); }
   .pcell { display: flex; flex-direction: column; gap: 2px; min-width: 0; padding: var(--sp-2) 10px; }
   .pcell + .pcell { box-shadow: inset var(--bw) 0 0 var(--line); }
-  .pcell dt { font-size: var(--fs-xs); color: var(--ink-3); }
+  .pcell dt { overflow: hidden; font-size: var(--fs-xs); color: var(--ink-3); text-overflow: ellipsis; white-space: nowrap; }
   .pcell dd { font: var(--fw-strong) var(--fs-base) var(--font-sans); letter-spacing: var(--track-tight); white-space: nowrap; color: var(--ink); }
   .is-used-view .pgrid:not(.pgrid--sub) .pcell dd { font-size: var(--fs-xl); }
   .pcell sup { margin-left: 1px; font-size: var(--fs-xs); color: var(--signal-ink); }
