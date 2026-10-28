@@ -310,9 +310,11 @@ horizontal navigation keeps all four views within reach. See `design-spec.md` fo
   Ctrl/⌘ + wheel, pinch or `+` / `-`, with an animated transition (skipped under reduced motion); the level
   is remembered. Click a day, drag or Shift+click for a range, Ctrl/⌘+click to add or remove days, click a
   week number for the whole week (Ctrl/⌘ appends it); arrows, Home/End, PageUp/PageDown, Enter and Esc
-  (back to today) work from the keyboard. The detail pane beside it shows the selection's totals, the hourly
+  (back to today) work from the keyboard, and the focus ring stays visible outside a selected day's frame.
+  The detail pane beside it shows the selection's totals, the hourly
   strip for a single day, and the usage split by agent and by model (the same model used from several agents is
-  one row); **View sessions** swaps the split for the sessions list. Below 1200px the calendar (70% of the
+  one row); **View sessions** swaps the split for the sessions list. The split's scroll area takes Tab focus and
+  scrolls with the arrow and Page keys. Below 1200px the calendar (70% of the
   viewport height) stacks above the details.
 - **Settings** contains appearance, language, the reporting time zone, and database import/export.
 

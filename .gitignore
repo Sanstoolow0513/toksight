@@ -9,3 +9,5 @@ dist/
 frontend/.next/
 frontend/out/
 usage-events-*.csv
+.codex/
+.grok/

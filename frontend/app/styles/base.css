@@ -24,7 +24,7 @@
     -webkit-font-smoothing: antialiased;
   }
   h1, h2, h3, h4 { font-weight: var(--fw-strong); }
-  :focus-visible { outline: var(--bw-strong) solid var(--signal); outline-offset: 2px; }
+  :focus-visible { outline: var(--bw-strong) solid var(--signal); outline-offset: var(--focus-offset); }
   ::selection { background: var(--signal-soft); color: var(--ink); }
   button:disabled, input:disabled, select:disabled { cursor: not-allowed; }
   /* Mono runs a touch smaller than the sans text around it, but never under

@@ -98,6 +98,12 @@
     --bw: 1px;
     --bw-strong: 2px;
 
+    /* Focus ring and selection frame offsets */
+    --focus-offset: 2px;          /* global :focus-visible ring */
+    --focus-offset-sel: 3px;      /* calendar cells: ring clears the 2px selection frame */
+    --focus-offset-inset: -2px;   /* ring drawn inside a scroll region's edge */
+    --sel-offset: 1px;            /* single-day selection frame */
+
     /* Control sizes */
     --ctl-sm: 28px;
     --ctl-md: 34px;

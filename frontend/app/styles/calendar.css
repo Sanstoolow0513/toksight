@@ -46,8 +46,14 @@
   .day[aria-disabled]:not(.is-future) { cursor: default; }
   .day.is-today .d { padding: 1px 3px; margin: -1px 0 0 -3px; border-radius: var(--r-xs); background: var(--signal); color: #fff; }
   .day:hover:not(.is-future):not(.is-blank):not([aria-disabled]) { box-shadow: inset 0 0 0 var(--bw) var(--signal); }
-  .day.is-sel { outline: var(--bw-strong) solid var(--ink); outline-offset: 1px; z-index: 1; }
+  .day.is-sel { outline: var(--bw-strong) solid var(--ink); outline-offset: var(--sel-offset); z-index: 1; }
   .day.is-msel { outline: var(--bw-strong) solid var(--signal); outline-offset: 0; z-index: 1; }
+  /* Keyboard focus on day and week cells sits outside any selection frame. On a
+     selected day the frame moves from outline to an outer box-shadow at the same
+     place, so the outline is free for the focus ring. */
+  .day:focus-visible, .wk:focus-visible { outline: var(--bw-strong) solid var(--signal); outline-offset: var(--focus-offset-sel); z-index: 2; }
+  .day.is-sel:focus-visible { box-shadow: 0 0 0 var(--sel-offset) var(--surface), 0 0 0 calc(var(--sel-offset) + var(--bw-strong)) var(--ink); transition: none; }
+  .day.is-msel:focus-visible { box-shadow: 0 0 0 var(--bw-strong) var(--signal); transition: none; }
   .wk { margin-left: var(--cal-gap); background: var(--surface); box-shadow: inset 0 0 0 var(--bw) var(--line-strong); }
   .wk::before { content: ''; position: absolute; left: -7px; top: 6px; bottom: 6px; border-left: var(--bw) dashed var(--line-strong); }
   .wk > span { left: 7px; }
@@ -73,6 +79,8 @@
   .calcol[data-zoom='compact'] .day { width: var(--cal-cell-compact); height: var(--cal-cell-compact); border-radius: var(--r-xs); }
   .calcol[data-zoom='compact'] .day > span { display: none; }
   .calcol[data-zoom='compact'] .day.is-today { box-shadow: inset 0 0 0 var(--bw-strong) var(--signal); }
+  .calcol[data-zoom='compact'] .day.is-today.is-sel:focus-visible { box-shadow: inset 0 0 0 var(--bw-strong) var(--signal), 0 0 0 var(--sel-offset) var(--surface), 0 0 0 calc(var(--sel-offset) + var(--bw-strong)) var(--ink); }
+  .calcol[data-zoom='compact'] .day.is-today.is-msel:focus-visible { box-shadow: inset 0 0 0 var(--bw-strong) var(--signal), 0 0 0 var(--bw-strong) var(--signal); }
   .calcol[data-zoom='compact'] .wk { display: none; }
 
   /* Detail pane */
@@ -104,6 +112,8 @@
   .haxis { display: flex; justify-content: space-between; margin-top: var(--sp-1); font-size: var(--fs-xs); color: var(--ink-3); }
   .dcard.split { flex: 1 1 0; }
   .dcard-body { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; margin: var(--sp-1) calc(-1 * var(--pad-x)) 0; padding: 0 var(--pad-x); }
+  /* Keyboard-scrollable region: the ring stays inside the card edge. */
+  .dcard-body:focus-visible { outline-offset: var(--focus-offset-inset); border-radius: var(--r-sm); }
   .dcard-body .session-list { padding: 0; }
   .sgroup + .sgroup { margin-top: var(--sp-3); }
   .sgroup-title { display: flex; justify-content: space-between; padding: var(--sp-2) 0 var(--sp-1); font-size: var(--fs-xs); font-weight: var(--fw-medium); color: var(--ink-2); }

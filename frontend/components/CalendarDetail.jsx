@@ -149,7 +149,7 @@ export default function CalendarDetail({ report, selected, days, today, start, t
           {tx(sessionsOpen ? 'viewSplit' : single ? 'viewDaySessions' : 'viewRangeSessions')}{sessionsOpen ? null : <ArrowUpRight {...icon} />}
         </Button>
       </header>
-      <div className="dcard-body">
+      <div className="dcard-body" tabIndex={0} role="region" aria-label={tx(sessionsOpen ? 'sessionsRegion' : 'splitRegion')}>
         {sessionsOpen ? <ol className="session-list">{sessions.map((row, index) => <SessionRow key={row.client + '/' + row.sessionId} row={row} index={index} agentLabel={agentLabel} locale={locale} tx={tx} timezone={data.timezone} />)}</ol>
           : <Split data={data} agentLabel={agentLabel} tx={tx} />}
       </div>
