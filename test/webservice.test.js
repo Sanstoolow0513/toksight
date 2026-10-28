@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, writeFile, rm, cp } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { createWebDataService } from '../src/webservice.js';
+import { createWebDataService as createService } from '../src/webservice.js';
 import { resolveWebQuery } from '../src/webquery.js';
 import { buildCostCoverage } from '../src/costcoverage.js';
 import { getPricing } from '../src/pricing.js';
@@ -12,14 +12,15 @@ import { calendarDaysBetween, parseDateArg } from '../src/dates.js';
 import { localDate } from '../src/aggregate.js';
 import { createWebServer } from '../src/webserver.js';
 import { createUsageDatabase } from '../src/database.js';
-import { parseCursorCsv } from '../src/cursorcsv.js';
 
 const base = parseArgs(['--offline']);
 const now = () => new Date(2026, 8, 8, 12).getTime();
 const at = (day) => new Date(2026, 8, day, 12).getTime();
 const entry = (over = {}) => ({ client: 'claude', model: 'model-a', sessionId: 's1', timestamp: at(8), inputTokens: 100, outputTokens: 10, reasoningTokens: 0, cacheReadTokens: 50, cacheWriteTokens: 0, costUsd: 1, directory: null, title: null, ...over });
-const raw = (entries) => ({ entries, warnings: [], perClient: [], reportedCosts: new WeakSet(), pricing: { priceFor: () => ({ source: 'builtin' }), sources: { builtin: true }, configDir: '/fixture' } });
-const memoryDatabase = () => createUsageDatabase({ file: ':memory:' });
+const raw = (entries) => ({ entries, warnings: [], perClient: [], reportedCosts: new WeakSet(), pricing: { priceFor: () => ({ source: 'user' }), sources: { user: true }, configDir: '/fixture' } });
+const memoryDatabase = () => { const database = createUsageDatabase({ file: ':memory:' }); database.completeSetup(); return database; };
+const createWebDataService = (base, options) => createService(base, { genericPricing: async ({ now }) => ({ records: [], warnings: [],
+  sourceDetails: { litellm: { fetchedAt: new Date(now()).toISOString(), state: 'fresh', url: 'https://example.test/litellm' } } }), ...options });
 const service = (entries, opts = base) => createWebDataService(opts, { collect: async () => raw(entries), database: memoryDatabase(), now });
 const query = (text) => new URLSearchParams(text);
 
@@ -99,130 +100,39 @@ test('concurrent initial requests share collection; later reads use the committe
   get.close();
 });
 
-test('Cursor CSV import is idempotent, filterable and survives refresh in the same snapshot', async () => {
-  const csv = await (await import('node:fs/promises')).readFile(new URL('./fixtures/cursor/usage.csv', import.meta.url), 'utf8');
-  const get = service([entry()]);
-  try {
-    await get.initialize();
-    const first = await get.importCursor(csv);
-    assert.equal(first.imported, 2);
-    assert.equal(first.duplicates, 0);
-    assert.equal(first.zeroUsage, 1);
-    const august = await get(query('client=cursor&period=custom&since=2026-08-01&until=2026-08-31'));
-    assert.equal(august.totals.requests, 2);
-    assert.equal(august.totals.totalTokens, 94);
-    assert.equal(august.totals.sessions, 0);
-    assert.equal(august.sessions.length, 0);
-    assert.equal(august.clients.cursor.cacheHitRate, 50 / 80);
-    assert.equal(august.costCoverage.unpricedRequests, 1);
-    assert.equal(august.costCoverage.sources.reported.requests, 1);
-    assert.equal(august.scopeRange.lastAt, Date.parse('2026-08-31T12:20:00.334Z'));
-    const rebilled = csv
-      .replace('"Included","cursor-test-model","No"', '"User API Key","cursor-test-model","Yes"')
-      .replace('"49","Included"', '"49","$0.75"');
-    const corrected = await get.importCursor(rebilled);
-    assert.equal(corrected.imported, 0);
-    assert.equal(corrected.updated, 1);
-    assert.equal(corrected.duplicates, 1);
-    assert.equal((await get(query('client=cursor'))).totals.costUsd, 1);
-    const restoredMode = await get.importCursor(csv);
-    assert.equal(restoredMode.updated, 1, 'an explicit CSV can correct Max Mode metadata');
-    assert.equal(restoredMode.duplicates, 1);
-    assert.equal((await get(query('client=cursor'))).totals.costUsd, 1, 'Included cannot erase a reported charge');
-    assert.equal((await get.importCursor(csv)).duplicates, 2);
-    const newRow = csv.split('\n')[1].replace('2026-08-31T12:19:00.334Z', '2026-08-30T12:19:00.334Z');
-    const overlap = await get.importCursor(`${csv.trimEnd()}\n${newRow}\n`);
-    assert.equal(overlap.imported, 1);
-    assert.equal(overlap.duplicates, 2);
-    assert.equal((await get()).totals.requests, 4);
-    await get.refresh();
-    assert.equal((await get()).totals.requests, 4);
-  } finally { get.close(); }
-});
-
-test('Cursor official prices estimate Included rows immediately after import and survive refresh', async () => {
-  const csv = await (await import('node:fs/promises')).readFile(new URL('./fixtures/cursor/usage.csv', import.meta.url), 'utf8');
-  const get = createWebDataService(base, {
-    now, database: memoryDatabase(), collect: async () => raw([entry()]),
-    cursorPricing: async () => ({ state: 'refreshed', warnings: [], models: [
-      { name: 'cursor-test-model', provider: 'Cursor', pool: 'cursor', input: 2, cacheWrite: null, cacheRead: 0.2, output: 4 },
-    ] }),
-  });
-  try {
-    const imported = await get.importCursor(csv);
-    assert.equal(imported.imported, 2);
-    const report = await get(query('client=cursor'));
-    const estimate = (5 * 2 + 10 * 2 + 30 * 0.2 + 4 * 4) / 1e6;
-    assert.ok(Math.abs(report.totals.costUsd - (estimate + 0.25)) < 1e-12);
-    assert.equal(report.costCoverage.sources.cursor.requests, 1);
-    assert.equal(report.costCoverage.sources.reported.requests, 1);
-    assert.equal(report.pricing.sources.cursor, 'refreshed');
-    await get.refresh();
-    const afterRefresh = await get(query('client=cursor'));
-    assert.ok(Math.abs(afterRefresh.totals.costUsd - (estimate + 0.25)) < 1e-12);
-    assert.equal(afterRefresh.costCoverage.sources.cursor.requests, 1);
-    assert.equal(afterRefresh.pricing.sources.cursor, 'refreshed');
-  } finally { get.close(); }
-});
-
-test('existing Cursor imports gain official estimates on web startup without scanning agents', async () => {
-  const csv = await (await import('node:fs/promises')).readFile(new URL('./fixtures/cursor/usage.csv', import.meta.url), 'utf8');
-  const database = memoryDatabase();
-  database.replace(raw([entry()]));
-  database.importCursor(parseCursorCsv(csv).records);
-  let scans = 0;
-  const get = createWebDataService(base, {
-    now, database, collect: async () => { scans++; return raw([]); },
-    cursorPricing: async () => ({ state: 'fresh', warnings: [], models: [
-      { name: 'cursor-test-model', provider: 'Cursor', pool: 'cursor', input: 2, cacheWrite: null, cacheRead: 0.2, output: 4 },
-    ] }),
-  });
-  try {
-    await get.initialize();
-    const report = await get(query('client=cursor'));
-    assert.equal(scans, 0);
-    assert.equal(report.costCoverage.sources.cursor.requests, 1);
-    assert.equal(report.pricing.sources.cursor, 'fresh');
-  } finally { get.close(); }
-});
-
-test('both price sources update at most weekly automatically, and manual update bypasses the interval', async () => {
+test('LiteLLM updates weekly, manual updates bypass the interval and failures retain saved rates', async () => {
   let time = Date.parse('2026-09-24T12:00:00Z');
-  let genericCalls = 0, cursorCalls = 0, failCursor = false;
+  let genericCalls = 0, fail = false;
   const database = memoryDatabase();
   const get = createWebDataService(parseArgs([]), {
     now: () => time, database, collect: async () => raw([]),
-    genericPricing: async () => {
+    genericPricing: async ({ selectedSources }) => {
+      assert.deepEqual(selectedSources, ['litellm']);
       genericCalls++;
-      return { records: [{ scope: 'default', source: 'litellm', modelId: 'test', name: 'test',
+      if (fail) throw new Error('offline upstream');
+      return { records: [{ scope: 'default', source: 'litellm', provider: 'openai', modelId: 'gpt-test', name: 'gpt-test',
         input: 1e-6, cacheRead: 1e-6, cacheWrite: 1e-6, output: 1e-6 }],
-      sourceDetails: { litellm: { fetchedAt: new Date(time).toISOString(), state: 'refreshed', url: 'https://example.test/litellm' } },
-      warnings: [] };
-    },
-    cursorPricing: async () => {
-      cursorCalls++;
-      if (failCursor) throw new Error('offline upstream');
-      return { models: [{ name: 'Grok 4.6', provider: 'Cursor', pool: 'cursor',
-        input: 2, cacheRead: 0.5, cacheWrite: null, output: 6 }],
-      fetchedAt: new Date(time).toISOString(), state: 'refreshed', source: 'https://example.test/cursor', warnings: [] };
+      sourceDetails: { litellm: { fetchedAt: new Date(time).toISOString(), state: 'refreshed', url: 'https://example.test/litellm' } }, warnings: [] };
     },
   });
   try {
     await get.initialize();
-    assert.equal(genericCalls, 1); assert.equal(cursorCalls, 1);
+    assert.equal(genericCalls, 1);
     time += 6 * 24 * 60 * 60 * 1000;
-    await get();
-    assert.equal(genericCalls, 1); assert.equal(cursorCalls, 1);
+    await get(); assert.equal(genericCalls, 1);
     time += 2 * 24 * 60 * 60 * 1000;
-    await get();
-    assert.equal(genericCalls, 2); assert.equal(cursorCalls, 2);
-    await get.updatePrices();
-    assert.equal(genericCalls, 3); assert.equal(cursorCalls, 3);
-    failCursor = true;
+    await get(); assert.equal(genericCalls, 2);
+    await get.updatePrices(); assert.equal(genericCalls, 3);
+    time += 8 * 24 * 60 * 60 * 1000;
+    fail = true;
     const failed = await get.updatePrices();
-    assert.match(failed.warnings[0], /Cursor pricing unavailable/);
-    assert.equal(database.read().pricing.priceFor('cursor-grok-4.6-high', 'cursor').input, 2e-6);
-    assert.equal(database.read().pricing.updates.cursor.state, 'unavailable');
+    assert.match(failed.warnings[0], /LiteLLM pricing unavailable/);
+    assert.equal(database.read().pricing.priceFor('gpt-test', 'codex').input, 1e-6);
+    assert.equal(database.read().pricing.updates.litellm.state, 'unavailable');
+    const attempts = genericCalls;
+    await get(); assert.equal(genericCalls, attempts, 'failed automatic updates back off for an hour');
+    time += 60 * 60 * 1000;
+    await get(); assert.equal(genericCalls, attempts + 1);
   } finally { get.close(); }
 });
 
@@ -347,10 +257,12 @@ test('real collection preserves agent-reported cost provenance alongside compute
   const project = path.join(home, '.claude', 'projects', 'fixture');
   await mkdir(project, { recursive: true });
   await writeFile(path.join(project, 'session.jsonl'), JSON.stringify({ type: 'assistant', sessionId: 'claude-fixture', timestamp: '2026-09-08T10:00:00Z', message: { id: 'm', model: 'claude-sonnet-4', usage: { input_tokens: 100, output_tokens: 10 } } }));
+  await mkdir(env.TOKSIGHT_CONFIG_DIR, { recursive: true });
+  await writeFile(path.join(env.TOKSIGHT_CONFIG_DIR, 'pricing.json'), JSON.stringify({ 'claude-sonnet-4': { input: 3, output: 15 } }));
   const get = createWebDataService(base, { home, env, now });
   const data = await get();
   assert.ok(data.costCoverage.sources.reported.requests > 0);
-  assert.equal(data.costCoverage.sources.builtin.requests, 1);
+  assert.equal(data.costCoverage.sources.user.requests, 1);
   assert.equal(data.costCoverage.sources.reported.costUsd, data.clients.opencode.costUsd);
   get.close();
 });
@@ -377,16 +289,16 @@ test('cost coverage separates reports, estimates, unpriced requests and actual c
   const env = { TOKSIGHT_CONFIG_DIR: home };
   await writeFile(path.join(home, 'pricing.json'), JSON.stringify({ custom: { input: 2, output: 4 }, explicit: { input: 2, output: 4, cacheRead: 2, cacheWrite: 2 } }));
   await mkdir(path.join(home, 'cache'));
-  await writeFile(path.join(home, 'cache', 'litellm-pricing.json'), JSON.stringify({ fetchedAt: Date.now(), data: { remote: { input_cost_per_token: 0.000002, output_cost_per_token: 0.000004 } } }));
-  const pricing = await getPricing({ home, env }); // Fresh local fixture: no fetch.
+  await writeFile(path.join(home, 'cache', 'litellm-pricing.json'), JSON.stringify({ fetchedAt: Date.now(), data: { remote: { mode: 'chat', litellm_provider: 'openai', input_cost_per_token: 0.000002, output_cost_per_token: 0.000004 } } }));
+  const pricing = await getPricing({ home, env, selectedSources: ['litellm'] }); // Fresh local fixture: no fetch.
   const reported = entry({ client: 'opencode', model: 'custom', costUsd: 7 });
   const coverage = buildCostCoverage([
-    reported, entry({ model: 'custom' }), entry({ model: 'explicit' }), entry({ model: 'remote' }), entry({ model: 'claude-sonnet-4', cacheReadTokens: 0 }), entry({ costUsd: null }),
+    reported, entry({ model: 'custom' }), entry({ model: 'explicit' }), entry({ client: 'codex', model: 'remote' }), entry({ model: 'claude-sonnet-4', cacheReadTokens: 0 }), entry({ costUsd: null }),
   ], { pricing, reportedCosts: new WeakSet([reported]) });
   assert.equal(coverage.sources.reported.costUsd, 7);
   assert.equal(coverage.sources.user.requests, 2);
   assert.equal(coverage.sources.litellm.requests, 1);
-  assert.equal(coverage.sources.builtin.requests, 1);
+  assert.equal(coverage.sources.unknown.requests, 1); // claude-sonnet-4 has no fetched or user price.
   assert.equal(coverage.cacheFallbackRequests, 2); // explicit equal prices and reported costs are not fallbacks.
   assert.equal(coverage.unpricedRequests, 1);
 });
@@ -401,5 +313,46 @@ test('web API forwards filters and returns useful 400 errors', async () => {
     const invalid = await fetch(url + '/api/data?since=2026-02-30');
     assert.equal(invalid.status, 400);
     assert.equal((await invalid.json()).code, 'BAD_QUERY');
+  } finally { await server.close(); }
+});
+
+test('days= keeps only the listed local days of the range, in the report time zone', async () => {
+  const get = createWebDataService(base, { database: memoryDatabase(), now: () => Date.parse('2026-09-10T12:00:00Z'), collect: async () => raw([
+    entry({ timestamp: Date.parse('2026-09-01T10:00:00Z'), inputTokens: 1 }),
+    entry({ timestamp: Date.parse('2026-09-03T10:00:00Z'), inputTokens: 2 }),
+    entry({ timestamp: Date.parse('2026-09-05T10:00:00Z'), inputTokens: 4 }),
+    // 2026-09-06 in Shanghai, 2026-09-05 in Los Angeles.
+    entry({ timestamp: Date.parse('2026-09-05T20:00:00Z'), inputTokens: 8 }),
+  ]) });
+  try {
+    const all = await get(query('period=custom&since=2026-09-01&until=2026-09-06&timezone=Asia%2FShanghai'));
+    assert.equal(all.totals.inputTokens, 15);
+    assert.equal(all.view.days, null);
+    const picked = await get(query('period=custom&since=2026-09-01&until=2026-09-06&timezone=Asia%2FShanghai&days=2026-09-06,2026-09-01,2026-09-01'));
+    assert.equal(picked.totals.inputTokens, 9);
+    assert.deepEqual(picked.daily.map((r) => r.date), ['2026-09-01', '2026-09-06']);
+    assert.deepEqual(picked.view.days, ['2026-09-01', '2026-09-06'], 'sorted and de-duplicated');
+    const la = await get(query('period=custom&since=2026-09-01&until=2026-09-06&timezone=America%2FLos_Angeles&days=2026-09-05'));
+    assert.equal(la.totals.inputTokens, 12, 'days follow the requested zone');
+    const outside = await get(query('period=custom&since=2026-09-01&until=2026-09-02&days=2026-09-05'));
+    assert.equal(outside.totals.requests, 0, 'days never widen since/until');
+    for (const value of ['days=', 'days=2026-09-31', 'days=2026-9-01', 'days=2026-09-01,', 'days=2026-09-01&days=2026-09-02', 'days=2026-09-01,x',
+      'days=' + Array.from({ length: 4001 }, () => '2026-09-01').join(',')]) {
+      await assert.rejects(get(query('period=custom&since=2026-09-01&until=2026-09-06&' + value)), (err) => err.status === 400 && err.code === 'BAD_QUERY', value.slice(0, 40));
+    }
+  } finally { get.close(); }
+  assert.deepEqual(resolveWebQuery(query('period=all'), base).days, null);
+});
+
+test('web API returns 400 for a malformed days list', async () => {
+  const server = createWebServer({ port: 0, outDir: os.tmpdir(), getData: service([entry()]) });
+  const { url } = await server.start();
+  try {
+    const bad = await fetch(url + '/api/data?period=custom&since=2026-09-01&until=2026-09-08&days=2026-02-30');
+    assert.equal(bad.status, 400);
+    assert.equal((await bad.json()).code, 'BAD_QUERY');
+    const ok = await fetch(url + '/api/data?period=custom&since=2026-09-01&until=2026-09-08&days=2026-09-08');
+    assert.equal(ok.status, 200);
+    assert.equal((await ok.json()).totals.requests, 1);
   } finally { await server.close(); }
 });

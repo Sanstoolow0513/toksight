@@ -62,6 +62,16 @@ export function createFormatter({ color = true } = {}) {
   return fmt;
 }
 
+// Compact span: "3d 4h", "2h 5m", "12m", "<1m".
+export function compactDuration(ms) {
+  const minutes = Math.floor(Math.abs(Number(ms) || 0) / 60000);
+  if (minutes < 1) return '<1m';
+  const d = Math.floor(minutes / 1440), h = Math.floor((minutes % 1440) / 60), m = minutes % 60;
+  if (d) return h ? `${d}d ${h}h` : `${d}d`;
+  if (h) return m ? `${h}h ${m}m` : `${h}h`;
+  return `${m}m`;
+}
+
 export function renderTable({ columns, rows }) {
   const cells = rows.map((row) => columns.map((col) => col.value(row)));
   const widths = columns.map((col, i) =>

@@ -2,7 +2,6 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { buildPayload } from '../src/payload.js';
-import { createPriceLookup, priceRecord } from '../src/pricecatalog.js';
 
 // Base entry: 2026-08-10 12:00 local time — same shape the parsers emit.
 function entry(over = {}) {
@@ -23,7 +22,7 @@ function entry(over = {}) {
   };
 }
 
-function payload(entries, opts = {}, pricing = { sources: { builtin: true }, configDir: null }) {
+function payload(entries, opts = {}, pricing = { sources: { user: false }, configDir: null }) {
   return buildPayload({
     entries,
     warnings: [],
@@ -93,26 +92,6 @@ test('payload models rows keep per-(client, model) cache hit rate', () => {
   assert.equal(p.models[0].client, 'claude');
   assert.equal(p.models[0].model, 'm1');
   assert.equal(p.models[0].cacheHitRate, 400 / 600);
-});
-
-test('model rows combine Cursor effort IDs after pricing and keep agents separate', () => {
-  const entries = [
-    entry({ client: 'cursor', sessionId: null, model: 'opus5.5-high', costUsd: 2 }),
-    entry({ client: 'cursor', sessionId: null, model: 'opus5.5-medium', costUsd: 3 }),
-    entry({ client: 'claude', model: 'claude-opus-5-5', costUsd: 4 }),
-  ];
-  const priceFor = createPriceLookup([priceRecord({ scope: 'cursor', source: 'cursor', name: 'Claude Opus 5.5',
-    input: 4e-6, output: 20e-6, cacheWrite: 5e-6, cacheRead: 0.2e-6 })]);
-  const p = payload(entries, {}, { priceFor, sources: { cursor: 'fresh' } });
-  assert.equal(p.totals.costUsd, 9);
-  assert.equal(p.models.length, 2);
-  const cursor = p.models.find((row) => row.client === 'cursor');
-  assert.equal(cursor.model, 'Claude Opus 5.5');
-  assert.deepEqual(cursor.modelIds, ['opus5.5-high', 'opus5.5-medium']);
-  assert.equal(cursor.costUsd, 5);
-  assert.equal(cursor.requests, 2);
-  assert.equal(p.models.find((row) => row.client === 'claude').costUsd, 4);
-  assert.deepEqual(p.pricing.modelRates.filter((row) => row.client === 'cursor').map((row) => row.effort), ['high', 'medium']);
 });
 
 test('missing timestamps surface as null firstAt/lastAt, not sentinels', () => {

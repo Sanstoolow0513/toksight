@@ -10,10 +10,11 @@ import { readDatabaseBackup } from '../src/dbtransfer.js';
 import { runDatabaseTransfer } from '../src/dbcommand.js';
 import { parseArgs } from '../src/args.js';
 import { collectAll } from '../src/collect.js';
-import { parseCursorCsv } from '../src/cursorcsv.js';
 import { priceRecord } from '../src/pricecatalog.js';
 import { buildCostCoverage } from '../src/costcoverage.js';
 import { createWebDataService } from '../src/webservice.js';
+import { readStoredPriceFor } from '../src/usageimports.js';
+import { historyPriceKey, priceSignature } from '../src/pricehistory.js';
 
 const rate = { input: 0.001, output: 0.002, cacheRead: 0.0001, cacheWrite: 0.001, source: 'user' };
 const entry = (extra = {}) => ({ client: 'opencode', sessionId: 'one', model: 'backup-only', timestamp: Date.parse('2026-08-12T12:00:00Z'),
@@ -22,9 +23,6 @@ const entry = (extra = {}) => ({ client: 'opencode', sessionId: 'one', model: 'b
 const collected = (entries, reported = []) => ({ entries, warnings: [], reportedCosts: new WeakSet(reported),
   pricing: { sources: { user: true }, configDir: '/fixture', priceFor: () => rate,
     records: [priceRecord({ ...rate, name: 'backup-only' })] } });
-const csv = 'Date,Cloud Agent ID,Automation ID,Kind,Model,Max Mode,Input (w/ Cache Write),Input (w/o Cache Write),Cache Read,Output Tokens,Total Tokens,Cost\n' +
-  '2026-08-15T12:00:00Z,,,Included,cursor-backup,No,0,10,30,2,42,Included\n';
-
 async function fixture(t) {
   const dir = await mkdtemp(path.join(os.tmpdir(), 'toksight-transfer-test-'));
   const cleanup = [];
@@ -35,7 +33,7 @@ async function fixture(t) {
   return { dir, file, env, home: dir, cleanup };
 }
 
-test('SQLite backup includes WAL, prices and Cursor; merging is durable, idempotent and portable again', async (t) => {
+test('SQLite backup includes WAL and prices; merging is durable, idempotent and portable again', async (t) => {
   const ctx = await fixture(t);
   const source = createUsageDatabase({ file: path.join(ctx.dir, 'source.sqlite') });
   const target = createUsageDatabase({ file: ctx.file });
@@ -44,31 +42,24 @@ test('SQLite backup includes WAL, prices and Cursor; merging is durable, idempot
   ctx.cleanup.push(() => { source.close(); target.close(); observer.close(); third.close(); });
   const reported = entry({ sessionId: 'reported', costUsd: 4 });
   source.replace(collected([entry(), entry(), reported], [reported]));
-  source.importCursor(parseCursorCsv(csv).records, undefined, {
-    state: 'fresh', priceFor: () => ({ ...rate, source: 'cursor' }),
-    records: [priceRecord({ ...rate, source: 'cursor', scope: 'cursor', name: 'cursor-backup' })],
-  });
   const local = entry({ sessionId: 'target-only', costUsd: 7 });
   target.replace(collected([local, entry()], [local]));
   assert.equal(observer.read().entries.length, 2);
   const bytes = source.exportDatabase();
   assert.equal(bytes.subarray(0, 16).toString(), 'SQLite format 3\0');
   const first = target.importDatabase(bytes);
-  assert.deepEqual([first.imported, first.duplicates, first.entries], [3, 1, 5]);
-  assert.equal(observer.read().entries.length, 5);
-  assert.deepEqual([target.importDatabase(bytes).imported, target.read().entries.length], [0, 5]);
+  assert.deepEqual([first.imported, first.duplicates, first.entries], [2, 1, 4]);
+  assert.equal(observer.read().entries.length, 4);
+  assert.deepEqual([target.importDatabase(bytes).imported, target.read().entries.length], [0, 4]);
   target.replace(collected([]));
-  assert.equal(target.read().entries.length, 4, 'all imported rows survive refresh, including those originally local');
+  assert.equal(target.read().entries.length, 3, 'all imported rows survive refresh, including those originally local');
   assert.equal(target.read().reportedCosts.has(target.read().entries.find((e) => e.sessionId === 'reported')), true);
-  assert.ok(Math.abs(target.read().entries.find((e) => e.client === 'cursor').costUsd - 0.017) < 1e-12);
-  assert.equal(third.importDatabase(target.exportDatabase()).entries, 4);
-  assert.equal(third.importDatabase(bytes).duplicates, 4);
+  assert.equal(third.importDatabase(target.exportDatabase()).entries, 3);
+  assert.equal(third.importDatabase(bytes).duplicates, 3);
 
   const cli = await collectAll({ offline: true, clients: null, since: null, until: null }, ctx);
-  assert.equal(cli.entries.length, 4);
-  assert.ok(Math.abs(cli.entries.find((e) => e.client === 'cursor').costUsd - 0.017) < 1e-12);
+  assert.equal(cli.entries.length, 3);
   assert.equal(buildCostCoverage(cli.entries, cli).sources.reported.requests, 1);
-  assert.equal(buildCostCoverage(cli.entries, cli).sources.cursor.requests, 1);
   assert.equal(cli.perClient.find((c) => c.id === 'opencode').entries.length, 3);
   const filtered = await collectAll({ offline: true, clients: ['opencode'], since: null, until: null }, ctx);
   assert.equal(filtered.entries.length, 3);
@@ -89,31 +80,56 @@ test('overlapping backups preserve identical occurrences and known charges; a re
   } finally { a.close(); b.close(); }
 });
 
-test('Cursor mode metadata survives reimport and backup merging without losing charges or duplicating events', () => {
-  const source = createUsageDatabase({ file: ':memory:' }), target = createUsageDatabase({ file: ':memory:' });
+test('upgraded databases and legacy backups ignore retired clients and non-first-party rates without discarding reported charges', async (t) => {
+  const ctx = await fixture(t);
+  const sourceFile = path.join(ctx.dir, 'legacy.sqlite');
+  const source = createUsageDatabase({ file: sourceFile });
+  const target = createUsageDatabase({ file: ':memory:' });
+  ctx.cleanup.push(() => { source.close(); target.close(); });
+  const entries = ['old-public', 'old-reseller', 'old-builtin', 'gpt-example', 'charged'].map((model) =>
+    entry({ model, sessionId: model, costUsd: model === 'charged' ? 7 : 0.141 }));
+  source.replace(collected(entries, [entries.at(-1)]));
+  const native = priceRecord({ ...rate, name: 'gpt-example', source: 'litellm', provider: 'openai' });
+  const retired = { ...native, source: 'openai', name: 'old-public', modelId: 'old-public' };
+  const reseller = { ...native, provider: 'azure', name: 'old-reseller', modelId: 'old-reseller' };
+  const builtin = { ...native, source: 'builtin', name: 'old-builtin', modelId: 'old-builtin' };
+  source.updatePriceCatalog({ records: [native], sources: ['litellm'], sourceDetails: {} }, '2026-09-01T00:00:00.000Z');
+  const legacy = new DatabaseSync(sourceFile);
   try {
-    source.replace(collected([]));
-    target.replace(collected([]));
-    const legacy = parseCursorCsv(csv).records[0];
-    delete legacy.entry.cursorMaxMode;
-    legacy.entry.costUsd = 0.75;
-    target.importCursor([legacy]);
-    const current = parseCursorCsv(csv.replace(',No,', ',Yes,')).records;
-    source.importCursor(current);
-    assert.equal(target.importDatabase(source.exportDatabase()).updated, 1);
-    assert.equal(target.read().entries[0].cursorMaxMode, true);
-    assert.equal(target.read().entries[0].costUsd, 0.75);
-    assert.equal(target.importDatabase(source.exportDatabase()).duplicates, 1);
-    assert.equal(readDatabaseBackup(target.exportDatabase()).cursor[0].entry.cursorMaxMode, true);
-    // An explicit new CSV can correct mode metadata while its Included label
-    // cannot overwrite a known numeric charge. Unknown mode cannot erase it.
-    assert.equal(target.importCursor(parseCursorCsv(csv).records).updated, 1);
-    assert.equal(target.read().entries[0].cursorMaxMode, false);
-    assert.equal(target.read().entries[0].costUsd, 0.75);
-    assert.equal(target.importCursor([legacy]).duplicates, 1);
-    assert.equal(target.read().entries.length, 1);
-    assert.equal(target.read().entries[0].cursorMaxMode, false);
-  } finally { source.close(); target.close(); }
+    legacy.exec("DELETE FROM model_prices WHERE source = 'user'; CREATE TABLE cursor_imports (fingerprint TEXT, data_json TEXT)");
+    legacy.prepare('INSERT INTO cursor_imports VALUES (?, ?)').run('old:0', 'retired format');
+    legacy.prepare('INSERT INTO entries VALUES (?, ?, ?, ?, ?)').run(99, 'cursor', null, '{"client":"cursor"}', 0);
+    legacy.prepare('INSERT INTO usage_imports VALUES (?, ?, ?, ?)').run('old-cursor:0', '{"client":"cursor"}', 0, 'null');
+    legacy.prepare('UPDATE snapshot_meta SET entry_count = entry_count + 1, model_prices_json = ?, pricing_sources_json = ?').run(
+      JSON.stringify([[retired.name, retired], [reseller.name, reseller], [builtin.name, builtin], [native.name, native], ['cursor\u0000retired', native]]),
+      JSON.stringify({ openai: 'fresh', cursor: 'fresh', litellm: 'fresh' }));
+    const putPrice = legacy.prepare(`INSERT INTO model_prices (scope, source, model_id, name, provider, pool,
+      input_usd_per_token, cache_read_usd_per_token, cache_write_usd_per_token, output_usd_per_token,
+      cache_read_fallback, cache_write_fallback, metadata_json) VALUES (?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, 0, 0, ?)`);
+    for (const row of [retired, reseller, builtin, { ...native, scope: 'cursor', source: 'cursor', name: 'retired' }]) {
+      putPrice.run(row.scope, row.source, row.modelId, row.name, row.provider, row.input, row.cacheRead, row.cacheWrite, row.output, 'retired metadata');
+    }
+    const putHistory = legacy.prepare('INSERT INTO price_history VALUES (?, ?, ?, ?)');
+    for (const row of [retired, reseller, builtin]) {
+      putHistory.run(historyPriceKey(row), '2026-09-01T00:00:00.000Z', priceSignature(row), JSON.stringify(row));
+    }
+  } finally { legacy.close(); }
+  assert.deepEqual(source.read().entries.map(r => r.costUsd == null ? null : Number(r.costUsd.toFixed(6))), [null, null, null, 0.141, 7]);
+  assert.deepEqual(source.priceCatalog().records.map(r => r.name), ['gpt-example']);
+  assert.equal(source.priceStatus().revisions, 1);
+  assert.deepEqual(source.priceCatalog(historyPriceKey(retired)).history, []);
+  const stored = readStoredPriceFor(sourceFile);
+  assert.equal(stored('old-public', 'codex'), null);
+  assert.equal(stored('old-reseller', 'codex'), null);
+  assert.equal(stored('old-builtin', 'codex'), null);
+  const backup = readDatabaseBackup(source.exportDatabase());
+  assert.equal(backup.rows.length, 5);
+  assert.equal(backup.history.length, 1);
+  assert.deepEqual(backup.catalog.map(r => r.name), ['gpt-example']);
+  assert.equal(target.importDatabase(source.exportDatabase()).entries, 5);
+  assert.deepEqual(target.read().entries.map(r => r.costUsd == null ? null : Number(r.costUsd.toFixed(6))), [null, null, null, 0.141, 7]);
+  assert.equal(target.read().reportedCosts.has(target.read().entries.at(-1)), true);
+  assert.equal(readDatabaseBackup(target.exportDatabase()).rows.length, 5);
 });
 
 test('invalid, future-version and incomplete databases fail before changing committed usage', async (t) => {

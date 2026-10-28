@@ -8,13 +8,15 @@ import { DatabaseSync } from 'node:sqlite';
 
 import { computeCost, configDir } from './pricing.js';
 import { createPriceLookup, decodePriceRecord, encodePriceMetadata, priceModelKey, storedPriceFor } from './pricecatalog.js';
-import { cursorModelSignature } from './cursormodels.js';
-import { selectCursorImports } from './cursorcsv.js';
 import { mergeUsageRows } from './usageimports.js';
 import { exportDatabaseBytes, readDatabaseBackup } from './dbtransfer.js';
+import { PRICE_SOURCES, priceEnabled } from './priceselection.js';
+import { installLocalPriceDatabase } from './localpricedb.js';
+import { createHistoricalPriceLookup, historyPriceKey } from './pricehistory.js';
+import { bindProvider, readProviderBindings } from './providerbindings.js';
+import { groupPriceRecords } from './pricegroups.js';
 
 const SCHEMA_VERSION = 1;
-const cursorPriceKey = (model) => `cursor\u0000${model}`;
 
 export function databasePath({ env = process.env, home = os.homedir() } = {}) {
   return path.join(configDir({ env, home }), 'usage.sqlite');
@@ -51,12 +53,6 @@ export function createUsageDatabase({ file, env, home } = {}) {
         reported_cost INTEGER NOT NULL CHECK (reported_cost IN (0, 1)),
         price_json TEXT NOT NULL
       );
-      CREATE TABLE IF NOT EXISTS cursor_imports (
-        fingerprint TEXT PRIMARY KEY,
-        data_json TEXT NOT NULL,
-        reported_cost INTEGER NOT NULL CHECK (reported_cost IN (0, 1)),
-        included INTEGER NOT NULL DEFAULT 1 CHECK (included IN (0, 1))
-      );
       CREATE TABLE IF NOT EXISTS model_prices (
         id INTEGER PRIMARY KEY,
         scope TEXT NOT NULL,
@@ -82,33 +78,28 @@ export function createUsageDatabase({ file, env, home } = {}) {
         url TEXT
       );
     `);
-    if (!db.prepare('PRAGMA table_info(cursor_imports)').all().some((column) => column.name === 'included')) {
-      // Old imports stored no Cost label. Their null costs were historically
-      // treated as Included; preserve that interpretation on migration.
-      try { db.exec('ALTER TABLE cursor_imports ADD COLUMN included INTEGER NOT NULL DEFAULT 1 CHECK (included IN (0, 1))'); }
-      catch (err) {
-        // Another toksight process may have performed the same migration.
-        if (!db.prepare('PRAGMA table_info(cursor_imports)').all().some((column) => column.name === 'included')) throw err;
-      }
-    }
     if (!db.prepare('PRAGMA table_info(model_prices)').all().some((column) => column.name === 'metadata_json')) {
       try { db.exec("ALTER TABLE model_prices ADD COLUMN metadata_json TEXT NOT NULL DEFAULT 'null'"); }
       catch (err) {
         if (!db.prepare('PRAGMA table_info(model_prices)').all().some((column) => column.name === 'metadata_json')) throw err;
       }
     }
+    // Older versions stored vendor-page and built-in rates beside LiteLLM. No
+    // lookup, export or report reads them any more, so they only duplicated
+    // rows; drop them once. User overrides and LiteLLM rows are kept.
+    db.exec("DELETE FROM model_prices WHERE source NOT IN ('litellm', 'user')");
   } catch (err) {
     db.close();
     throw err;
   }
 
+  const localPrices = installLocalPriceDatabase(db);
   const getMeta = db.prepare('SELECT * FROM snapshot_meta WHERE id = 1');
   const getEntries = db.prepare('SELECT data_json, reported_cost FROM entries ORDER BY seq');
   const getUsageImports = db.prepare('SELECT * FROM usage_imports ORDER BY rowid');
   const putUsageImport = db.prepare(`INSERT INTO usage_imports (fingerprint, data_json, reported_cost, price_json)
     VALUES (?, ?, ?, ?) ON CONFLICT(fingerprint) DO UPDATE SET
     data_json = excluded.data_json, reported_cost = excluded.reported_cost, price_json = excluded.price_json`);
-  const getCursorImports = db.prepare('SELECT rowid, fingerprint, data_json, reported_cost, included FROM cursor_imports ORDER BY rowid');
   const getPrices = db.prepare(`SELECT scope, source, model_id AS modelId, name, provider, pool,
     input_usd_per_token AS input, cache_read_usd_per_token AS cacheRead,
     cache_write_usd_per_token AS cacheWrite, output_usd_per_token AS output,
@@ -125,15 +116,6 @@ export function createUsageDatabase({ file, env, home } = {}) {
     ON CONFLICT(source) DO UPDATE SET fetched_at = excluded.fetched_at, checked_at = excluded.checked_at,
       state = excluded.state, url = excluded.url`);
   const insertEntry = db.prepare('INSERT INTO entries (seq, client, timestamp, data_json, reported_cost) VALUES (?, ?, ?, ?, ?)');
-  const putCursor = db.prepare(`
-    INSERT INTO cursor_imports (fingerprint, data_json, reported_cost, included) VALUES (?, ?, ?, ?)
-    ON CONFLICT(fingerprint) DO UPDATE SET
-      data_json = excluded.data_json,
-      reported_cost = excluded.reported_cost,
-      included = excluded.included
-  `);
-  const touchMeta = db.prepare('UPDATE snapshot_meta SET refreshed_at = ? WHERE id = 1');
-  const putCursorPrices = db.prepare('UPDATE snapshot_meta SET model_prices_json = ?, pricing_sources_json = ?, refreshed_at = ? WHERE id = 1');
   const putMeta = db.prepare(`
     INSERT INTO snapshot_meta (id, schema_version, refreshed_at, entry_count, warnings_json, pricing_sources_json, pricing_config_dir, model_prices_json)
     VALUES (1, ?, ?, ?, ?, ?, ?, ?)
@@ -154,11 +136,11 @@ export function createUsageDatabase({ file, env, home } = {}) {
   function writeCatalog(records, details = {}, checkedAt = new Date().toISOString(), sources = []) {
     const grouped = new Map();
     for (const record of records ?? []) {
-      if (!record?.source || !record?.modelId) continue;
+      if (!record?.modelId || !priceEnabled(record, PRICE_SOURCES)) continue;
       if (!grouped.has(record.source)) grouped.set(record.source, []);
       grouped.get(record.source).push(record);
     }
-    for (const source of sources) if (!grouped.has(source)) grouped.set(source, []);
+    for (const source of sources) if ((PRICE_SOURCES.includes(source) || source === 'user') && !grouped.has(source)) grouped.set(source, []);
     const skip = new Set();
     for (const [source, rows] of grouped) {
       const incoming = Date.parse(details[source]?.fetchedAt ?? '');
@@ -168,15 +150,37 @@ export function createUsageDatabase({ file, env, home } = {}) {
         continue;
       }
       deletePriceSource.run(source);
+      localPrices.observe(rows, details[source]?.fetchedAt ?? checkedAt);
       for (const record of rows) insertPrice.run(record.scope, source, record.modelId, record.name,
         record.provider ?? null, record.pool ?? null, record.input, record.cacheRead,
         record.cacheWrite, record.output, record.cacheReadFallback ? 1 : 0, record.cacheWriteFallback ? 1 : 0, encodePriceMetadata(record));
     }
     for (const [source, detail] of Object.entries(details)) {
-      if (skip.has(source)) continue;
+      if (skip.has(source) || !PRICE_SOURCES.includes(source)) continue;
       const previous = getPriceUpdate.get(source);
       putPriceUpdate.run(source, detail.fetchedAt ?? previous?.fetched_at ?? null, checkedAt, detail.state, detail.url ?? null);
     }
+  }
+
+  // Catalog IDs that price at least one request in the committed snapshot,
+  // each with the log model names that resolved to it.
+  function usedPriceIds(records, snapshot) {
+    const used = new Map();
+    if (!snapshot?.entries?.length || !records.length) return used;
+    const lookup = createPriceLookup(records);
+    const seen = new Set();
+    for (const entry of snapshot.entries) {
+      const provider = entry.pricingProvider ?? entry.providerId ?? null;
+      const probe = JSON.stringify([entry.model, entry.client, provider]);
+      if (seen.has(probe)) continue;
+      seen.add(probe);
+      const rate = lookup(entry.model, entry.client, { pricingProvider: entry.pricingProvider, providerId: entry.providerId });
+      if (!rate) continue;
+      const id = historyPriceKey(rate);
+      if (!used.has(id)) used.set(id, new Set());
+      used.get(id).add(entry.model);
+    }
+    return used;
   }
 
   function read() {
@@ -185,14 +189,15 @@ export function createUsageDatabase({ file, env, home } = {}) {
     // Metadata and rows must come from the same committed version if another
     // toksight process refreshes while this one is loading the snapshot.
     db.exec('BEGIN');
-    let meta, rows, imports, usageImports, catalogRows, updateRows;
+    let meta, rows, usageImports, catalogRows, updateRows, history, selectedSources;
     try {
       meta = getMeta.get();
       rows = meta ? getEntries.all() : null;
-      imports = meta ? getCursorImports.all() : null;
       usageImports = meta ? getUsageImports.all() : null;
       catalogRows = meta ? getPrices.all() : null;
       updateRows = meta ? getPriceUpdates.all() : null;
+      selectedSources = localPrices.status().selectedSources;
+      history = meta ? localPrices.read().filter((row) => priceEnabled(JSON.parse(row.record_json), selectedSources)) : [];
       db.exec('COMMIT');
     } catch (err) {
       db.exec('ROLLBACK');
@@ -203,33 +208,35 @@ export function createUsageDatabase({ file, env, home } = {}) {
       throw new Error(`unsupported toksight database schema ${meta.schema_version}; expected ${SCHEMA_VERSION}`);
     }
     if (rows.length !== meta.entry_count) throw new Error('toksight database snapshot is incomplete');
-    const prices = new Map(JSON.parse(meta.model_prices_json));
+    const prices = new Map(JSON.parse(meta.model_prices_json).filter(([key, rate]) => !key.startsWith('cursor\u0000') && priceEnabled(rate, selectedSources)));
     for (const row of usageImports) {
       const entry = JSON.parse(row.data_json);
-      if (!prices.get(entry.model)) prices.set(entry.model, JSON.parse(row.price_json));
+      if (entry.client === 'cursor') continue;
+      const rate = JSON.parse(row.price_json);
+      if (!prices.get(entry.model) && priceEnabled(rate, selectedSources)) prices.set(entry.model, rate);
     }
-    const catalog = catalogRows.map(decodePriceRecord).map((row) => ({ ...row,
+    const catalog = catalogRows.filter((row) => row.scope === 'default' && priceEnabled(row, selectedSources)).map(decodePriceRecord).map((row) => ({ ...row,
       cacheReadFallback: Boolean(row.cacheReadFallback), cacheWriteFallback: Boolean(row.cacheWriteFallback) }));
-    const lookup = createPriceLookup(catalog);
+    const lookup = createHistoricalPriceLookup(history, catalog);
     const priceFor = (model, client, entry = null) => {
-      const scope = client === 'cursor' ? 'cursor' : 'default';
       // Imported and legacy models retain a fallback when the destination
       // has no current catalog rate for that model.
-      return lookup(model, client, entry) ?? storedPriceFor(model, prices.get(scope === 'cursor' ? cursorPriceKey(model) : model), entry);
+      const fallback = prices.get(model);
+      return lookup(model, client, entry) ?? (priceEnabled(fallback, selectedSources) ? storedPriceFor(model, fallback, entry) : null);
     };
     const entries = [];
     const reportedCosts = new WeakSet();
     const importWarnings = [];
-    for (const row of [...mergeUsageRows(rows, usageImports), ...selectCursorImports(imports, importWarnings)]) {
+    const bindings = readProviderBindings({ env, home }, importWarnings);
+    for (const row of mergeUsageRows(rows, usageImports)) {
       let entry = row.entry ?? JSON.parse(row.data_json);
-      if (entry.client === 'cursor' && row.included && entry.costUsd == null) {
-        const costUsd = computeCost(entry, priceFor(entry.model, 'cursor', entry));
-        if (costUsd != null) entry = { ...entry, costUsd };
-      } else if (entry.client !== 'cursor' && !row.reported_cost) {
+      if (entry.client === 'cursor') continue;
+      entry = bindProvider(entry, bindings);
+      if (!row.reported_cost) {
         const rate = priceFor(entry.model, entry.client, entry);
         if (rate && ['input', 'cacheRead', 'cacheWrite', 'output'].every((part) => Number.isFinite(rate[part]))) {
           entry = { ...entry, costUsd: computeCost({ ...entry, costUsd: null }, rate) };
-        } else if (!rate && prices.get(entry.model)?.source === 'builtin') {
+        } else if (!rate) {
           entry = { ...entry, costUsd: null };
         }
       }
@@ -241,11 +248,13 @@ export function createUsageDatabase({ file, env, home } = {}) {
       reportedCosts,
       warnings: [...JSON.parse(meta.warnings_json), ...importWarnings],
       pricing: {
-        sources: { ...JSON.parse(meta.pricing_sources_json), ...Object.fromEntries(updateRows.map((row) => [row.source, row.state])) },
+        sources: { ...Object.fromEntries(Object.entries(JSON.parse(meta.pricing_sources_json)).filter(([source]) => (PRICE_SOURCES.includes(source) || source === 'user'))),
+          ...Object.fromEntries(updateRows.filter((row) => priceEnabled(row, selectedSources)).map((row) => [row.source, row.state])),
+          ...Object.fromEntries(PRICE_SOURCES.filter((source) => !selectedSources.includes(source)).map((source) => [source, 'disabled'])) },
         configDir: meta.pricing_config_dir,
         priceFor,
         catalog,
-        updates: Object.fromEntries(updateRows.map((row) => [row.source, { fetchedAt: row.fetched_at, checkedAt: row.checked_at, state: row.state, url: row.url }])),
+        updates: Object.fromEntries(updateRows.filter((row) => priceEnabled(row, selectedSources)).map((row) => [row.source, { fetchedAt: row.fetched_at, checkedAt: row.checked_at, state: row.state, url: row.url }])),
       },
       refreshedAt: meta.refreshed_at,
     };
@@ -254,38 +263,14 @@ export function createUsageDatabase({ file, env, home } = {}) {
   }
 
   function replace(raw, refreshedAt = new Date().toISOString()) {
-    // Cursor imports have their own durable table. The collection pipeline
-    // reads them for CLI reports, while the snapshot references them directly
-    // so importing and refreshing can never count them twice.
     const scanned = raw.entries.filter((entry) => entry.client !== 'cursor');
-    const previous = getMeta.get();
-    const previousPrices = new Map(previous ? JSON.parse(previous.model_prices_json) : []);
-    const sources = { ...raw.pricing.sources };
-    const keepPreviousCursorRates = !sources.cursor || sources.cursor === 'unavailable' || sources.cursor.startsWith('skipped');
-    let keptPreviousCursorRates = false;
+    const sources = Object.fromEntries(Object.entries(raw.pricing.sources).filter(([source]) => PRICE_SOURCES.includes(source) || source === 'user'));
     const prices = new Map();
     for (const entry of scanned) {
-      if (!prices.has(entry.model)) prices.set(entry.model, raw.pricing.priceFor(entry.model) ?? null);
+      if (prices.has(entry.model)) continue;
+      const rate = raw.pricing.priceFor(entry.model, entry.client);
+      prices.set(entry.model, priceEnabled(rate, PRICE_SOURCES) ? rate : null);
     }
-    for (const entry of raw.entries) {
-      if (entry.client !== 'cursor') continue;
-      const key = cursorPriceKey(entry.model);
-      let price = raw.pricing.priceFor(entry.model, 'cursor') ?? null;
-      if (price == null && keepPreviousCursorRates && previousPrices.has(key)) {
-        price = previousPrices.get(key);
-        if (price != null) keptPreviousCursorRates = true;
-      }
-      prices.set(key, price);
-    }
-    if (keepPreviousCursorRates) {
-      for (const [key, price] of previousPrices) {
-        if (key.startsWith('cursor\u0000') && !prices.has(key)) {
-          prices.set(key, price);
-          if (price != null) keptPreviousCursorRates = true;
-        }
-      }
-    }
-    if (keptPreviousCursorRates) sources.cursor = 'stale (snapshot)';
     db.exec('BEGIN IMMEDIATE');
     try {
       db.exec('DELETE FROM entries');
@@ -293,9 +278,7 @@ export function createUsageDatabase({ file, env, home } = {}) {
         insertEntry.run(i, entry.client, entry.timestamp, JSON.stringify(entry), raw.reportedCosts?.has(entry) ? 1 : 0);
       });
       if (raw.pricing.records) {
-        const availableSources = ['builtin', 'user'];
-        if (raw.pricing.records.some((record) => record.source === 'litellm')) availableSources.push('litellm');
-        if (raw.pricing.records.some((record) => record.source === 'cursor')) availableSources.push('cursor');
+        const availableSources = [...new Set(['user', ...raw.pricing.records.map((record) => record.source)])];
         writeCatalog(raw.pricing.records, raw.pricing.sourceDetails, refreshedAt, availableSources);
       }
       putMeta.run(
@@ -312,77 +295,6 @@ export function createUsageDatabase({ file, env, home } = {}) {
     return read();
   }
 
-  function writeCursorPrices(cursorPricing, updatedAt) {
-    const meta = getMeta.get();
-    if (!meta) throw new Error('cannot update Cursor prices before the first snapshot');
-    const prices = new Map(JSON.parse(meta.model_prices_json));
-    const sources = JSON.parse(meta.pricing_sources_json);
-    for (const row of selectCursorImports(getCursorImports.all())) {
-      prices.set(cursorPriceKey(row.entry.model), cursorPricing.priceFor(row.entry.model) ?? null);
-    }
-    if (cursorPricing.records) writeCatalog(cursorPricing.records, cursorPricing.sourceDetails ?? {}, updatedAt, ['cursor']);
-    sources.cursor = cursorPricing.state;
-    const pricesJson = JSON.stringify([...prices]), sourcesJson = JSON.stringify(sources);
-    if (pricesJson === meta.model_prices_json && sourcesJson === meta.pricing_sources_json) return false;
-    putCursorPrices.run(pricesJson, sourcesJson, updatedAt);
-    return true;
-  }
-
-  function updateCursorPricing(cursorPricing, updatedAt = new Date().toISOString()) {
-    db.exec('BEGIN IMMEDIATE');
-    try {
-      writeCursorPrices(cursorPricing, updatedAt);
-      db.exec('COMMIT');
-    } catch (err) {
-      db.exec('ROLLBACK');
-      throw err;
-    }
-    cached = null;
-    return read();
-  }
-
-  function importCursor(records, importedAt = new Date().toISOString(), cursorPricing = null) {
-    let imported = 0, duplicates = 0, updated = 0;
-    db.exec('BEGIN IMMEDIATE');
-    try {
-      const current = new Map(selectCursorImports(getCursorImports.all()).map((row) => [row.key, row]));
-      for (const { key, entry: incoming, included: incomingIncluded = false } of records) {
-        let entry = incoming, included = incomingIncluded;
-        const previous = current.get(key);
-        if (previous) {
-          // A newly reported number can replace Included, and a later numeric
-          // charge can correct an earlier numeric one. An older Included CSV
-          // must not erase a charge already known for that usage event.
-          if ((entry.costUsd == null && (previous.entry.costUsd != null || !included || previous.included)) ||
-              (entry.costUsd != null && entry.costUsd === previous.entry.costUsd)) {
-            if (typeof entry.cursorMaxMode !== 'boolean' || entry.cursorMaxMode === previous.entry.cursorMaxMode) {
-              duplicates++;
-              continue;
-            }
-            entry = { ...previous.entry, cursorMaxMode: entry.cursorMaxMode };
-            included = Boolean(previous.included);
-          }
-          if (entry.cursorMaxMode == null && typeof previous.entry.cursorMaxMode === 'boolean') {
-            entry = { ...entry, cursorMaxMode: previous.entry.cursorMaxMode };
-          }
-          updated++;
-        } else {
-          imported++;
-        }
-        putCursor.run(key, JSON.stringify(entry), entry.costUsd == null ? 0 : 1, included ? 1 : 0);
-        current.set(key, { key, entry, reported_cost: entry.costUsd == null ? 0 : 1, included: included ? 1 : 0 });
-      }
-      const priceChanged = cursorPricing ? writeCursorPrices(cursorPricing, importedAt) : false;
-      if ((imported || updated) && !priceChanged) touchMeta.run(importedAt);
-      db.exec('COMMIT');
-    } catch (err) {
-      db.exec('ROLLBACK');
-      throw err;
-    }
-    cached = null;
-    return { imported, duplicates, updated, snapshot: read() };
-  }
-
   function importDatabase(bytes, importedAt = new Date().toISOString()) {
     const backup = readDatabaseBackup(bytes); // Validate completely before writing.
     let imported = 0, duplicates = 0, updated = 0, latestAt = null;
@@ -390,6 +302,7 @@ export function createUsageDatabase({ file, env, home } = {}) {
     const backupLookup = createPriceLookup(backup.catalog);
     db.exec('BEGIN IMMEDIATE');
     try {
+      localPrices.import(backup.history ?? []);
       const current = new Map(mergeUsageRows(getEntries.all(), getUsageImports.all()).map((r) => [r.fingerprint, r]));
       for (const row of backup.rows) {
         const previous = current.get(row.fingerprint);
@@ -404,30 +317,10 @@ export function createUsageDatabase({ file, env, home } = {}) {
         putUsageImport.run(row.fingerprint, JSON.stringify(entry), selected.reported_cost, selected.price_json ?? JSON.stringify(rate));
         if (row.entry.timestamp != null) latestAt = Math.max(latestAt ?? row.entry.timestamp, row.entry.timestamp);
       }
-      const cursor = new Map(selectCursorImports(getCursorImports.all()).map((r) => [r.key, r]));
-      for (const row of backup.cursor) {
-        const previous = cursor.get(row.key);
-        const changed = previous && ((row.reported_cost && !previous.reported_cost) ||
-          (!previous.reported_cost && !previous.included && row.included));
-        const fillsMode = previous && previous.entry.cursorMaxMode == null && typeof row.entry.cursorMaxMode === 'boolean';
-        if (!previous) imported++;
-        else if (changed || fillsMode) updated++;
-        else duplicates++;
-        if (!previous || changed || fillsMode) {
-          const selected = !previous || changed ? row : previous;
-          const entry = { ...selected.entry };
-          const mode = previous?.entry.cursorMaxMode ?? row.entry.cursorMaxMode;
-          if (typeof mode === 'boolean') entry.cursorMaxMode = mode;
-          putCursor.run(row.key, JSON.stringify(entry), selected.reported_cost, selected.included);
-        }
-        if (row.entry.timestamp != null) latestAt = Math.max(latestAt ?? row.entry.timestamp, row.entry.timestamp);
-      }
-      // Existing rates win conflicts; missing models and their provenance travel
-      // with the backup. No target pricing.json or agent configuration is written.
-      const priceKey = (row) => row.scope === 'cursor'
-        ? JSON.stringify([row.scope, cursorModelSignature(row.name), row.cursor?.contextOver ?? null])
-        : JSON.stringify([row.scope, priceModelKey(row.name)]);
-      const existingPrices = new Set(getPrices.all().map(priceKey));
+      // Existing rates win conflicts; missing first-party rates travel with
+      // the backup. No agent configuration or local overrides are written.
+      const priceKey = (row) => JSON.stringify([row.scope, priceModelKey(row.name)]);
+      const existingPrices = new Set(getPrices.all().filter((row) => priceEnabled(row, PRICE_SOURCES)).map(priceKey));
       for (const row of backup.catalog) {
         if (existingPrices.has(priceKey(row))) continue;
         insertPrice.run(row.scope, row.source, row.modelId, row.name, row.provider, row.pool,
@@ -438,16 +331,21 @@ export function createUsageDatabase({ file, env, home } = {}) {
         if (!existingUpdates.has(row.source)) putPriceUpdate.run(row.source, row.fetched_at, row.checked_at, row.state, row.url);
       }
       const previous = getMeta.get();
-      const prices = new Map([...backup.prices, ...(previous ? JSON.parse(previous.model_prices_json) : [])]);
+      const prices = new Map([...backup.prices, ...(previous ? JSON.parse(previous.model_prices_json) : [])]
+        .filter(([key, rate]) => !key.startsWith('cursor\u0000') && priceEnabled(rate, PRICE_SOURCES)));
       // Keep a per-model fallback even if an offline pricing check has no
       // downloaded catalog on the destination machine.
-      for (const row of [...backup.rows, ...backup.cursor]) {
-        const key = row.entry.client === 'cursor' ? cursorPriceKey(row.entry.model) : row.entry.model;
-        if (!prices.get(key)) prices.set(key, backupLookup(row.entry.model, row.entry.client) ?? row.price ?? null);
+      for (const row of backup.rows) {
+        const key = row.entry.model;
+        if (!prices.get(key)) {
+          const rate = backupLookup(row.entry.model, row.entry.client) ?? row.price ?? null;
+          if (priceEnabled(rate, PRICE_SOURCES)) prices.set(key, rate);
+        }
       }
       putMeta.run(SCHEMA_VERSION, importedAt, getEntries.all().length,
         JSON.stringify([...new Set([...JSON.parse(backup.meta.warnings_json), ...(previous ? JSON.parse(previous.warnings_json) : [])])]),
-        JSON.stringify({ ...JSON.parse(backup.meta.pricing_sources_json), ...(previous ? JSON.parse(previous.pricing_sources_json) : {}) }),
+        JSON.stringify(Object.fromEntries(Object.entries({ ...JSON.parse(backup.meta.pricing_sources_json), ...(previous ? JSON.parse(previous.pricing_sources_json) : {}) })
+          .filter(([source]) => PRICE_SOURCES.includes(source) || source === 'user'))),
         previous?.pricing_config_dir ?? path.dirname(filename), JSON.stringify([...prices]));
       db.exec('COMMIT');
     } catch (err) {
@@ -462,13 +360,62 @@ export function createUsageDatabase({ file, env, home } = {}) {
     file: filename,
     read,
     replace,
+    resetPrices() {
+      db.exec('BEGIN IMMEDIATE');
+      try {
+        db.exec(`
+          DELETE FROM model_prices;
+          DELETE FROM price_updates;
+          DELETE FROM price_history;
+          DELETE FROM web_setup;
+          UPDATE snapshot_meta SET model_prices_json = '[]', pricing_sources_json = '{}';
+          UPDATE usage_imports SET price_json = 'null';
+        `);
+        db.exec('COMMIT');
+      } catch (err) {
+        db.exec('ROLLBACK');
+        throw err;
+      }
+      cached = null;
+      return localPrices.status();
+    },
+    priceStatus: () => localPrices.status(),
+    priceCatalog(key = null) {
+      // Read only committed price data, without collecting usage or downloading.
+      let snapshot = null;
+      if (key == null) {
+        try { snapshot = read(); } catch { snapshot = null; }
+      }
+      db.exec('BEGIN');
+      try {
+        const status = localPrices.status();
+        let result;
+        if (key != null) result = { key, history: localPrices.history(key), status };
+        else {
+          const history = new Map(localPrices.summary().map((row) => [row.price_key, row]));
+          const records = getPrices.all().filter((record) => record.scope === 'default' && priceEnabled(record, status.selectedSources)).map(decodePriceRecord).map((record) => {
+            const id = historyPriceKey(record), summary = history.get(id);
+            return { ...record, cacheReadFallback: Boolean(record.cacheReadFallback), cacheWriteFallback: Boolean(record.cacheWriteFallback),
+              id, revisions: summary?.revisions ?? 0, observedAt: summary?.observedAt ?? null };
+          });
+          const updates = Object.fromEntries(getPriceUpdates.all().filter((row) => priceEnabled(row, status.selectedSources)).map((row) => [row.source,
+            { fetchedAt: row.fetched_at, checkedAt: row.checked_at, state: row.state, url: row.url }]));
+          result = { records, updates, status, models: groupPriceRecords(records, usedPriceIds(records, snapshot)) };
+        }
+        db.exec('COMMIT');
+        return result;
+      } catch (err) {
+        db.exec('ROLLBACK');
+        throw err;
+      }
+    },
+    selectPriceSources(sources) { localPrices.selectSources(sources); cached = null; },
+    completeSetup: (options, at) => localPrices.complete(options, at),
     exportDatabase: () => {
       if (!read()) throw new Error('No usage snapshot; run toksight refresh first');
       return exportDatabaseBytes(db);
     },
     importDatabase,
-    hasIncludedCursorUsage: () => selectCursorImports(getCursorImports.all()).some((row) => row.included && !row.reported_cost),
-    updateCursorPricing,
     updatePriceCatalog({ records, sourceDetails, sources }, updatedAt = new Date().toISOString()) {
       db.exec('BEGIN IMMEDIATE');
       try {
@@ -481,7 +428,6 @@ export function createUsageDatabase({ file, env, home } = {}) {
       cached = null;
       return read();
     },
-    importCursor,
     close() {
       if (!closed) db.close();
       closed = true;

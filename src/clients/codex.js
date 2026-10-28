@@ -27,6 +27,7 @@ export async function collect({ env, home, roots } = {}) {
     let sessionId = path.basename(file, '.jsonl');
     let directory = null;
     let model = null;
+    let providerId = null;
     let prevTotal = null;
 
     await readJsonl(file, (o) => {
@@ -37,6 +38,7 @@ export async function collect({ env, home, roots } = {}) {
       if (type === 'session_meta') {
         sessionId = payload?.id || sessionId;
         if (payload?.cwd) directory = payload.cwd;
+        if (typeof payload?.model_provider === 'string') providerId = payload.model_provider;
         return;
       }
       if (type === 'turn_context') {
@@ -81,6 +83,7 @@ export async function collect({ env, home, roots } = {}) {
         client: id,
         sessionId,
         model: model || 'unknown',
+        ...(providerId ? { providerId } : {}),
         timestamp: Number.isFinite(ts) ? ts : null,
         inputTokens: Math.max(0, input - cached),
         outputTokens: Math.max(0, output),

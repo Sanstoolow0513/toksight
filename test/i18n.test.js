@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { t, DEFAULT_LOCALE, tables, periodLabel, dayLabel, durationLabel, weekdayLabel, WEEKDAYS, MONTHS } from '../web/lib/i18n.js';
+import { t, DEFAULT_LOCALE, tables, periodLabel, dayLabel, durationLabel, spanLabel, weekdayLabel, WEEKDAYS, MONTHS } from '../frontend/lib/i18n.js';
 
 test('i18n returns Chinese by default and interpolates', () => {
   assert.equal(DEFAULT_LOCALE, 'zh-CN');
@@ -49,4 +49,15 @@ test('active durations are localized and rounded to minutes', () => {
   assert.equal(durationLabel('en', 120 * 60_000), '2h');
   assert.equal(durationLabel('zh-CN', 80 * 60_000), '1 小时 20 分');
   assert.equal(durationLabel('zh-CN', 35 * 60_000), '35 分钟');
+});
+
+test('quota countdown spans keep the two largest units', () => {
+  const minute = 60_000;
+  assert.equal(spanLabel('en', (3 * 1440 + 4 * 60 + 59) * minute), '3d 4h');
+  assert.equal(spanLabel('en', 3 * 1440 * minute), '3d');
+  assert.equal(spanLabel('en', 125 * minute), '2h 5m');
+  assert.equal(spanLabel('en', 30_000), '<1m');
+  assert.equal(spanLabel('zh-CN', (2 * 1440 + 60) * minute), '2 天 1 小时');
+  assert.equal(spanLabel('zh-CN', 12 * minute), '12 分');
+  assert.equal(spanLabel('en', -5 * minute), '<1m');
 });

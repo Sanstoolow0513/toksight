@@ -5,14 +5,21 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { DatabaseSync } from 'node:sqlite';
-import { computeCost, getPricing } from '../src/pricing.js';
-import { createPriceLookup, priceRecord } from '../src/pricecatalog.js';
-import { createUsageDatabase } from '../src/database.js';
+import { buildLitellmMap, computeCost, getPricing } from '../src/pricing.js';
+import { createPriceLookup, decodePriceRecord, encodePriceMetadata, priceRecord } from '../src/pricecatalog.js';
+import { priceSignature } from '../src/pricehistory.js';
+import { createUsageDatabase as createDatabase } from '../src/database.js';
 import { readDatabaseBackup } from '../src/dbtransfer.js';
 import { readStoredPriceFor } from '../src/usageimports.js';
 import { collectAll } from '../src/collect.js';
 import { buildPayload } from '../src/payload.js';
 import { createWebDataService } from '../src/webservice.js';
+
+const createUsageDatabase = (options) => {
+  const db = createDatabase(options);
+  db.selectPriceSources(['litellm']);
+  return db;
+};
 
 const catalog = JSON.parse(await readFile(new URL('./fixtures/pricing/litellm.json', import.meta.url), 'utf8'));
 const opts = { offline: true, clients: null, since: null, until: null, top: 20 };
@@ -31,6 +38,8 @@ async function fixture(t, data = catalog) {
   const cache = path.join(env.TOKSIGHT_CONFIG_DIR, 'cache');
   await mkdir(cache, { recursive: true });
   await writeFile(path.join(cache, 'litellm-pricing.json'), JSON.stringify({ fetchedAt: Date.now(), data }));
+  const preferences = createUsageDatabase({ env });
+  preferences.close();
   const pricing = await getPricing({ offline: true, env, home: dir });
   return { dir, env, home: dir, pricing, cleanup };
 }
@@ -57,8 +66,8 @@ test('exact snapshot, provider and fine-tuning keys win before safe, unambiguous
   const lookup = createPriceLookup(records.slice(0, -1));
   for (const [name, expected] of [['model', 1], ['model-20260101', 2], ['model-2026-02-01', 3],
     ['example/model', 1], ['example/model-20260101', 2], ['ft:model', 9], ['model-20260301', 1],
-    ['builtin:MODEL:latest', 1], ['dated-only', 2], ['one/ambiguous', 1]]) assert.equal(lookup(name)?.input, expected, name);
-  for (const name of ['ambiguous', 'conflict', 'other/model', 'ft:unknown', 'model-fast', 'model-2']) assert.equal(lookup(name), null, name);
+    ['dated-only', 2], ['one/ambiguous', 1]]) assert.equal(lookup(name)?.input, expected, name);
+  for (const name of ['ambiguous', 'conflict', 'other/model', 'ft:unknown', 'model-fast', 'model-2', 'builtin:MODEL:latest']) assert.equal(lookup(name), null, name);
   assert.equal(createPriceLookup(records)('model').source, 'user');
   const suffixed = createPriceLookup([rate('model', 1), rate('example/model-20260101', 2)]);
   assert.equal(suffixed('model-20260101').input, 2);
@@ -73,16 +82,15 @@ test('Kimi Code K3 endpoints use Moonshot reference prices without guessing othe
       assert.equal(lookup(name, 'kimi'), moonshot, name);
       assert.equal(lookup(name, 'opencode'), moonshot, name);
       assert.equal(lookup(name), moonshot, 'saved per-model prices have no client argument');
-      assert.equal(lookup(name, 'cursor'), null, 'Cursor keeps its own billing scope');
     }
     assert.deepEqual([moonshot.input, moonshot.output, moonshot.cacheRead, moonshot.cacheWrite], [3e-6, 15e-6, 0.3e-6, 3e-6]);
     assert.equal(moonshot.cacheWriteFallback, true);
-    assert.equal(lookup('deepinfra/moonshotai/Kimi-K3').input, 2.85e-6);
+    assert.equal(lookup('deepinfra/moonshotai/Kimi-K3'), null);
     for (const name of ['k3', 'other/k3', 'kimi-code/k3-fast', 'kimi-code/k4', 'kimi-code/kimi-for-coding',
       'kimi-code/kimi-for-coding-highspeed', 'ft:kimi-code/k3']) assert.equal(lookup(name, 'kimi'), null, name);
   }
   const withoutMoonshot = createPriceLookup(pricing.records.filter((r) => r.provider !== 'moonshot'));
-  assert.equal(withoutMoonshot('kimi-code/k3', 'kimi'), null, 'a third-party K3 rate and the old builtin kimi rate are not fallbacks');
+  assert.equal(withoutMoonshot('kimi-code/k3', 'kimi'), null, 'a third-party K3 rate is not a fallback');
 });
 
 test('exact Kimi Code rates and user overrides win before reference aliases, including request context tiers', async (t) => {
@@ -132,7 +140,7 @@ test('Kimi fixture costs reach CLI and saved Web reports, price updates and offl
   closeTo(web.totals.costUsd, payload.totals.costUsd);
   db.updatePriceCatalog({ sources: ['litellm'], records: raw.pricing.records.filter((r) => r.source === 'litellm')
     .map((r) => r.name === 'moonshot/kimi-k3' ? { ...r, input: 6e-6 } : r) });
-  closeTo((await service(new URLSearchParams('client=kimi'))).totals.costUsd, 0.002937);
+  closeTo((await service(new URLSearchParams('client=kimi'))).totals.costUsd, 0.002376);
   const destination = await fixture(t, {});
   const target = createUsageDatabase({ env: destination.env });
   destination.cleanup.push(() => target.close());
@@ -140,7 +148,7 @@ test('Kimi fixture costs reach CLI and saved Web reports, price updates and offl
   const imported = await collectAll(opts, destination);
   assert.equal(imported.entries.length, 5);
   assert.deepEqual(buildPayload({ ...imported, opts }).pricing.unpricedModels, []);
-  closeTo(buildPayload({ ...imported, opts }).totals.costUsd, 0.002937);
+  closeTo(buildPayload({ ...imported, opts }).totals.costUsd, 0.002376);
   assert.ok(imported.entries.every((e) => e.model === 'kimi-code/k3'));
 });
 
@@ -166,11 +174,11 @@ test('context thresholds use each request including cache tokens, never output o
 });
 
 test('invalid context rates are skipped, xAI thresholds are inclusive, and user prices still win', async (t) => {
-  const data = { model: { input_cost_per_token: 1e-6, output_cost_per_token: 2e-6,
+  const data = { model: { mode: 'chat', litellm_provider: 'openai', input_cost_per_token: 1e-6, output_cost_per_token: 2e-6,
     input_cost_per_token_above_0_tokens: 3e-6, input_cost_per_token_above_100k_tokens: -1,
     input_cost_per_token_above_200k_tokens: 2e-6, output_cost_per_token_above_200k_tokens: 'bad',
     input_cost_per_token_above_300k_tokens: 3e-6 },
-    'xai/model': { litellm_provider: 'xai', input_cost_per_token: 1e-6, output_cost_per_token: 2e-6,
+    'xai/model': { mode: 'chat', litellm_provider: 'xai', input_cost_per_token: 1e-6, output_cost_per_token: 2e-6,
       input_cost_per_token_above_200k_tokens: 2e-6 } };
   const ctx = await fixture(t, data);
   assert.deepEqual(ctx.pricing.priceFor('model').contextTiers.map((r) => r.contextOver), [300000]);
@@ -215,7 +223,8 @@ test('CLI collection, Web snapshots, price updates, reopen and offline backups a
     ? { ...r, contextTiers: r.contextTiers.map((tier) => ({ ...tier, input: tier.input * 2 })) } : r);
   db.updatePriceCatalog({ records: updated, sources: ['litellm'] });
   closeTo(db.read().entries[0].costUsd, 0.102);
-  closeTo(db.read().entries[1].costUsd, 1.003);
+  closeTo(db.read().entries[1].costUsd, 0.503);
+  assert.equal(db.read().pricing.priceFor('tiered-model', 'claude', { ...rows[1], timestamp: Date.now() + 60000 }).input, 4e-6);
   assert.equal(db.read().entries[2].costUsd, 7);
   const destination = await fixture(t, {});
   const target = createUsageDatabase({ env: destination.env });
@@ -223,20 +232,20 @@ test('CLI collection, Web snapshots, price updates, reopen and offline backups a
   const bytes = db.exportDatabase();
   assert.ok(readDatabaseBackup(bytes).catalog.find((r) => r.name === 'tiered-model').contextTiers.length);
   target.importDatabase(bytes);
-  closeTo(target.read().entries[1].costUsd, 1.003);
+  closeTo(target.read().entries[1].costUsd, 0.503);
   const cli = await collectAll(opts, destination);
-  closeTo(cli.entries[1].costUsd, 1.003);
+  closeTo(cli.entries[1].costUsd, 0.503);
   assert.equal(cli.entries[2].costUsd, 7);
   const service = createWebDataService(opts, { ...destination, database: target });
   destination.cleanup.push(() => service.close());
   const web = await service(new URLSearchParams('client=claude'));
-  closeTo(web.totals.costUsd, 8.105);
+  closeTo(web.totals.costUsd, 7.605);
   assert.equal(web.pricing.modelRates[0].variableRates, true);
 });
 
 test('backups preserve distinct snapshot prices and reject malformed context metadata atomically', async (t) => {
-  const ctx = await fixture(t, { model: { input_cost_per_token: 1e-6, output_cost_per_token: 2e-6 },
-    'model-20260101': { input_cost_per_token: 3e-6, output_cost_per_token: 4e-6 } });
+  const ctx = await fixture(t, { model: { mode: 'chat', litellm_provider: 'openai', input_cost_per_token: 1e-6, output_cost_per_token: 2e-6 },
+    'model-20260101': { mode: 'chat', litellm_provider: 'openai', input_cost_per_token: 3e-6, output_cost_per_token: 4e-6 } });
   const source = createUsageDatabase({ file: ':memory:' }), target = createUsageDatabase({ file: ':memory:' });
   ctx.cleanup.push(() => { source.close(); target.close(); });
   source.replace({ entries: [entry({ model: 'model' }), entry({ model: 'model-20260101' })],
@@ -274,4 +283,45 @@ test('legacy snapshot and imported builtin estimates cannot restore family-prefi
   const cli = await collectAll(opts, ctx);
   assert.equal(cli.entries[0].costUsd, null);
   assert.equal(cli.entries[1].costUsd, 9);
+});
+
+
+test('first-party range tables reach saved reports and offline backups with the same cache-inclusive boundaries', async (t) => {
+  const value = { mode: 'chat', tiered_pricing: [
+    { range: [0, 32000], input_cost_per_token: 1e-6, output_cost_per_token: 5e-6, cache_read_input_token_cost: 0.1e-6 },
+    { range: [32000, 128000], input_cost_per_token: 1.8e-6, output_cost_per_token: 9e-6, cache_read_input_token_cost: 0.18e-6 },
+  ] };
+  const ctx = await fixture(t, {
+    'dashscope/qwen3-coder-plus': { ...value, litellm_provider: 'dashscope' },
+    'qwen_ai_platform/qwen3-coder-plus': { ...value, litellm_provider: 'qwen_ai_platform' },
+  });
+  const request = entry({ model: 'qwen3-coder-plus', client: 'opencode', providerId: 'dashscope', inputTokens: 32000, cacheReadTokens: 1, outputTokens: 100 });
+  assert.equal(ctx.pricing.priceFor(request.model, request.client, { ...request, cacheReadTokens: 0 }).input, 1e-6);
+  assert.equal(ctx.pricing.priceFor(request.model, request.client, request).input, 1.8e-6);
+  const db = createUsageDatabase({ env: ctx.env });
+  ctx.cleanup.push(() => db.close());
+  db.replace({ entries: [request], warnings: [], reportedCosts: new WeakSet(), pricing: ctx.pricing });
+  closeTo(db.read().entries[0].costUsd, 32000 * 1.8e-6 + 0.18e-6 + 100 * 9e-6);
+  assert.equal(db.priceCatalog().records[0].contextTiers[0].contextOver, 32000);
+  const target = createUsageDatabase({ file: ':memory:' });
+  ctx.cleanup.push(() => target.close());
+  target.importDatabase(db.exportDatabase());
+  closeTo(target.read().entries[0].costUsd, db.read().entries[0].costUsd);
+  assert.equal(readStoredPriceFor(db.file)(request.model, request.client, request).input, 1.8e-6);
+});
+
+test('LiteLLM context limits are kept as display-only price fields', () => {
+  const { records } = buildLitellmMap({
+    'gpt-limits': { mode: 'chat', litellm_provider: 'openai', input_cost_per_token: 1e-6, output_cost_per_token: 2e-6, max_input_tokens: 272000, max_tokens: 128000 },
+    'gpt-bad-limits': { mode: 'chat', litellm_provider: 'openai', input_cost_per_token: 1e-6, output_cost_per_token: 2e-6, max_input_tokens: '272k', max_tokens: -1 },
+  });
+  const good = records.find((r) => r.name === 'gpt-limits'), bad = records.find((r) => r.name === 'gpt-bad-limits');
+  assert.equal(good.maxInputTokens, 272000);
+  assert.equal(good.maxTokens, 128000);
+  assert.equal('maxInputTokens' in bad || 'maxTokens' in bad, false);
+  const stored = decodePriceRecord({ ...good, metadataJson: encodePriceMetadata(good) });
+  assert.equal(stored.maxInputTokens, 272000);
+  assert.equal(stored.maxTokens, 128000);
+  const { maxInputTokens, maxTokens, ...plain } = good;
+  assert.equal(priceSignature(good), priceSignature(plain), 'limits never create a rate revision');
 });

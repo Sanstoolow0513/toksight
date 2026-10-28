@@ -28,13 +28,11 @@ function modelRateRows(entries, pricing) {
     const validRate = consistent && rate && parts.every((part) => Number.isFinite(rate[part]));
     const identity = modelIdentity(entry.model, entry.client, baseRate);
     rows.push({
-      client: entry.client, scope: entry.client === 'cursor' ? 'cursor' : 'default',
+      client: entry.client, scope: 'default',
       model: entry.model, displayModel: reportModelName(entry.model, entry.client, baseRate),
       modelId: baseRate?.modelId ?? identity.id,
       effort: identity.effort, source: validRate ? rate.source : null, pool: rate?.pool ?? null,
-      ...(entry.client !== 'cursor' && !consistent ? { variableRates: true } : {}),
-      ...(entry.client === 'cursor' ? { maxMode: Boolean(identity.maxMode), variableRates: !consistent,
-        priceFetchedAt: rate?.cursor?.fetchedAt ?? null, retained: Boolean(rate?.cursor?.retained) } : {}),
+      ...(!consistent ? { variableRates: true } : {}),
       ...(validRate ? { input: rate.input * 1e6, cacheRead: rate.cacheRead * 1e6,
         cacheWrite: rate.cacheWrite * 1e6, output: rate.output * 1e6 } : {}),
     });
@@ -94,4 +92,9 @@ export function buildPayload(ctx) {
     },
     warnings,
   };
+}
+
+// `quota --json` and GET /api/quota. Separate from the report payload.
+export function buildQuotaPayload(quotas, now = Date.now()) {
+  return { tool: 'toksight', version: pkg.version, generatedAt: new Date(now).toISOString(), quotas };
 }

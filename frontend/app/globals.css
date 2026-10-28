@@ -1,0 +1,12 @@
+/* toksight · Plain Workbench. Layer order is fixed here; each file below
+   wraps its rules in one of these layers (see design-spec.md). */
+@layer reset, tokens, base, primitives, shell, components, pages, utilities;
+
+@import './styles/tokens.css';
+@import './styles/base.css';
+@import './styles/primitives.css';
+@import './styles/shell.css';
+@import './styles/report.css';
+@import './styles/calendar.css';
+@import './styles/manage.css';
+@import './styles/utilities.css';

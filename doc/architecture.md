@@ -2,7 +2,7 @@
 
 ## 边界
 
-`toksight` 是 ESM Node.js CLI，要求 Node >=22.5，根包没有运行时依赖。它读取本机 Agent 会话数据；刷新和导入更新自己的 SQLite，价格抓取更新自己的缓存文件，不修改 Agent 数据。`web/` 用 Next.js 构建静态页面，由 CLI 的 `node:http` 服务托管；没有 TUI。`scripts/` 是源码仓库开发工具，不随 npm 包发布。用户命令和选项见双语 README。
+`toksight` 是 ESM Node.js CLI，要求 Node >=22.5，根包没有运行时依赖。它读取本机 Agent 会话数据；刷新和导入更新自己的 SQLite，价格抓取更新自己的缓存文件，不修改 Agent 数据。`frontend/` 用 Next.js 构建静态页面，由 CLI 的 `node:http` 服务托管；没有 TUI。`scripts/` 是源码仓库开发工具，不随 npm 包发布。用户命令和选项见双语 README。
 
 ## 两条读写路径
 
@@ -14,9 +14,12 @@ Agent 文件 / toksight 中的导入记录
 
 GET /api/data -> 读取快照 -> 查询范围与筛选 -> buildPayload + Web 聚合
 POST /api/refresh -> collectAll -> 事务替换快照
-Cursor CSV / 数据库备份 -> 验证并合并 toksight SQLite -> 后续报告读取
+数据库备份 -> 验证并合并 toksight SQLite -> 后续报告读取
 
-web/ 源码 -> Next 静态导出 web/out/ -> src/webserver.js 提供页面与同源 API
+toksight quota / GET /api/quota -> Codex rollout rate_limits（本地）+ 内存中的上次 Kimi 结果
+POST /api/quota/refresh、quota（无 --offline）-> 另外请求 Kimi Code /usages
+
+frontend/ 源码 -> Next 静态导出 frontend/out/ -> src/webserver.js 提供页面与同源 API
 ```
 
 普通 CLI 报告走 `collectAll`，Web 的 GET 只筛选已提交的快照。首次运行 `web` 若没有快照会采集一次；刷新失败保留旧快照。价格目录的更新与采集分开执行，报告可用已存价格重新定价，不必重扫 Agent 文件。
@@ -35,13 +38,14 @@ web/ 源码 -> Next 静态导出 web/out/ -> src/webserver.js 提供页面与同
 | `src/payload.js`、`src/render.js`、`src/format.js` | CLI JSON 契约、文本输出、ANSI/数字格式 |
 | `src/database.js`、`src/usageimports.js` | 项目数据库、持久导入、快照和跨进程版本检测 |
 | `src/dbtransfer.js`、`src/dbcommand.js` | SQLite 备份验证/合并与 CLI 文件操作 |
-| `src/cursorcsv.js`、`src/cursorpricing.js` | Cursor Usage Events 解析及官方价格目录缓存 |
-| `src/cursorpricepages.js`、`src/cursormodels.js` | 自动发现官方模型详情及价格档位，以目录驱动的名称/别名匹配解析 Cursor 模式 |
 | `src/pricing.js`、`src/pricecatalog.js`、`src/costcoverage.js` | 价格来源、模型身份/作用域、费用来源统计 |
-| `src/contextpricing.js` | LiteLLM 标准长上下文档位解析、验证和逐请求选价 |
+| `src/pricing.js`、`src/localpricedb.js`、`src/pricehistory.js`、`src/providerbindings.js` | 第一方 LiteLLM 下载、观察历史、逐请求历史查价及用户提供商绑定 |
+| `src/priceselection.js`、`src/firstparty.js`、`src/nativeproviders.js` | 来源偏好与统一筛选、LiteLLM 提供商和模型归属校验、计价渠道别名 |
+| `src/contextpricing.js` | LiteLLM 标准长上下文字段与 tiered_pricing 范围表的解析、验证和逐请求选价 |
 | `src/webservice.js`、`src/webquery.js` | Web 快照服务、查询范围交集、共享刷新任务 |
 | `src/webdata.js`、`src/comparison.js` | Web 补充聚合、等日历天数的相邻周期比较 |
+| `src/quota.js`、`src/quotamodel.js`、`src/codexquota.js`、`src/kimiquota.js` | 订阅额度：通用模型、Codex 本地日志、Kimi Code 显式联网查询（见[订阅额度](quota.md)） |
 | `src/webserver.js` | 静态资源与本机 HTTP API |
-| `web/app/`、`web/components/`、`web/lib/` | 静态报告页面、组件、独立可测的前端计算与偏好 |
+| `frontend/app/`、`frontend/components/`、`frontend/lib/` | 新版工作台、图表与设置组件；`useWorkspace.js` 管页面状态，日期与聚合计算独立可测 |
 
 采集口径见[采集器](collectors.md)，稳定输出见[数据契约](data-contract.md)，持久化见[存储与定价](storage-pricing.md)。

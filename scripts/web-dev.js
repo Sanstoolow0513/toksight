@@ -7,7 +7,7 @@ import { runWeb } from '../src/cli.js';
 import { startNode, stopChild } from './lib/process.js';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
-const web = path.join(root, 'web');
+const web = path.join(root, 'frontend');
 const nextCli = path.join(web, 'node_modules', 'next', 'dist', 'bin', 'next');
 
 function port(value, flag) {

@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { startNode } from './lib/process.js';
 
 async function main() {
-  const web = fileURLToPath(new URL('../web/', import.meta.url));
+  const web = fileURLToPath(new URL('../frontend/', import.meta.url));
   const cli = path.join(web, 'node_modules', 'next', 'dist', 'bin', 'next');
   await access(cli).catch(() => {
     throw new Error('Dashboard dependencies missing. Run `npm run web:ci` first (Node >=22.5).');
@@ -13,10 +13,10 @@ async function main() {
   if (code !== 0) throw new Error(`Dashboard build failed (${signal || code})`);
   for (const file of ['index.html', '_next/static']) {
     await access(path.join(web, 'out', file)).catch(() => {
-      throw new Error(`Static export missing web/out/${file}. Check web/next.config.mjs.`);
+      throw new Error(`Static export missing frontend/out/${file}. Check frontend/next.config.mjs.`);
     });
   }
-  console.log('Dashboard built: web/out/\nPreview: node bin/toksight.js web');
+  console.log('Dashboard built: frontend/out/\nPreview: node bin/toksight.js web');
 }
 
 main().catch((err) => {

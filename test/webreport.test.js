@@ -1,12 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  calendarWeeks, compactCalendar, currentPeriod, dayKey, dayNav, eachDayKey, inPeriod, periodBounds, periodKey, periodNav, periodOf, quickPeriod, shiftDay, shiftPeriod, validRange, weekdayIndex, withMode,
-} from '../web/lib/period.js';
+  calendarWeeks, compactCalendar, currentPeriod, dayKey, dayNav, eachDayKey, inPeriod, isContiguous, isoWeek, mondayOf, monthsBetween, periodBounds, periodKey, periodNav, periodOf, quickPeriod, rangeKeys, shiftDay, shiftPeriod, validRange, weekdayIndex, weekKeys, weekLabelParts, withMode,
+} from '../frontend/lib/period.js';
 import {
-  agentRows, costPerMillion, dailyMap, hasModelComparison, heatLevel, heatMax, heatSummary, hourlyBars, modelRows, modelsByAgent, openingDay, sessionName, sessionRows, trendSeries,
-} from '../web/lib/report.js';
-import { fmtClock, fmtClockRange, fmtCostShort, fmtTokens, fmtTokensShort } from '../web/lib/format.js';
+  agentRows, costPerMillion, dailyMap, heatLevel, heatMax, heatSummary, hourlyBars, mergedModelRows, modelsByAgent, openingDay, sessionName, sessionRows, sumDays, trendSeries,
+} from '../frontend/lib/report.js';
+import { fmtClock, fmtClockRange, fmtCostShort, fmtTokens, fmtTokensShort } from '../frontend/lib/format.js';
 
 const usage = (over = {}) => {
   const row = { requests: 1, sessions: 1, inputTokens: 100, cacheReadTokens: 300, cacheWriteTokens: 0, outputTokens: 100, reasoningTokens: 0, costUsd: 1, pricedRequests: 1, ...over };
@@ -162,31 +162,6 @@ test('agent rows carry token and cost shares and only the order follows the sort
   assert.deepEqual(byCost.map((r) => r.tokenShare), [500 / 1800, 1300 / 1800]);
 });
 
-test('model rows keep agents separate, fold the tail and keep shares whole', () => {
-  const models = [
-    { client: 'claude', model: 'm-a', ...usage({ inputTokens: 1000 }) },
-    { client: 'opencode', model: 'm-a', ...usage({ pricedRequests: 0 }) },
-    ...Array.from({ length: 9 }, (_, i) => ({ client: 'codex', model: `m-${i}`, ...usage({ outputTokens: 100 - i }) })),
-  ];
-  const { rows, others, count } = modelRows(models, 'tokens', 8);
-  assert.equal(count, 11);
-  assert.equal(rows.length, 7);
-  assert.equal(rows[0].model, 'm-a');
-  assert.equal(rows[0].client, 'claude');
-  assert.equal(rows[0].requests, 1);
-  assert.equal(rows[0].pricing, 'full');
-  assert.equal(others.count, 4);
-  for (const key of ['tokenShare', 'costShare']) {
-    const shares = rows.reduce((sum, r) => sum + r[key], others[key]);
-    assert.ok(Math.abs(shares - 1) < 1e-9, key);
-  }
-  assert.equal(modelRows(models.slice(0, 3), 'tokens', 8).others, null);
-  const sameModel = modelRows(models.slice(0, 2), 'cost').rows;
-  assert.deepEqual(sameModel.map((row) => [row.client, row.model, row.costUsd]), [
-    ['claude', 'm-a', 1], ['opencode', 'm-a', 1],
-  ]);
-});
-
 test('models group under each agent, follow the sort and keep period-wide shares', () => {
   const models = [
     { client: 'claude', model: 'opus', ...usage({ costUsd: 6, inputTokens: 100 }) },
@@ -314,12 +289,61 @@ test('compact formatting fits calendar cells', () => {
   assert.equal(fmtTokensShort(123_456_789, 2), '120M');
 });
 
-test('model ranking stays available for multi-model agents without repeating one-model agent rows', () => {
-  const model = (client, name) => ({ client, model: name, ...usage() });
-  assert.equal(hasModelComparison(), false);
-  assert.equal(hasModelComparison([model('claude', 'a')]), false);
-  assert.equal(hasModelComparison([model('claude', 'a'), model('codex', 'b')]), false);
-  assert.equal(hasModelComparison([model('claude', 'a'), model('codex', 'a')]), false);
-  assert.equal(hasModelComparison([model('claude', 'a'), model('claude', 'b')]), true);
-  assert.equal(hasModelComparison([model('claude', 'a'), model('claude', 'b'), model('codex', 'c')]), true);
+test('ISO weeks follow the Thursday rule across year boundaries on local calendar days', () => {
+  assert.deepEqual(isoWeek('2020-12-31'), { year: 2020, week: 53 });
+  assert.deepEqual(isoWeek('2021-01-03'), { year: 2020, week: 53 });
+  assert.deepEqual(isoWeek('2021-01-04'), { year: 2021, week: 1 });
+  assert.deepEqual(isoWeek('2025-12-29'), { year: 2026, week: 1 });
+  assert.deepEqual(isoWeek('2026-01-01'), { year: 2026, week: 1 });
+  assert.deepEqual(isoWeek('2026-12-28'), { year: 2026, week: 53 });
+  assert.deepEqual(isoWeek('2027-01-03'), { year: 2026, week: 53 });
+  assert.deepEqual(isoWeek('2026-10-14'), { year: 2026, week: 42 });
+  assert.deepEqual(isoWeek('2024-02-29'), { year: 2024, week: 9 });
+  assert.equal(mondayOf('2026-01-01'), '2025-12-29');
+  assert.equal(mondayOf('2026-10-18'), '2026-10-12');
+  assert.deepEqual(weekKeys('2025-12-31'), ['2025-12-29', '2025-12-30', '2025-12-31', '2026-01-01', '2026-01-02', '2026-01-03', '2026-01-04']);
+  // DST changes never skip or repeat a civil day.
+  assert.deepEqual(weekKeys('2026-03-08'), ['2026-03-02', '2026-03-03', '2026-03-04', '2026-03-05', '2026-03-06', '2026-03-07', '2026-03-08']);
+  for (const day of eachDayKey('2019-12-20', '2028-01-10')) {
+    const { week } = isoWeek(day);
+    assert.ok(week >= 1 && week <= 53, day);
+    assert.equal(weekdayIndex(mondayOf(day)), 0, day);
+  }
+});
+
+test('week labels add the ISO year only where a week could be misread', () => {
+  const label = (key, year) => { const p = weekLabelParts(key, year); return `${p.prefix ?? ''}W${p.week}`; };
+  assert.equal(label('2025-12-29', 2025), '26W1');
+  assert.equal(label('2025-12-29', 2026), '26W1');
+  assert.equal(label('2025-12-22', 2025), 'W52');
+  assert.equal(label('2026-12-28', 2026), '26W53');
+  assert.equal(label('2026-12-28', 2027), '26W53');
+  assert.equal(label('2021-01-03', 2021), '20W53');
+  assert.equal(label('2026-10-12', 2026), 'W42');
+});
+
+test('continuous calendars list months, ranges and runs of days', () => {
+  assert.deepEqual(monthsBetween('2025-11-12', '2026-02-01'), [{ year: 2025, month: 11 }, { year: 2025, month: 12 }, { year: 2026, month: 1 }, { year: 2026, month: 2 }]);
+  assert.deepEqual(monthsBetween('2026-10-01', '2026-10-28'), [{ year: 2026, month: 10 }]);
+  assert.deepEqual(rangeKeys('2026-03-02', '2026-02-27'), ['2026-02-27', '2026-02-28', '2026-03-01', '2026-03-02']);
+  assert.equal(isContiguous(['2025-12-31', '2026-01-01']), true);
+  assert.equal(isContiguous(['2026-01-01', '2026-01-03']), false);
+  assert.equal(isContiguous([]), false);
+});
+
+test('day sums and merged model rows total the same fields as the server', () => {
+  const days = dailyMap([{ date: '2026-10-12', ...usage() }, { date: '2026-10-13', ...usage({ requests: 0, inputTokens: 0, cacheReadTokens: 0, outputTokens: 0, costUsd: 0 }) },
+    { date: '2026-10-20', ...usage({ costUsd: 2 }) }]);
+  const week = sumDays(days, weekKeys('2026-10-14'));
+  assert.equal(week.totalTokens, 500);
+  assert.equal(week.costUsd, 1);
+  assert.equal(week.activeDays, 1);
+  assert.equal(sumDays(days, ['2026-10-12', '2026-10-20', '2026-11-01']).costUsd, 3);
+  const rows = mergedModelRows([
+    { client: 'claude', model: 'm-a', ...usage() },
+    { client: 'opencode', model: 'm-a', ...usage({ inputTokens: 300, cacheReadTokens: 100 }) },
+    { client: 'codex', model: 'm-b', ...usage({ outputTokens: 5000 }) },
+  ]);
+  assert.deepEqual(rows.map((r) => [r.model, r.clients, r.totalTokens, r.requests]), [['m-b', ['codex'], 5400, 1], ['m-a', ['claude', 'opencode'], 1000, 2]]);
+  assert.equal(rows[1].cacheHitRate, 400 / 800);
 });

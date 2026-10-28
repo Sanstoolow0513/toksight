@@ -8,8 +8,8 @@
 import { createRequire } from 'node:module';
 
 import * as agg from './aggregate.js';
-import { renderTable } from './format.js';
-import { buildPayload } from './payload.js';
+import { compactDuration, renderTable } from './format.js';
+import { buildPayload, buildQuotaPayload } from './payload.js';
 
 const require = createRequire(import.meta.url);
 const pkg = require('../package.json');
@@ -180,18 +180,9 @@ export function renderCommand(ctx, fmt) {
       console.log('');
       console.log(fmt.bold('Pricing'));
       console.log(`  litellm: ${pricing.sources.litellm}`);
-      console.log(`  cursor official: ${pricing.sources.cursor}`);
       console.log(`  user overrides: ${pricing.sources.user ? 'loaded' : 'none'}`);
-      console.log(`  builtin: always available (${fmt.dim('best-effort estimates')})`);
       break;
     }
-  }
-
-  if (opts.command !== 'env' && entries.some((entry) => entry.client === 'cursor' &&
-      entry.costUsd != null && !ctx.reportedCosts?.has(entry) &&
-      pricing.priceFor(entry.model, 'cursor')?.source === 'cursor')) {
-    console.log('');
-    console.log(fmt.dim('Cursor Included: reference cost from published model rates, not a billed charge.'));
   }
 
   if (warnings.length) {
@@ -214,4 +205,50 @@ export function printEmpty({ fmt, perClient }) {
   }
   console.log('');
   console.log('Run some agent sessions first, or set env vars like CLAUDE_CONFIG_DIR / CODEX_HOME / ZCODE_HOME to point at custom locations.');
+}
+
+// `toksight quota`: one row per window; reset times in local time plus a
+// relative span. Errors and "as of" notes follow the table.
+export function renderQuota(quotas, { json = false, now = Date.now() } = {}, fmt) {
+  if (json) {
+    console.log(JSON.stringify(buildQuotaPayload(quotas, now), null, 2));
+    return;
+  }
+  const rows = [];
+  for (const q of quotas) {
+    if (!q.windows.length) rows.push({ q, w: null });
+    for (const w of q.windows) rows.push({ q, w });
+  }
+  const reset = ({ w }) => {
+    if (!w) return '—';
+    const at = Date.parse(w.resetsAt);
+    if (w.reset) return Number.isFinite(at) ? `reset ${compactDuration(now - at)} ago` : 'reset';
+    if (!Number.isFinite(at)) return 'unknown';
+    return `${fmt.datetime(at)} (in ${compactDuration(at - now)})`;
+  };
+  const used = ({ w }) => {
+    if (!w) return '—';
+    if (w.usedPercent == null) return w.reset ? 'reset' : '—';
+    const count = w.used != null && w.limit != null ? ` (${fmt.int(w.used)}/${fmt.int(w.limit)})` : '';
+    return `${Number.isInteger(w.usedPercent) ? w.usedPercent : w.usedPercent.toFixed(1)}%${count}`;
+  };
+  console.log(renderTable({
+    columns: [
+      { header: 'Client', value: ({ q }) => q.label },
+      { header: 'Plan', value: ({ q }) => q.plan || '—' },
+      { header: 'Window', value: ({ w }) => w ? w.label : '—' },
+      { header: 'Used', align: 'right', value: used },
+      { header: 'Resets', value: reset },
+    ],
+    rows,
+  }));
+  const notes = [];
+  for (const q of quotas) {
+    if (q.error) notes.push(`${q.label}: ${q.error.message}`);
+    else if (q.source === 'local' && q.observedAt) {
+      const at = Date.parse(q.observedAt);
+      notes.push(`${q.label}: from local session logs, last seen ${fmt.datetime(at)} (${compactDuration(now - at)} ago)`);
+    }
+  }
+  if (notes.length) console.log('\n' + notes.map((n) => fmt.dim(n)).join('\n'));
 }

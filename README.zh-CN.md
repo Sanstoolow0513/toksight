@@ -2,7 +2,7 @@
 
 **在终端里追踪 AI 编程智能体的 token 用量、成本和缓存命中率。**
 
-toksight 读取各 AI 编程智能体已经写在本地磁盘的会话文件，也可导入 Cursor 用量 CSV，输出总量、按模型 / 按天 / 按会话的
+toksight 读取各 AI 编程智能体已经写在本地磁盘的会话文件，输出总量、按模型 / 按天 / 按会话的
 统计以及成本估算。纯 Node.js CLI，零运行时依赖，并自带本地网页报告（`toksight web`）：
 热力图、Agent 与模型分布，一键导出图片。
 
@@ -19,7 +19,6 @@ toksight 读取各 AI 编程智能体已经写在本地磁盘的会话文件，�
 | Codex CLI | `~/.codex/sessions/**/*.jsonl` | `CODEX_HOME` |
 | OpenCode | `~/.local/share/opencode/opencode.db`，数据库不存在或不可读时回退 `~/.local/share/opencode/storage/message/**/*.json` | `OPENCODE_PATH` |
 | Kimi Code | `~/.kimi-code/sessions/**/agents/*/wire.jsonl` | `KIMI_CODE_HOME` |
-| Cursor | 从 Cursor 导出的用量 CSV，经 `toksight web` 导入 | `TOKSIGHT_CONFIG_DIR`（导入数据存储位置） |
 
 ## 安装
 
@@ -42,6 +41,8 @@ toksight models       # 按模型统计
 toksight sessions     # 按成本排序的会话
 toksight web          # 本地用量与成本报告（热力图、Agent、模型，可导出图片）
 toksight refresh      # 重新扫描 Agent 并更新本地 SQLite 数据库
+toksight quota        # Codex 与 Kimi Code 的订阅额度窗口
+toksight reset-prices # 清除旧单价、历史与缓存，再打开 Web 重新建库
 toksight export-db backup.sqlite  # 导出完整的已提交用量数据库
 toksight import-db backup.sqlite  # 合并备份并去重
 toksight env          # 查看检测到的数据源与定价状态
@@ -73,7 +74,7 @@ zcode   GLM-5.3             41   116K    1.99M        0   43.3K  94.5%   $0.870
 ### 参数
 
 ```
---client <a,b>   只统计指定客户端（zcode, claude, codex, opencode, kimi, cursor）
+--client <a,b>   只统计指定客户端（zcode, claude, codex, opencode, kimi）
 --since <date>   本地日期（YYYY-MM-DD），含当天
 --until <date>   本地日期（YYYY-MM-DD），含当天
 --today --week --month   日期快捷方式
@@ -84,7 +85,7 @@ zcode   GLM-5.3             41   116K    1.99M        0   43.3K  94.5%   $0.870
 --open           用浏览器打开打印出的地址（仅 web）
 --no-open        不打开浏览器（仅 web；默认）
 --api-only       web：只提供 JSON API，不托管静态页面
---offline        跳过 LiteLLM 与 Cursor 价格拉取
+--offline        跳过联网价格拉取，使用已保存的本地价格（quota：不请求 Kimi）
 --no-color       关闭 ANSI 颜色
 ```
 
@@ -92,83 +93,96 @@ zcode   GLM-5.3             41   116K    1.99M        0   43.3K  94.5%   $0.870
 
 CLI 按天分组和日期过滤使用**本地时区**。网页可在设置里单独调整统计时区。
 
+### 订阅额度
+
+`toksight quota` 显示 Codex 与 Kimi Code 订阅当前的限流窗口：
+
+```
+Client     Plan                         Window               Used  Resets
+─────────  ───────────────────────────  ──────  ─────────────────  ────────────────────────────
+Codex CLI  self_serve_business_prolite  week                   4%  2026-11-02 00:46 (in 6d 17h)
+Kimi Code  LEVEL_INTERMEDIATE           5h        69.5% (139/200)  2026-10-26 09:33 (in 2h 33m)
+Kimi Code  LEVEL_INTERMEDIATE           week    10.4% (214/2,048)  2026-10-30 07:23 (in 4d)
+Kimi Code  LEVEL_INTERMEDIATE           month                0.6%  2026-11-16 16:00 (in 21d 9h)
+
+Codex CLI: from local session logs, last seen 2026-10-26 06:16 (43m ago)
+```
+
+- **Codex** 离线读取 `~/.codex/sessions`（支持 `CODEX_HOME`）中最新的 `rate_limits`。窗口按长度命名
+  （`5h`、`week`，其他如 `2d`）；部分套餐只有周窗口。重置时间已过的窗口显示为已重置，不显示过期百分比。
+- **Kimi Code** 本地没有额度数据，`toksight quota` 会读取 `~/.kimi-code/credentials/kimi-code.json`
+  （支持 `KIMI_CODE_HOME`）中的访问令牌，请求 `GET https://api.kimi.com/coding/v1/usages`。令牌只发往
+  Kimi 的 API 主机，不会打印或保存；toksight 不刷新令牌，过期时请打开 Kimi Code 刷新后重试。
+- `--client codex` / `--client kimi` 限定客户端，`--offline` 跳过 Kimi 请求，`--json` 输出
+  `{ tool, version, generatedAt, quotas }`。
+
+网页今日概览的“订阅额度”卡片显示同样的数据。只有点击“刷新 Kimi 额度”（`POST /api/quota/refresh`）
+才会查询 Kimi Code；`GET /api/quota` 只读本地数据。
+
 ## 定价
 
-除 Cursor 外，未使用 Agent 自报费用的请求按 token 数和三层价格计算（后者覆盖前者）：
+首次启动 Web 会引导建立**本地价格库**，保存在 toksight 自己的 `usage.sqlite`。
+公开价格统一使用默认启用的 [LiteLLM 模型价格表](https://github.com/BerriAI/litellm/blob/main/model_prices_and_context_window.json)，
+仅收录第一方模型提供商：OpenAI、Anthropic、Google、DeepSeek、Moonshot、Z.AI、Mistral/Codestral、
+xAI、MiniMax、Alibaba/Qwen、Cohere 和 AI21。
 
-1. **内置价格表** — 明确列出的模型的最佳努力估算（美元 / 百万 token），离线可用；新版本和变体不会沿用同系列旧型号的价格。
-2. **LiteLLM** — 从社区[模型价格库](https://github.com/BerriAI/litellm/blob/main/model_prices_and_context_window.json)拉取，
-   本地缓存 7 天（`<toksight-dir>/cache/litellm-pricing.json`）；`--offline` 可读取已有缓存且不发网络请求。
-3. **用户覆盖** — 编辑 `<toksight-dir>/pricing.json`（单位：美元 / 百万 token）：
+筛选同时检查提供商元数据和模型归属。Google 使用 Gemini API 价格表；不收录市场、聚合商和转售报价，
+Mistral、Alibaba 托管的第三方模型也会排除。提供商别名归一到原厂计价渠道；未知提供商或没有有效 token
+单价的模型保持未定价。
 
-   ```json
-   {
-     "my-model": { "input": 3, "output": 15, "cacheRead": 0.3, "cacheWrite": 3.75 }
-   }
-   ```
+可以立即建库，也可使用已保存价格和用户覆盖本地继续。LiteLLM 数据在
+`<toksight-dir>/cache/litellm-pricing.json` 缓存 7 天；`--offline` 使用已有价格且不联网。
+引导与自动更新偏好保存在数据库中，不依赖浏览器。更新价格不扫描 Agent 文件。
 
-   模型名支持精确匹配或无歧义的提供商后缀匹配（`zhipuai/glm-5.3` 也可匹配 `GLM-5.3`）。
+单价变化按本机观察时间保存。请求使用其时间戳之前最后一次观察到的价格；早于首次观察的请求使用
+最早已知价格作参考。单价不变不新增历史版本。SQLite 备份保留历史，但无法补全本机未更新期间错过的调价。
 
-每个价格来源内，先按原始目录 ID 精确匹配，再尝试归一化别名。带日期的版本保留各自单价；
-去掉日期后的别名只有能对应目录原名，或同模型、同提供商的候选价格完全一致时才接受。
-提供商前缀依据目录元数据匹配，微调模型前缀保持独立。
+**用户覆盖**优先级最高。编辑 `<toksight-dir>/pricing.json`（单位：美元 / 百万 token）：
+
+```json
+{
+  "my-model": { "input": 3, "output": 15, "cacheRead": 0.3, "cacheWrite": 3.75 }
+}
+```
+
+名称先精确匹配，也接受无歧义的提供商后缀（例如 `zhipuai/glm-5.3` 可覆盖 `GLM-5.3`）。
+查价先匹配原始目录 ID，再尝试归一化别名。带日期快照保留各自价格；去日期的别名必须对应目录原名，
+或同模型、同提供商的候选价格完全一致。微调模型前缀保持独立。
+
+Codex 会话提供商、OpenCode 消息提供商、能安全关联到用量的 Kimi 请求提供商和 ZCode rollout 提供商
+会保留。自定义 Agent 提供商可以通过 `<toksight-dir>/providers.json` 绑定原厂 API 参考价：
+
+```json
+[
+  { "client": "codex", "providerId": "myproxy", "provider": "openai", "since": "2026-10-01T00:00:00Z" }
+]
+```
+
+绑定可选 `model`、包含起点的 `since`、不包含终点的 `until`；时间必须带时区。同等具体程度的重叠绑定
+不推断。编辑后刷新用量或更新价格。未知自定义提供商需要绑定或 `pricing.json` 覆盖；不会用今天的
+Agent 配置倒推全部历史。绑定使用原厂 API 参考价，不代表中转商报价。
 
 Kimi Code 的版本化 ID `kimi-code/k3`、`kimi-code/k3-256k` 按官方
-[模型对应关系](https://www.kimi.com/code/docs/kimi-code/models.html)匹配 `moonshot/kimi-k3` 的参考价格，
-原始用量 ID 保持不变。同来源内端点原名的价格优先，用户覆盖仍享有最高优先级。
-这需要目录中的 Moonshot 单价（离线可用已有缓存）或用户覆盖；所得费用为 API 参考估算，
-不是 Kimi Code 订阅实付金额或套餐额度消耗。`kimi-code/kimi-for-coding` 等滚动 ID
-对应的底层模型会随时间变化，只有明确提供其价格时才计价。
+[模型对应关系](https://www.kimi.com/code/docs/kimi-code/models.html)匹配 `moonshot/kimi-k3` 参考价，
+原始用量 ID 不变。同来源内端点原名价格优先，用户覆盖始终优先。需要 Moonshot 目录价格或用户覆盖。
+这是 API 参考估算，不代表 Kimi Code 订阅实付或套餐额度。`kimi-code/kimi-for-coding` 等滚动 ID
+只有明确价格时才计价，不推断其历史底层模型。
 
-LiteLLM 的标准长上下文字段（如 `*_above_200k_tokens`）按单次请求的新鲜输入 + 缓存读取 +
-缓存写入选择，不计输出；采用已越过的最高阈值对应单价计算整次请求，xAI 直连接口包含阈值边界。
-档位未提供输出或缓存单价时沿用已公布的基础价；基础价也未提供缓存价格时，退回所选档位的输入价。
-不推断缓存时长和服务档位的加价或折扣；用户覆盖和自报费用继续优先。
-同一模型 ID 跨多个单价时，`pricing.modelRates` 标记 `variableRates` 并省略单一单价。
-上下文价格随 SQLite 备份和离线导入保留；已有 Web 快照在下次更新单价或刷新用量时补齐这些元数据。
+LiteLLM 标准长上下文字段（如 `*_above_200k_tokens`）和 Qwen 的 `tiered_pricing` 范围表，
+按单次请求的新鲜输入 + 缓存读取 + 缓存写入选档，
+不计输出；越过的最高阈值决定整次请求的单价，xAI 的阈值包含边界。档位缺少输出或缓存价时沿用已公布
+基础价；基础缓存价也缺失时退回所选档位输入价。范围表按 `(start, end]` 选档，32,000 token 留在第一档；
+每档缺少缓存价时使用该档输入价。不推断缓存时长和服务档位调整。自报金额与用户覆盖保持优先。
 
-`<toksight-dir>` 优先取 `TOKSIGHT_CONFIG_DIR`；未设置时，取 `$XDG_CONFIG_HOME/toksight`，
-再退到 `~/.config/toksight`。
-查不到价格的模型照常计数，成本显示为 `—`，并在 JSON 输出的 `pricing.unpricedModels` 中列出。
-OpenCode SQLite 中的 `cost: 0` 是占位值，仅非零自报费用优先；旧版 JSON 中的数值费用按上报值保留。
-Cursor CSV 的 `Included` 行会使用 Cursor 官方
-[Models & Pricing](https://cursor.com/docs/models-and-pricing) Markdown 总表，并从官方
-[文档索引](https://cursor.com/docs/llms.txt)自动发现模型详情页，读取 HTML 价格表及模型 ID。
-模型名、别名、Fast 和明确标出的长上下文档位来自下载的目录，不维护模型家族白名单。
-输入、缓存写入、缓存读取和输出单价用于计算**参考费用**，计入费用总额及排行；它并非实际扣费。
-CSV 中的数字费用及 `Free` 始终按原值使用。`Included` 行如果查不到 Cursor 单价（如无法确定
-实际路由模型的 `Auto`）才保持未定价。Cursor 单价在 `<toksight-dir>/cache/cursor-pricing.json` 缓存 7 天；
-`--offline` 可使用已有缓存。`pricing.sources.cursor` 标明缓存状态，网页的
-`costCoverage.sources.cursor` 单独列出这部分估算。表中明确标为 `Long Context (>N)` 的档位，
-按每次请求的新鲜输入 + 缓存读取 + 缓存写入选择；同一原始模型 ID 跨多个单价时，不显示单一
-单价提示，JSON 标记 `variableRates`。详情页失败时保留可用总表/缓存价格并报警；已抓取但本次
-缺失的模型保留最后已知价格及原抓取日期（`pricing.modelRates` 的 `retained` / `priceFetchedAt`）。
-历史记录按获取到的公开价格折算；过往套餐价格、未公布的上下文规则、地区加价及套餐专属费用
-等条件仍可能让参考费用与实际用量价值不同。
-旧版本导入时没有保存 CSV 的 Cost 标签，数据库升级后会将旧记录中的未知费用按 `Included` 处理。
-网页快照会把两个来源的单价归一化保存到 toksight 自己的 `usage.sqlite` 的 `model_prices` 表，
-保留价格来源、计费范围、原始目录名称、美元 / token 单价和上下文价格元数据。`price_updates` 记录各来源上次成功拉取
-及检查时间。Cursor 只使用 Cursor 计费范围内的价格；例如 CSV 中的
-`cursor-grok-4.6-xhigh-fast` 会匹配 `grok-4.6-fast`，`xhigh` 单独记录为 effort；
-`opus5.5-high` 会匹配 Claude Opus 5.5 官网单价。匹配优先采用目录中最完整的模型名/ID，
-再识别多出的执行模式词（`low`、`medium`、`high`、`xhigh`、`thinking`、`max`）；省略品牌的
-简写只有唯一匹配时才接受。歧义或未知名称保持未定价及原显示名。Max 模式因此归入基础模型，
-而官方单列的 Max 模型自动保持独立；Fast、500k 仍需各自的目录价格。新模型随单价更新接入，
-无需改代码或重传 CSV；Cursor 模型行使用匹配到的官方名称，自报费用记录也使用同一目录归并。
-CSV 的 `Max Mode` 列保存为记录中的可选 `cursorMaxMode` 元数据
-（true/false，未知为 null）；重导可补齐或更正，不重复计数，也不覆盖已知的自报费用。
-旧记录需要重导才能补齐该列。模型名中的 Max 模式在内部与推理 effort 分开保留；它不能确定
-当时的套餐，因此参考估算不会自动叠加旧套餐的 Max 附加费。
-其他 Agent 依上述通用来源优先级取价。用现在的公开单价折算历史记录仍只是参考估算，
-不是历史账单。每条请求按原始模型 ID 计价后，才按 Agent 和统一模型名汇总展示。
-同一行的各原始 ID 单价相同时，模型行的悬停提示显示实际采用的美元 / 百万 token 单价；JSON 的
-`pricing.modelRates` 保留原始 ID、effort 和单价。
-官网缓存单价标为 `-` 时，对应 token 暂按输入单价折算；
-`costCoverage.cacheFallbackRequests` 会统计受此影响的请求数。
+同一原始模型 ID 跨多个实际单价时，`pricing.modelRates` 标记 `variableRates` 并省略单一单价。
+每条请求按原始 ID 定价后再做展示归并。数据库保存提供商、原始目录名、美元 / token 单价与上下文档位，
+`price_updates` 保存拉取 / 检查状态；备份保留符合筛选条件的价格和历史。
 
-当 LiteLLM 条目缺少独立的缓存价格时，toksight 按该模型的输入价估算缓存 token，
-并在 `costCoverage.cacheFallbackRequests` 中标记受影响请求。真实缓存读取价较低时，
-这一回退可能高估费用；有独立缓存价格的模型按其缓存价格计算。
+`<toksight-dir>` 优先取 `TOKSIGHT_CONFIG_DIR`，其次 `$XDG_CONFIG_HOME/toksight`，否则为 `~/.config/toksight`。
+查不到价格的模型照常统计 token，费用显示 `—`，并列入 `pricing.unpricedModels`。
+OpenCode SQLite 的 `cost: 0` 是占位，仅非零数据库费用视为自报金额；旧 JSON 数值费用照录。
+LiteLLM 缺少独立缓存价格时按输入价估算，`costCoverage.cacheFallbackRequests` 统计受影响请求；这可能高估缓存读取费用。
+参考估算不等于历史账单或订阅账单。
 
 ## 网页仪表盘
 
@@ -185,15 +199,15 @@ CSV 的 `Max Mode` 列保存为记录中的可选 `cursorMaxMode` 元数据
 `toksight refresh --offline` 可跳过价格拉取。
 
 **设置**中的**导出数据库**会下载独立的 `.sqlite` 备份，包含所有 Agent、所有日期的已提交用量，
-不受当前报告周期或启动筛选影响。备份包含会话标题与目录、Cursor 导入记录、价格和费用来源；
+不受当前报告周期或启动筛选影响。备份包含会话标题与目录、导入用量、价格和费用来源；
 不包含 Agent 原始文件、凭据或浏览器偏好。需要收录最新会话时先刷新再导出。
 **导入数据库**接受 toksight 的 `.sqlite` 或 `.db` 文件（最大 256 MB），展示合并说明后，
 在事务中导入。无效或不兼容的数据库不会改变已有数据。结果展示新增、更新和重复数量，
 报告跳转到备份最新用量所在周期。
 
-导入采用**合并去重**，不会替换目标数据库。非 Cursor 记录按 Agent、会话 ID、时间戳、模型和
+导入采用**合并去重**，不会替换目标数据库。用量记录按 Agent、会话 ID、时间戳、模型和
 token 数匹配，相同请求在不同备份中取最大出现次数，目录与标题不影响匹配。
-已有上报费用及冲突价格优先保留，上报费用可以补全原有估算；Cursor 沿用 CSV 事件匹配规则。
+已有上报费用及冲突价格优先保留，上报费用可以补全原有估算。
 用量字段发生变化时无法确定是同一请求，可能再次计入。导入历史在刷新后继续保留，
 也会出现在 CLI 报告中，并可再次导出。估算费用会随本机价格更新而变化。
 
@@ -203,38 +217,53 @@ CLI 提供 `toksight export-db <文件>` 与 `toksight import-db <文件>`，加
 返回 JSON 合并统计）；两者均保留本机 Host 检查，导入还需通过来源检查。
 导入导出支持离线操作，不会写入 Agent 文件。
 
-报告上方的**更新单价**按钮调用 `POST /api/prices/update`，同时检查 LiteLLM 和 Cursor，
-不受 7 天自动更新间隔限制。启动及报表请求只会在某个来源距上次成功拉取至少 7 天时
-自动检查；失败后隔一小时再试。页脚和 `pricing.updates` 显示各来源上次成功更新时间。
-单价更新会重算已有估算，无需重新扫描用量，也不会覆盖 Agent 或 CSV 上报的金额。
-`--offline` 禁止手动联网更新。
+价格页顶栏中“更新单价”旁的**重置价格库**会清除已保存的单价、价格观察历史、LiteLLM 下载缓存以及快照和导入记录中的价格回退值，
+弹窗说明清除范围，执行中禁止重复操作，失败可在弹窗内重试；确认成功后返回首次建库引导。可选择重新下载公开价格，或使用自定义定价本地继续。
+历史估算费用会重新计算；用量、自报费用、数据库导入、已选价格来源、`pricing.json` 和
+`providers.json` 均保留。重置的是共享 `usage.sqlite` 内的价格数据，不删除用量数据库文件。
+如需保留价格历史，可先导出数据库备份。
 
-要加入 Cursor 历史，在 Cursor 导出 **Usage Events** CSV，打开 `toksight web`，点击设置中的
-**导入 Cursor CSV**。文件只发送到本机 toksight 服务，用量记录保存在 `usage.sqlite`；
-按时间、模型和 token 数匹配重复事件，费用标记或金额变化不会重复计入 token。导入结果会在刷新后保留，
-也可在 CLI 用 `--client cursor` 查看。
-零 token 的行会跳过。CSV 不包含会话 ID，因此 Cursor 不显示会话数与会话详情；其 `Cache Read`
-列足以按现有口径计算缓存命中率。
-Cursor 导出不含事件 ID：时间、模型及 token 数完全相同的两条真实事件，无法与跨文件重复行严格区分；
-如果 Cursor 后续修订了模型名或 token 数，同一事件仍可能被再次计入。导入提示会显示匹配结果。
+CLI 对应命令是 `toksight reset-prices`，支持 `--json` 和离线执行，之后运行 `toksight web` 重新建库；
+不接受日期或 Agent 筛选。运行 CLI 重置前请关闭其他 toksight 进程。
+Web 使用 `POST /api/prices/reset`，返回 `completed: false` 的引导状态；
+该服务正在刷新或更新价格时返回 HTTP 409。重置本身不扫描 Agent，也不联网。
 
-网页默认打开**今天**，侧边导航提供**今天、日历、设置**三个入口。全高侧栏与报告左右分区，Logo 位于
-侧栏顶部，导航组垂直居中，配色与中文 / EN 切换位于底部；导航与偏好按钮均提供较大的点击区域。
-窄屏时侧栏收为导航与“显示偏好”菜单，配色与语言在菜单内切换。侧栏使用无点阵的灰色背景，
-主内容区保留减弱的点阵与暖色明暗配色，图表和表格使用清晰底色（视觉规范见 `design-spec.md`）。
-**刷新、更新单价、导出图片**位于报告上方。
+报告上方的**更新单价**按钮调用 `POST /api/prices/update`，由本机下载 LiteLLM 价格，
+不受 7 天更新间隔限制。左侧**价格**页按厂商分区（用过的厂商在前），每个模型一张卡片，显示输入、缓存读写和输出单价
+（美元 / 百万 tokens，2–4 位小数）、长上下文档位标记，以及已知时的最大输入；只显示官方第一方当前单价：
+同一模型、同一价格的多个目录 ID（提供商前缀、带日期快照）合并显示。顶部有搜索框和厂商筛选标签。
+默认只列出用过的模型，关闭**只看用过的模型**可浏览完整目录，每个厂商先预览五张卡片，并提供“查看全部”入口。
+展开卡片的**价格明细**可查看档位等计费条件、目录 ID、日志中匹配到它的模型名和价格来源；页头的设置按钮里可调整价格来源和自动更新。浏览价格只读取本地数据库。
+开启后，服务每小时及启动/报表读取时检查，来源过期才更新，失败隔一小时重试；服务关闭即停止。
+新价格按适用请求时间重算费用，不重扫用量，也不覆盖自报金额。`--offline` 禁止网络更新。
+首次引导选择本地继续时，首次自动检查推迟一小时。
+`GET /api/prices/status` 返回引导和更新状态；`POST /api/setup` 完成引导或修改自动更新偏好，
+`GET /api/prices` 返回目录（`records`，以及按模型合并的 `models`，含 `names`、`ids`、`used`），
+加 `key=<记录 id>` 读取该项价格历史（从新到旧）。API 单价仍为美元 / token。
+记录可带 `maxInputTokens` / `maxTokens`（取自 LiteLLM 的 `max_input_tokens` / `max_tokens`，正整数，未知时省略；
+它们不会产生价格修订），每个合并后的模型行带 `usedAs`：日志里解析到该模型的模型名（排序后的数组，未使用时为 `[]`）。
+这些接口遵守已有 Host/Origin 检查。
 
-- **今天**：突出 Tokens 与参考费用，缓存命中率和请求数作为辅助指标；再展示小时分布、可展开模型的 Agent 表
-  和最多十条会话。单模型 Agent 直接标明模型名，任一 Agent 使用多个模型时才展示独立模型排行。
-  图表标明数量刻度，小时峰值同时显示时间和用量。可以筛选全部或单个 Agent。会话包含标题、用量、费用、起止时间、
-  活跃时长、目录和模型。
-- **日历**：热力日历与所选日期详情直接展开，宽屏左右排列，窄屏上下排列。单击日期或用键盘激活就能
-  切换详情，‹ / › 逐日移动；不再使用弹层、拖动卡片或分页卡片堆。保留月 / 年导航、月份直达、
-  **1D / 7D / MTD / 30D**、包含首尾日期的自定义范围和 Agent 筛选。范围总量提前到日历顶部；窄屏选择日期
-  会定位到紧接日历的详情，可用“返回日历”回到所选格，趋势排在详情之后并提供快捷入口。
-  窄格用较短的数字缩写，日期标签和提示保留完整格式。短范围用日历，长范围按年分组周网格；趋势单日按小时、最多 62 个已过
-  日期按日、更长范围按月汇总，缺失日期补零。
-- **设置**：调整统计时区，导入 / 导出完整数据库，导入 Cursor CSV。
+前端位于 `frontend/`，采用简洁紧凑的“素面工作台”设计语言：全站一种无衬线字体（随包 Geist + 中文无衬线回退）与等宽数字、
+纯色底面上的平面面板、只用一种强调色，提供浅色与深色主题，侧栏可收起。网页默认打开**今天**，侧栏提供**今天、日历、价格、设置**。
+侧栏底部显示隐私说明、统计时区和收起按钮。
+页面不设大标题横幅，内容紧接顶栏；顶栏左侧是 Logo（回到今天），右侧是页面操作（报告页为**导出图片**与**刷新数据库**，价格页为**重置价格库**与**更新单价**）、
+配色菜单（浅色 / 深色 / 跟随系统）、中文 / EN 切换和 GitHub 链接。顶栏控件都是图标按钮，名称在悬停或键盘聚焦时以提示显示；
+手机上使用吸附横向导航。完整视觉规范见 `design-spec.md`。
+
+- **今天**：汇总所有 Agent。指标面板以日期和“截至”时间为标题，突出 Tokens 与参考费用，缓存命中率和请求数作为辅助指标；
+  再展示可切换 Tokens / 费用的小时分布、Token 构成条、可展开模型的 Agent 表、最多十条会话（默认展示五条，可展开）、额度，
+  最后是近 30 天趋势。有昨日基数时展示对比昨日全天的用量 / 费用变化。单模型 Agent 直接标明模型名，多模型 Agent 可展开查看各模型（不再单列模型排行）。
+  图表标明数量刻度，小时峰值同时显示时间和用量。会话包含标题、用量、费用、起止时间、活跃时长、目录和模型。
+- **日历**：从第一条记录所在月到本月连续排列的月份列表（所有 Agent 合计），周一开始，第 8 列是 ISO 周
+  （`W43`；周属于另一年时显示 `26W1`）。日格显示 Tokens 和费用，热度色阶按全部历史统一计算。两级缩放——大（每行一个月）
+  和紧凑（每行三个月，只显示颜色）——可用缩放按钮、Ctrl/⌘ + 滚轮、双指捏合或 `+` / `-` 切换，带过渡动画（减少动态效果时直接切换），
+  级别会被记住。单击选一天，拖动或 Shift+单击选区间，Ctrl/⌘+单击增减日期，单击周数选整周（加 Ctrl/⌘ 追加）；
+  键盘支持方向键、Home/End、PageUp/PageDown、Enter 和 Esc（回到今天），选中日的焦点环显示在选中框外侧。右侧详情栏显示选区合计、单日的时段分布，
+  以及按 Agent 和按模型的用量拆分（同一模型在多个 Agent 中使用时合并为一行）；**查看当日会话**把拆分切换为会话列表。
+  拆分的滚动区可以用 Tab 聚焦，再用方向键和 PageUp/PageDown 滚动。
+  宽度小于 1200px 时，日历（视口高度的 70%）在上，详情在下。
+- **设置**：调整外观、语言和统计时区，导入 / 导出完整数据库。
 
 统计时区默认自动读取浏览器，也可手动选择，例如系统设为美国时间时选 `Asia/Shanghai`。
 今天、日期边界、小时归属和显示时间都使用所选时区，时钟变化自动处理，界面始终采用统一的日视图。
@@ -244,10 +273,9 @@ Cursor 导出不含事件 ID：时间、模型及 token 数完全相同的两条
 Tokens 与费用始终同时显示。点击 Tokens / 费用表头切换排序，点击 Agent 行展开模型；每行的 ⓘ 按钮支持
 点击或 Enter / 空格展开 token 构成、请求、会话与匹配单价，窄屏隐藏的列也能完整查看。悬停提示保留。
 单个 Agent 超过八个模型时，第八行合并显示剩余模型。
-配色、语言、时区、日历模式和表格排序保存在 `localStorage`；日期和 Agent 筛选只在页面内存保存，
-重载回到今天。日历里的重置会回到当月和全部 Agent。
+配色、语言、时区、日历缩放级别和表格排序保存在 `localStorage`；日历选区只在页面内存保存，重载回到今天。
 
-**导出图片**将当前 Today 报告，或日历范围与所选单日详情，合成一张 PNG，包含日期、Agent、时区和页脚，
+**导出图片**将当前 Today 报告，或日历中可见的月份与右侧详情栏，合成一张 PNG，包含日期、Agent、时区和页脚，
 去掉操作控件和临时行内明细。已展开的模型会进入图片；数据尚未加载完成时禁用导出。费用混合上报金额与估算值，
 不等于订阅账单；未定价模型仍列在页脚。前端继续静态导出并使用本地 API。
 
@@ -255,25 +283,30 @@ Tokens 与费用始终同时显示。点击 Tokens / 费用表头切换排序，
 范围，网页报告不会越过这个范围。
 
 API 可以这样调用：`GET /api/data?period=custom&since=2026-09-01&until=2026-09-30`（报告本身
-就这样请求，单日详情也用同样方式请求某一天）或 `?client=claude&period=7d`。`period` 可为 `all`（默认）/ `today` / `7d` /
+就这样请求，日历选区也用同样方式请求）或 `?client=claude&period=7d`。`period` 可为 `all`（默认）/ `today` / `7d` /
 `30d` / `month` / `custom`（须同时给出 `since` 与 `until`）；`since` / `until` 可单独使用；
 预设周期不能与显式日期混用。可选的 `timezone=Asia%2FShanghai` 按 IANA 时区解释日期筛选和所有日历 / 小时统计，
-不传时保持服务端本地时区。未知、重复或无效参数返回 HTTP 400。`POST /api/refresh`
+不传时保持服务端本地时区。可选的 `days=2026-10-06,2026-10-08`（逗号分隔的 `YYYY-MM-DD`，按统计时区的本地日，
+最多 4000 个，自动排序去重）只保留这些日期，且只在其他筛选范围内收窄、不会扩大；响应的 `view.days` 回显该列表（未传时为 `null`）。
+未知、重复或无效参数（包括格式错误的 `days`）返回 HTTP 400。`POST /api/refresh`
 会更新数据库，并返回刷新时间、记录数和采集警告；网页 API 新增的 `snapshot` 字段包含刷新时间和记录数。
-`POST /api/prices/update` 不扫描用量，只更新两种公开价格来源。
-`POST /api/import/cursor` 接受最大 20 MB 的 UTF-8 Cursor 用量 CSV，并返回新增、费用更新、重复及跳过条数。
+`POST /api/prices/update` 不扫描用量，由本机更新公开价格来源。
+`GET /api/quota` 返回本地额度数据，`POST /api/quota/refresh` 还会查询 Kimi Code。
 跨来源写入请求会被拒绝。
 
 ### 仪表盘构建产物
 
-npm 包已包含 `web/out/` 中预构建好的静态文件——安装后直接 `toksight web` 即可，无需构建，
+`frontend/` 是唯一的前端源码、依赖、构建与发布目录；旧 `web/` 已移除。
+推荐 `npm run frontend:ci`、`npm run frontend:dev`、`npm run frontend:build`；原 `web:*` 命令仍兼容，均指向新版。
+
+npm 包已包含 `frontend/out/` 中预构建好的静态文件——安装后直接 `toksight web` 即可，无需构建，
 也不运行 Next。从源码预览发布版页面需要 Node >=22.5：
 
 ```bash
 npm run web:ci && npm run web:build && node bin/toksight.js web
 ```
 
-`web/out/` 尚未构建时，`toksight web` 会在 `/` 显示构建指引页，`/api/data` 不受影响；
+`frontend/out/` 尚未构建时，`toksight web` 会在 `/` 显示构建指引页，`/api/data` 不受影响；
 `web:build` 只构建不安装依赖，改完前端需重新构建并刷新。`npm pack` / `npm publish`
 会自动重建仪表盘。
 
@@ -283,17 +316,15 @@ npm run web:ci && npm run web:build && node bin/toksight.js web
 分母（那是被存储的冷数据，不是被服务的流量）。统计按**每次请求**归因：一个会话中途切换模型，
 会被干净地拆分到分 Agent / 分模型视图里——缓存本来就绑定模型，A 模型的缓存不可能对 B 模型
 命中，因此按请求归属是精确的。ZCode 上报的 `input_tokens` 是含缓存读取的完整提示词，toksight
-会先扣除缓存部分得到新鲜输入，让该公式在各 Agent 间口径一致。Cursor CSV 已区分新鲜输入、
-缓存读取和缓存写入。
+会先扣除缓存部分得到新鲜输入，让该公式在各 Agent 间口径一致。
 
 ## 隐私
 
 toksight 本地优先：CLI 与网页报告只**读取**各 Agent 的会话文件。刷新会写入 toksight 自己的
 SQLite 数据库，价格抓取可能更新本地缓存；toksight 不会上传用量数据，也不会写回 Agent 文件。
-Cursor CSV 导入数据同样存于这个数据库。
 如果修改 `--host`，同一网络中的其他客户端可能读取报告和 API。
-外部请求仅用于拉取 LiteLLM 公开价格，以及 Cursor 官方价格总表、模型索引和详情页；`--offline`
-可关闭两种网络请求。
+外部请求用于下载 LiteLLM 价格表；`--offline` 可关闭联网价格请求。`toksight quota` 与网页的“刷新 Kimi 额度”
+按钮还会用本机 Kimi Code 令牌请求 Kimi Code 用量 API。
 报告图片在浏览器里生成，只保存到你下载的位置。
 
 ## JSON 输出
@@ -305,6 +336,9 @@ entries 构建，`--client` / `--since` / `--until` 对它与其余切片一样�
 `models` 按 Agent 和展示名称分行，`modelIds` 列出原始 ID；`pricing.modelRates` 保留
 每个 ID 的单价细节。名称合并不会改变逐条请求算出的费用。
 `toksight refresh --json` 则返回数据库路径、刷新时间、记录数和采集警告。
+`toksight quota --json` 返回 `{ tool, version, generatedAt, quotas }`；每项包含 `client`、`plan`、`source`
+（`local`/`api`）、`fetchedAt`、`observedAt`、`windows`（`id`、`label`、`windowMinutes`、`usedPercent`、可选的
+`used`/`limit`/`remaining`、`resetsAt`、`reset`）以及可选的 `error` `{ code, message }`。
 
 `warnings` 会披露采集问题（无法读取的目录、存在但打不开的 SQLite 数据库）和数据口径问题——
 尤其是被 `--since` / `--until` 过滤排除的“无时间戳”条目，会在这里报告而不是无声消失。
@@ -330,20 +364,24 @@ entries 构建，`--client` / `--since` / `--until` 对它与其余切片一样�
 ```bash
 npm test              # node:test 套件 + 各客户端 fixture（无需联网）
 node bin/toksight.js  # 从源码直接运行
-npm run web:ci        # 按 web/package-lock.json 安装锁定的网页依赖
+npm run web:ci        # 按 frontend/package-lock.json 安装锁定的网页依赖
 npm run web:dev       # 同时启动 API（4729）和前端（3000），支持热更新
 ```
 
-打开 `http://127.0.0.1:3000`，无需提前构建 `web/out/`；Ctrl+C 一起关闭前后端，端口被占用
+打开 `http://127.0.0.1:3000`，无需提前构建 `frontend/out/`；Ctrl+C 一起关闭前后端，端口被占用
 会报错并关闭本命令启动的服务。`npm run web:dev -- --port 3001 --api-port 4730 --offline`
 可覆盖两个端口并关闭价格拉取。需要分开管理时，在仓库根目录用两个终端分别跑
 `node bin/toksight.js web --api-only` 与 `npm run web:dev:ui`（代理目标可用
 `TOKSIGHT_DEV_API` 覆盖，仅影响开发服务器，生产构建始终输出静态文件）。
 `web:install` 保留给需要更新网页依赖的开发者。
 
-CLI 本体保持**零运行时依赖**，仪表盘依赖只存在于 `web/package.json`，仅在（重新）构建
-`web/out/` 时需要。数据流程：会话文件 → 解析器 → `collectAll` → CLI 输出或 SQLite 刷新 → `/api/data`；
-`web/` 源码 → Next 构建 → `web/out/` → CLI 内置 HTTP 服务器。架构、数据契约与维护说明按主题收录在
+仓库的 [`.codex/config.toml`](./.codex/config.toml) 已配置项目级 Playwright MCP，供 Codex 操作浏览器。
+信任项目并重新启动 Codex 会话后，可用 `/mcp` 查看服务。
+安装与使用步骤见[开发指南](./doc/development-release.md#playwright-mcp)。
+
+CLI 本体保持**零运行时依赖**，仪表盘依赖只存在于 `frontend/package.json`，仅在（重新）构建
+`frontend/out/` 时需要。数据流程：会话文件 → 解析器 → `collectAll` → CLI 输出或 SQLite 刷新 → `/api/data`；
+`frontend/` 源码 → Next 构建 → `frontend/out/` → CLI 内置 HTTP 服务器。架构、数据契约与维护说明按主题收录在
 [doc/README.md](./doc/README.md)；精简的 Agent 规则见 [AGENTS.md](./AGENTS.md)。
 
 ```bash
@@ -366,7 +404,7 @@ PR CI 会检查版本一致性、测试和安装包。合入后 Release 工作�
 ### 路线图
 
 - [x] 网页仪表盘（`toksight web`，第二阶段）
-- [x] 今天 / 日历 / 设置工作空间，可调整时区并导出图片（`toksight web`）
+- [x] 今天 / 日历 / 价格 / 设置工作空间，可调整时区并导出图片（`toksight web`）
 - [ ] TUI watch 模式
 - [ ] 更多客户端（Windsurf、pi……）
 - [ ] `--export csv`、排行榜式分享
@@ -374,3 +412,6 @@ PR CI 会检查版本一致性、测试和安装包。合入后 Release 工作�
 ## 许可
 
 MIT。与智谱 AI、Anthropic、OpenAI 及各智能体厂商均无关联。
+
+价格页的厂商与模型 Logo 来自 [LobeHub Icons](https://github.com/lobehub/lobe-icons)（MIT 许可，© LobeHub），
+见 `frontend/public/logos/LICENSE.txt`；各标志仍归其所有者所有。

@@ -1,0 +1,12 @@
+/* Utilities and global motion policy: always the last layer. */
+@layer utilities {
+  .visually-hidden { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  .spin { animation: spin 1s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @keyframes pulse { to { opacity: .45; } }
+  @keyframes rise { from { transform: scaleY(0); } }
+  @keyframes slide-in { from { opacity: 0; transform: translateY(6px); } }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
+  }
+}

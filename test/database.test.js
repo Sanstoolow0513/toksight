@@ -7,7 +7,8 @@ import { DatabaseSync } from 'node:sqlite';
 
 import { createUsageDatabase, databasePath } from '../src/database.js';
 import { buildCostCoverage } from '../src/costcoverage.js';
-import { parseCursorCsv } from '../src/cursorcsv.js';
+import { priceRecord } from '../src/pricecatalog.js';
+import { historyPriceKey } from '../src/pricehistory.js';
 
 const entry = (model, costUsd) => ({
   client: 'opencode', sessionId: 'one', model, timestamp: Date.now(),
@@ -20,9 +21,9 @@ function collected(entries) {
   return {
     entries, warnings: ['fixture warning'], reportedCosts: new WeakSet(entries.slice(0, 1)),
     pricing: {
-      sources: { builtin: true, litellm: 'skipped (offline)', user: false },
+      sources: { user: true, litellm: 'skipped (offline)' },
       configDir: '/fixture',
-      priceFor: (model) => model === 'priced' ? { source: 'builtin', cacheReadFallback: true } : null,
+      priceFor: (model) => model === 'priced' ? { source: 'user', cacheReadFallback: true } : null,
     },
   };
 }
@@ -44,7 +45,7 @@ test('SQLite snapshot survives reopen, retains cost provenance, and notices exte
   assert.deepEqual(first.warnings, ['fixture warning']);
   const coverage = buildCostCoverage(first.entries, first);
   assert.equal(coverage.sources.reported.requests, 1);
-  assert.equal(coverage.sources.builtin.requests, 1);
+  assert.equal(coverage.sources.user.requests, 1);
   assert.equal(coverage.cacheFallbackRequests, 1);
 
   writer.replace(collected([entry('new', 9)]), '2026-09-08T13:00:00.000Z');
@@ -53,21 +54,7 @@ test('SQLite snapshot survives reopen, retains cost provenance, and notices exte
   assert.equal(second.entries[0].model, 'new');
   assert.equal(second.refreshedAt, '2026-09-08T13:00:00.000Z');
 
-  const csv = 'Date,Cloud Agent ID,Automation ID,Kind,Model,Max Mode,Input (w/ Cache Write),Input (w/o Cache Write),Cache Read,Output Tokens,Total Tokens,Cost\n' +
-    '2026-08-31T12:00:00Z,,,Included,cursor-test,No,0,10,30,2,42,Included\n';
-  const imports = parseCursorCsv(csv).records;
-  assert.equal(writer.importCursor(imports, '2026-09-08T14:00:00.000Z').imported, 1);
-  assert.equal(reader.read().entries.length, 2);
-  assert.equal(reader.read().refreshedAt, '2026-09-08T14:00:00.000Z');
-  writer.updateCursorPricing({
-    state: 'fresh',
-    priceFor: () => ({ input: 1e-6, cacheRead: 0.1e-6, cacheWrite: 1e-6, output: 2e-6, source: 'cursor' }),
-  });
-  assert.ok(Math.abs(reader.read().entries[1].costUsd - 17e-6) < 1e-12);
-  assert.equal(writer.importCursor(imports).duplicates, 1);
-  writer.replace(collected([entry('after-import', 3)]), '2026-09-08T15:00:00.000Z');
-  assert.deepEqual(reader.read().entries.map((e) => e.model), ['after-import', 'cursor-test']);
-  assert.ok(Math.abs(reader.read().entries[1].costUsd - 17e-6) < 1e-12);
+
 });
 
 test('failed SQLite replacement rolls back rows and metadata', () => {
@@ -83,54 +70,50 @@ test('failed SQLite replacement rolls back rows and metadata', () => {
   } finally { db.close(); }
 });
 
-test('legacy all-column Cursor keys are reconciled on read without changing stored rows', async (t) => {
-  const dir = await mkdtemp(path.join(os.tmpdir(), 'toksight-cursor-legacy-'));
+test('legacy Cursor tables remain untouched and are excluded from reports and new databases', async (t) => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'toksight-retired-cursor-'));
   const file = path.join(dir, 'usage.sqlite');
+  const legacy = new DatabaseSync(file);
+  legacy.exec('CREATE TABLE cursor_imports (fingerprint TEXT PRIMARY KEY, data_json TEXT NOT NULL, reported_cost INTEGER NOT NULL)');
+  legacy.prepare('INSERT INTO cursor_imports VALUES (?, ?, ?)').run('legacy:0', '{"old":true}', 0);
+  legacy.close();
   const db = createUsageDatabase({ file });
   t.after(async () => { db.close(); await rm(dir, { recursive: true, force: true }); });
-  db.replace(collected([]));
-  const csv = 'Date,Cloud Agent ID,Automation ID,Kind,Model,Max Mode,Input (w/ Cache Write),Input (w/o Cache Write),Cache Read,Output Tokens,Total Tokens,Cost\n' +
-    '2026-08-31T12:00:00Z,,,Included,cursor-test,No,0,10,30,2,42,Included\n';
-  const parsed = parseCursorCsv(csv).records[0];
-  const other = new DatabaseSync(file);
+  db.replace(collected([entry('priced', 4), { ...entry('cursor-old', 1), client: 'cursor' }]));
+  assert.deepEqual(db.read().entries.map(e => e.client), ['opencode']);
+  assert.equal(db.importCursor, undefined);
+  assert.equal(db.updateCursorPricing, undefined);
+  const inspect = new DatabaseSync(file);
   try {
-    const insert = other.prepare('INSERT INTO cursor_imports (fingerprint, data_json, reported_cost) VALUES (?, ?, ?)');
-    insert.run('old-included:0', JSON.stringify(parsed.entry), 0);
-    insert.run('old-charged:0', JSON.stringify({ ...parsed.entry, costUsd: 0.4 }), 1);
-  } finally { other.close(); }
-  assert.equal(db.read().entries.length, 1);
-  assert.equal(db.read().entries[0].costUsd, 0.4);
-  assert.equal(db.importCursor([{ ...parsed, entry: { ...parsed.entry, costUsd: 0.4 } }]).duplicates, 1);
-  assert.equal(db.read().entries.length, 1);
-  const corrected = db.importCursor([{ ...parsed, entry: { ...parsed.entry, costUsd: 0.5 } }]);
-  assert.equal(corrected.updated, 1);
-  assert.equal(db.read().entries.length, 1);
-  assert.equal(db.read().entries[0].costUsd, 0.5);
+    assert.deepEqual(inspect.prepare('PRAGMA table_info(cursor_imports)').all().map(c => c.name), ['fingerprint', 'data_json', 'reported_cost']);
+    assert.equal(inspect.prepare('SELECT data_json FROM cursor_imports').get().data_json, '{"old":true}');
+  } finally { inspect.close(); }
+  const freshFile = path.join(dir, 'fresh.sqlite');
+  createUsageDatabase({ file: freshFile }).close();
+  const fresh = new DatabaseSync(freshFile);
+  try { assert.equal(fresh.prepare("SELECT name FROM sqlite_master WHERE name = 'cursor_imports'").get(), undefined); }
+  finally { fresh.close(); }
 });
 
-test('legacy Cursor imports gain an Included marker and can use official rates after migration', async (t) => {
-  const dir = await mkdtemp(path.join(os.tmpdir(), 'toksight-cursor-migration-'));
-  const file = path.join(dir, 'usage.sqlite');
-  const csv = 'Date,Cloud Agent ID,Automation ID,Kind,Model,Max Mode,Input (w/ Cache Write),Input (w/o Cache Write),Cache Read,Output Tokens,Total Tokens,Cost\n' +
-    '2026-08-31T12:00:00Z,,,Included,gpt-5,No,0,10,30,2,42,Included\n';
-  const record = parseCursorCsv(csv).records[0];
-  const old = new DatabaseSync(file);
+test('first-party LiteLLM observations retain rate history and source selection controls every history view', () => {
+  const db = createUsageDatabase({ file: ':memory:' });
+  const rate = (input) => priceRecord({ source: 'litellm', provider: 'openai', name: 'gpt-example', input, output: 0, cacheRead: 0, cacheWrite: 0 });
   try {
-    old.exec('CREATE TABLE cursor_imports (fingerprint TEXT PRIMARY KEY, data_json TEXT NOT NULL, reported_cost INTEGER NOT NULL CHECK (reported_cost IN (0, 1)))');
-    old.prepare('INSERT INTO cursor_imports (fingerprint, data_json, reported_cost) VALUES (?, ?, 0)')
-      .run(record.key, JSON.stringify(record.entry));
-  } finally { old.close(); }
-  const db = createUsageDatabase({ file });
-  t.after(async () => { db.close(); await rm(dir, { recursive: true, force: true }); });
-  db.replace({
-    entries: [record.entry], warnings: [], reportedCosts: new WeakSet(),
-    pricing: {
-      sources: { cursor: 'fresh' }, configDir: dir,
-      priceFor: (_model, client) => client === 'cursor' ? {
-        input: 1e-6, output: 2e-6, cacheRead: 0.1e-6, cacheWrite: 1e-6, source: 'cursor',
-      } : null,
-    },
-  });
-  assert.ok(Math.abs(db.read().entries[0].costUsd - 17e-6) < 1e-12);
-  assert.equal(buildCostCoverage(db.read().entries, db.read()).sources.cursor.requests, 1);
+    db.replace(collected([entry('gpt-example', null)]));
+    const first = '2026-09-08T12:00:00.000Z', second = '2026-09-09T12:00:00.000Z';
+    db.updatePriceCatalog({ records: [rate(1e-6)], sources: ['litellm'], sourceDetails: {} }, first);
+    db.updatePriceCatalog({ records: [rate(2e-6)], sources: ['litellm'], sourceDetails: {} }, second);
+    const key = historyPriceKey(rate(1e-6));
+    assert.equal(db.priceStatus().revisions, 2);
+    assert.deepEqual(db.priceCatalog(key).history.map(r => r.observedAt), [second, first]);
+    assert.equal(db.priceCatalog().records[0].revisions, 2);
+    assert.equal(db.read().pricing.priceFor('gpt-example', 'codex', { timestamp: Date.parse(first) }).input, 1e-6);
+    db.selectPriceSources([]);
+    assert.equal(db.priceStatus().revisions, 0);
+    assert.deepEqual(db.priceCatalog(key).history, []);
+    assert.deepEqual(db.priceCatalog().records, []);
+    assert.equal(db.read().pricing.priceFor('gpt-example', 'codex'), null);
+    db.selectPriceSources(['litellm']);
+    assert.equal(db.priceStatus().revisions, 2);
+  } finally { db.close(); }
 });

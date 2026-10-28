@@ -1,30 +1,46 @@
 import { collectAll, filterEntries } from './collect.js';
-import { buildPayload } from './payload.js';
 import { activityRange, buildHeatmap, buildTrend, buildTrendByAgent, buildWebExtras } from './webdata.js';
 import { buildComparison } from './comparison.js';
 import { buildCostCoverage } from './costcoverage.js';
 import { resolveWebQuery } from './webquery.js';
-import { calendarDaysBetween, endOfDay, startOfDay, stepDay, weekday } from './dates.js';
+import { calendarDaysBetween, dateKey, endOfDay, startOfDay, stepDay, weekday } from './dates.js';
 import { localDate } from './aggregate.js';
 import { createUsageDatabase } from './database.js';
 import { getPricing, PRICE_REFRESH_MS } from './pricing.js';
-import { parseCursorCsv } from './cursorcsv.js';
-import { createCursorPriceLookup, cursorPriceRecords, getCursorPricing } from './cursorpricing.js';
+import { PRICE_SOURCES, validPriceSources } from './priceselection.js';
+import { resetPriceDatabase } from './pricereset.js';
+import { collectQuotas, QUOTA_CLIENTS } from './quota.js';
+import { buildPayload, buildQuotaPayload } from './payload.js';
 
 // The database is loaded before serving. Requests reuse its in-memory snapshot;
 // refreshes share a single collection/write and swap only after commit.
-export function createWebDataService(base, { collect = collectAll, env, home, database = createUsageDatabase({ env, home }), now = Date.now, cursorPricing = getCursorPricing, genericPricing = getPricing } = {}) {
+export function createWebDataService(base, { collect = collectAll, env, home, database = createUsageDatabase({ env, home }), now = Date.now, genericPricing = getPricing,
+  setIntervalImpl = setInterval, clearIntervalImpl = clearInterval, quotaFetch } = {}) {
   let inflightRefresh = null;
   let inflightPrices = null;
   let initialized = false;
   let startupPricingWarnings = [];
+  let timer = null, closed = false, inflightSetup = null;
+  const assertOpen = () => { if (closed) throw new Error('web service is closed'); };
+  function schedule() {
+    if (timer) clearIntervalImpl(timer);
+    timer = null;
+    if (!base.offline && database.priceStatus().completed && database.priceStatus().autoUpdate) {
+      timer = setIntervalImpl(() => {
+        if (database.priceStatus().completed && database.priceStatus().autoUpdate) {
+          void updatePrices().catch((err) => { if (!closed) startupPricingWarnings = [err.message]; });
+        }
+      }, 60 * 60 * 1000);
+      timer?.unref?.();
+    }
+  }
   async function refresh() {
     if (!inflightRefresh) {
       const run = Promise.resolve()
-        .then(() => collect({ ...base, clients: null, since: null, until: null }, { env, home }))
-        .then((raw) => database.replace(raw))
+        .then(() => collect({ ...base, offline: true, clients: null, since: null, until: null }, { env, home }))
+        .then((raw) => { assertOpen(); return database.replace(raw); })
         .then((current) => {
-          if (current.pricing.sources.cursor !== 'unavailable') startupPricingWarnings = [];
+          if (!String(current.pricing.sources.litellm).startsWith('unavailable')) startupPricingWarnings = [];
           return current;
         });
       inflightRefresh = run;
@@ -34,6 +50,7 @@ export function createWebDataService(base, { collect = collectAll, env, home, da
     return { refreshedAt: raw.refreshedAt, entries: raw.entries.length, database: database.file, warnings: raw.warnings };
   }
   async function updatePrices(force = false) {
+    assertOpen();
     if (force && base.offline) {
       const err = new Error('price updates require an online web session');
       err.status = 400; err.code = 'PRICE_OFFLINE'; throw err;
@@ -44,38 +61,27 @@ export function createWebDataService(base, { collect = collectAll, env, home, da
       if (!current) { await refresh(); current = database.read(); }
       const time = now();
       const updates = current.pricing.updates ?? {};
+      const selectedSources = database.priceStatus().selectedSources;
       const due = (source) => {
         const fetched = Date.parse(updates[source]?.fetchedAt ?? '');
         const checked = Date.parse(updates[source]?.checkedAt ?? '');
         if (Number.isFinite(checked) && time - checked < 60 * 60 * 1000 && !force) return false;
         return !Number.isFinite(fetched) || time - fetched >= PRICE_REFRESH_MS;
       };
-      if (!force && !due('litellm') && !due('cursor')) return { updated: false, updates, warnings: [] };
-      const [generic, cursor] = await Promise.allSettled([
-        genericPricing({ offline: base.offline, force, env, home, now }),
-        cursorPricing({ offline: base.offline, force, env, home, now }),
-      ]);
+      if (!force && !selectedSources.some(due)) return { updated: false, updates, warnings: [] };
       const records = [], sources = [], details = {}, warnings = [];
-      if (generic.status === 'fulfilled') {
-        records.push(...(generic.value.records ?? []));
-        sources.push('builtin', 'user');
+      try {
+        const generic = await genericPricing({ offline: base.offline, force, env, home, now, selectedSources });
+        records.push(...(generic.records ?? []));
+        sources.push('user');
         if (records.some((record) => record.source === 'litellm')) sources.push('litellm');
-        Object.assign(details, generic.value.sourceDetails);
-        warnings.push(...(generic.value.warnings ?? []));
-      } else {
-        warnings.push(`LiteLLM pricing unavailable (${generic.reason?.message || generic.reason})`);
+        Object.assign(details, generic.sourceDetails);
+        warnings.push(...(generic.warnings ?? []));
+      } catch (err) {
+        warnings.push(`LiteLLM pricing unavailable; keeping saved prices (${err?.message || err})`);
         details.litellm = { fetchedAt: null, url: null, state: 'unavailable' };
       }
-      if (cursor.status === 'fulfilled') {
-        const cursorRecords = cursorPriceRecords(cursor.value.models);
-        records.push(...cursorRecords);
-        if (cursorRecords.length) sources.push('cursor');
-        details.cursor = { fetchedAt: cursor.value.fetchedAt, url: cursor.value.source, state: cursor.value.state };
-        warnings.push(...(cursor.value.warnings ?? []));
-      } else {
-        if (!base.offline) warnings.push(`Cursor pricing unavailable (${cursor.reason?.message || cursor.reason})`);
-        details.cursor = { fetchedAt: null, url: null, state: base.offline ? 'skipped (offline)' : 'unavailable' };
-      }
+      assertOpen();
       const latest = database.updatePriceCatalog({ records, sourceDetails: details, sources }, new Date(time).toISOString());
       startupPricingWarnings = warnings;
       return { updated: true, updates: latest.pricing.updates, warnings };
@@ -86,8 +92,9 @@ export function createWebDataService(base, { collect = collectAll, env, home, da
   }
   async function initialize() {
     if (!database.read()) await refresh();
-    await updatePrices();
+    if (database.priceStatus().completed && database.priceStatus().autoUpdate) await updatePrices();
     initialized = true;
+    schedule();
   }
   async function snapshot() {
     const current = database.read();
@@ -100,10 +107,14 @@ export function createWebDataService(base, { collect = collectAll, env, home, da
     let opts;
     try { opts = resolveWebQuery(params, base, time); }
     catch (err) { err.status = 400; err.code = 'BAD_QUERY'; throw err; }
-    if (initialized) await updatePrices();
+    if (initialized && database.priceStatus().completed && database.priceStatus().autoUpdate) await updatePrices();
     const raw = await snapshot();
     const timezone = opts.timezone;
     const filtered = filterEntries(raw.entries, opts);
+    if (opts.days) {
+      const wanted = new Set(opts.days);
+      filtered.entries = filtered.entries.filter((entry) => wanted.has(dateKey(entry.timestamp, timezone)));
+    }
     const ctx = { ...raw, opts, entries: filtered.entries, warnings: [...raw.warnings, ...filtered.warnings, ...startupPricingWarnings] };
     const scope = filterEntries(raw.entries, { ...base, clients: opts.clients }).entries;
     const payload = { ...buildPayload(ctx), ...buildWebExtras(ctx.entries, { top: opts.top, now: time, timezone }) };
@@ -126,6 +137,7 @@ export function createWebDataService(base, { collect = collectAll, env, home, da
     }
     return {
       ...payload,
+      priceDatabase: { ...database.priceStatus(), offline: Boolean(base.offline), updating: Boolean(inflightPrices) },
       snapshot: { refreshedAt: raw.refreshedAt, entries: raw.entries.length },
       scopeRange: activityRange(scope),
       selection,
@@ -134,6 +146,7 @@ export function createWebDataService(base, { collect = collectAll, env, home, da
       view: {
         period: opts.period, today: localDate(time, timezone), availableClients: opts.availableClients,
         since: opts.since == null ? null : localDate(opts.since, timezone), until: opts.until == null ? null : localDate(opts.until, timezone),
+        days: opts.days,
         startup: { clients: base.clients, since: base.since == null ? null : localDate(base.since, timezone), until: base.until == null ? null : localDate(base.until, timezone) },
       },
     };
@@ -141,6 +154,63 @@ export function createWebDataService(base, { collect = collectAll, env, home, da
   getData.initialize = initialize;
   getData.refresh = refresh;
   getData.updatePrices = () => updatePrices(true);
+  getData.resetPrices = () => {
+    assertOpen();
+    if (inflightRefresh || inflightPrices || inflightSetup) {
+      const err = new Error('Wait for the current refresh, import or price update before resetting prices');
+      err.status = 409; err.code = 'PRICE_BUSY'; throw err;
+    }
+    resetPriceDatabase(database, { env, home });
+    startupPricingWarnings = [];
+    schedule();
+    return getData.priceStatus();
+  };
+  getData.priceStatus = () => ({ ...database.priceStatus(), availableSources: PRICE_SOURCES, offline: Boolean(base.offline), updating: Boolean(inflightPrices), warnings: startupPricingWarnings });
+  getData.prices = (params = new URLSearchParams()) => {
+    assertOpen();
+    const keys = [...params.keys()], key = params.get('key');
+    if (keys.some((name) => name !== 'key') || keys.length > 1 || (key != null && (!key || key.length > 8192))) {
+      const err = new Error('invalid price query'); err.status = 400; err.code = 'BAD_QUERY'; throw err;
+    }
+    return { ...database.priceCatalog(key), offline: Boolean(base.offline), updating: Boolean(inflightPrices), warnings: startupPricingWarnings };
+  };
+  getData.setup = (options = {}) => {
+    if (inflightSetup) return inflightSetup;
+    if (typeof options !== 'object' || options == null || Array.isArray(options) ||
+      Object.keys(options).some((key) => !['offline', 'autoUpdate', 'selectedSources'].includes(key)) ||
+      ['offline', 'autoUpdate'].some((key) => Object.hasOwn(options, key) && typeof options[key] !== 'boolean') ||
+      (Object.hasOwn(options, 'selectedSources') && !validPriceSources(options.selectedSources))) {
+      const err = new Error('invalid setup options'); err.status = 400; err.code = 'BAD_SETUP'; return Promise.reject(err);
+    }
+    const run = (async () => {
+      await snapshot();
+      if (inflightPrices) await inflightPrices;
+      if (options.selectedSources) database.selectPriceSources(options.selectedSources);
+      let result = { warnings: [] };
+      if (!options.offline && !base.offline) result = await updatePrices(true);
+      else if (!database.priceStatus().completed && !base.offline) {
+        // Continuing locally must not trigger an immediate download on the
+        // very next report GET. Automatic checks can start after one hour.
+        database.updatePriceCatalog({ records: [], sources: [], sourceDetails: {
+          litellm: { fetchedAt: null, state: 'deferred', url: null },
+        } }, new Date(now()).toISOString());
+      }
+      if (options.offline || base.offline) {
+        const local = await genericPricing({ offline: true, env, home, selectedSources: [] });
+        assertOpen();
+        database.updatePriceCatalog({ records: (local.records ?? []).filter((record) => record.source === 'user'),
+          sources: ['user'], sourceDetails: {} }, new Date(now()).toISOString());
+        result.warnings.push(...(local.warnings ?? []));
+      }
+      assertOpen();
+      database.completeSetup({ autoUpdate: options.autoUpdate ?? database.priceStatus().autoUpdate }, new Date(now()).toISOString());
+      schedule();
+      return { ...getData.priceStatus(), warnings: result.warnings };
+    })();
+    inflightSetup = run;
+    run.then(() => { if (inflightSetup === run) inflightSetup = null; }, () => { if (inflightSetup === run) inflightSetup = null; });
+    return run;
+  };
   getData.exportDatabase = async () => {
     await snapshot();
     return database.exportDatabase();
@@ -151,32 +221,26 @@ export function createWebDataService(base, { collect = collectAll, env, home, da
     if (inflightRefresh) await inflightRefresh;
     return database.importDatabase(bytes);
   };
-  getData.importCursor = async (csv) => {
-    const parsed = parseCursorCsv(csv);
-    await snapshot();
-    let cursorRates = null;
-    const warnings = [...parsed.warnings];
-    if (parsed.records.some((record) => record.included)) {
-      try {
-        const result = await cursorPricing({ offline: base.offline, env, home });
-        cursorRates = { priceFor: createCursorPriceLookup(result.models), records: cursorPriceRecords(result.models),
-          sourceDetails: { cursor: { fetchedAt: result.fetchedAt, url: result.source, state: result.state } }, state: result.state };
-        warnings.push(...result.warnings);
-        startupPricingWarnings = [];
-      } catch (err) {
-        warnings.push(`Cursor pricing unavailable; Included usage may remain unpriced (${err.message})`);
-      }
+  // Quota: GET re-reads Codex logs and returns the last Kimi result held in
+  // memory (never persisted); only the explicit refresh calls the Kimi API.
+  let kimiQuota = null, inflightQuota = null;
+  const kimiCache = { get: () => kimiQuota, set: (value) => { kimiQuota = value; } };
+  const quotaClients = () => base.clients ? QUOTA_CLIENTS.filter((id) => base.clients.includes(id)) : QUOTA_CLIENTS;
+  const quotaPayload = async (network) => ({
+    ...buildQuotaPayload(await collectQuotas({ clients: quotaClients(), offline: Boolean(base.offline), network },
+      { env, home, now, fetchImpl: quotaFetch, kimiCache }), now()),
+    offline: Boolean(base.offline),
+  });
+  getData.quota = () => { assertOpen(); return quotaPayload(false); };
+  getData.refreshQuota = () => {
+    assertOpen();
+    if (!inflightQuota) {
+      const run = quotaPayload(true);
+      inflightQuota = run;
+      run.then(() => { if (inflightQuota === run) inflightQuota = null; }, () => { if (inflightQuota === run) inflightQuota = null; });
     }
-    const { imported, duplicates, updated, snapshot: current } = database.importCursor(parsed.records, undefined, cursorRates);
-    let latestAt = null;
-    for (const { entry } of parsed.records) {
-      if (latestAt == null || entry.timestamp > latestAt) latestAt = entry.timestamp;
-    }
-    return {
-      imported, duplicates, updated, skipped: parsed.skipped, zeroUsage: parsed.zeroUsage,
-      rows: parsed.rows, latestAt, entries: current.entries.length, warnings,
-    };
+    return inflightQuota;
   };
-  getData.close = () => database.close();
+  getData.close = () => { closed = true; if (timer) clearIntervalImpl(timer); timer = null; database.close(); };
   return getData;
 }

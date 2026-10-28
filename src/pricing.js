@@ -1,38 +1,15 @@
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { savedPriceSources } from './priceselection.js';
 import { createPriceLookup, modelIdentity, priceRecord } from './pricecatalog.js';
-import { litellmContextTiers } from './contextpricing.js';
+import { normalizeLitellmPrice } from './contextpricing.js';
+import { firstPartyProvider } from './firstparty.js';
 
-const LITELLM_URL =
+export const LITELLM_URL =
   'https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json';
 export const PRICE_REFRESH_MS = 7 * 24 * 60 * 60 * 1000;
 const FETCH_TIMEOUT_MS = 4000;
-
-// Built-in fallback prices, USD per million tokens (best-effort snapshot).
-// LiteLLM data (fetched with a 7-day disk cache) and a user overrides file take
-// precedence, in that order.
-const BUILTIN_RULES = [
-  { match: 'claude-opus-4', input: 15, cacheRead: 1.5, cacheWrite: 18.75, output: 75 },
-  { match: 'claude-sonnet-4', input: 3, cacheRead: 0.3, cacheWrite: 3.75, output: 15 },
-  { match: 'claude-haiku-4', input: 1, cacheRead: 0.1, cacheWrite: 1.25, output: 5 },
-  { match: 'gpt-5-codex', input: 1.25, cacheRead: 0.125, cacheWrite: 0, output: 10 },
-  { match: 'gpt-5-mini', input: 0.25, cacheRead: 0.025, cacheWrite: 0, output: 2 },
-  { match: 'gpt-5', input: 1.25, cacheRead: 0.125, cacheWrite: 0, output: 10 },
-  { match: 'gpt-4.1', input: 2, cacheRead: 0.5, cacheWrite: 0, output: 8 },
-  { match: 'glm-5', input: 0.6, cacheRead: 0.11, cacheWrite: 0.6, output: 2.2 },
-  { match: 'glm-4.6', input: 0.6, cacheRead: 0.11, cacheWrite: 0.6, output: 2.2 },
-  { match: 'glm-4.5', input: 0.6, cacheRead: 0.11, cacheWrite: 0.6, output: 2.2 },
-  { match: 'glm-4', input: 0.1, cacheRead: 0.02, cacheWrite: 0, output: 0.1 },
-  { match: 'gemini-3-pro', input: 2, cacheRead: 0.2, cacheWrite: 0, output: 12 },
-  { match: 'gemini-3-flash', input: 0.3, cacheRead: 0.03, cacheWrite: 0, output: 2.5 },
-  { match: 'gemini-2.5-pro', input: 1.25, cacheRead: 0.31, cacheWrite: 0, output: 10 },
-  { match: 'gemini-2.5-flash', input: 0.3, cacheRead: 0.075, cacheWrite: 0, output: 2.5 },
-  { match: 'deepseek', input: 0.28, cacheRead: 0.028, cacheWrite: 0, output: 0.42 },
-  { match: 'kimi', input: 0.6, cacheRead: 0.11, cacheWrite: 0.6, output: 2.5 },
-  { match: 'qwen3-coder', input: 0.3, cacheRead: 0.03, cacheWrite: 0, output: 1.2 },
-  { match: 'minimax', input: 0.4, cacheRead: 0.04, cacheWrite: 0, output: 1.6 },
-];
 
 export function configDir({ env = process.env, home = os.homedir() } = {}) {
   if (env.TOKSIGHT_CONFIG_DIR) return env.TOKSIGHT_CONFIG_DIR;
@@ -44,8 +21,8 @@ export function normalizeModelName(name) {
   return modelIdentity(name).id;
 }
 
-// Built-in prices are authored per MTok; LiteLLM and user overrides are
-// converted to USD per token before being stored in lookup maps.
+// User overrides are authored per MTok and converted to USD per token before
+// being stored in lookup maps.
 const perToken = (pricePerMTok) => ({
   input: pricePerMTok.input / 1e6,
   output: pricePerMTok.output / 1e6,
@@ -65,7 +42,9 @@ export function computeCost(entry, price) {
     entry.inputTokens * price.input +
     entry.cacheReadTokens * price.cacheRead +
     entry.cacheWriteTokens * price.cacheWrite +
-    entry.outputTokens * price.output
+    entry.outputTokens * price.output +
+    (price.official?.cacheWrite1h != null && entry.cacheWrite1hTokens > 0
+      ? entry.cacheWrite1hTokens * (price.official.cacheWrite1h - price.cacheWrite) : 0)
   );
 }
 
@@ -77,6 +56,7 @@ async function loadUserPricing(dir) {
   } catch {
     return null;
   }
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
   const entries = Object.entries(raw)
     .filter(([, v]) => v && typeof v === 'object' && typeof v.input === 'number' && typeof v.output === 'number')
     .map(([key, v]) => [
@@ -111,6 +91,8 @@ async function loadLitellmPricing(cacheFile, { offline = false, force = false, n
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       if (!data || typeof data !== 'object' || Array.isArray(data)) throw new Error('invalid LiteLLM price map');
+      const map = buildLitellmMap(data);
+      if (!map?.records.length) throw new Error('LiteLLM price map contains no usable first-party chat prices');
       cached = { fetchedAt: time, data };
       await fs.mkdir(path.dirname(cacheFile), { recursive: true });
       await fs.writeFile(cacheFile, JSON.stringify(cached)).catch(() => {});
@@ -126,44 +108,39 @@ async function loadLitellmPricing(cacheFile, { offline = false, force = false, n
     fetchedAt: cached?.fetchedAt ?? null };
 }
 
-function buildLitellmMap(data) {
+// Context limits shown on the price page; they never affect cost.
+const tokenLimit = (n) => Number.isSafeInteger(n) && n > 0 ? n : undefined;
+function litellmLimits(v) {
+  const maxInputTokens = tokenLimit(v.max_input_tokens), maxTokens = tokenLimit(v.max_tokens);
+  return { ...(maxInputTokens ? { maxInputTokens } : {}), ...(maxTokens ? { maxTokens } : {}) };
+}
+
+export function buildLitellmMap(data) {
   if (!data || typeof data !== 'object') return null;
   const entries = [];
   for (const [key, v] of Object.entries(data)) {
     if (!v || typeof v !== 'object') continue;
-    if (v.mode && v.mode !== 'chat' && v.mode !== 'responses') continue;
-    if (typeof v.input_cost_per_token !== 'number' || typeof v.output_cost_per_token !== 'number') continue;
-    entries.push([
-      key,
-      {
-        input: v.input_cost_per_token,
-        output: v.output_cost_per_token,
-        // When LiteLLM lacks cache prices, fall back to the input price. This
-        // may overestimate cache reads when their actual rate is lower;
-        // models with separate cache prices use those rates. The fallback is
-        // exposed through costCoverage so reports can explain the estimate.
-        cacheRead: v.cache_read_input_token_cost ?? v.input_cost_per_token,
-        cacheWrite: v.cache_creation_input_token_cost ?? v.input_cost_per_token,
-        source: 'litellm',
-        provider: v.litellm_provider ?? null,
-        cacheReadFallback: v.cache_read_input_token_cost == null,
-        cacheWriteFallback: v.cache_creation_input_token_cost == null,
-        contextTiers: litellmContextTiers(v),
-      },
-    ]);
+    if (v.mode !== 'chat' && v.mode !== 'responses') continue;
+    const provider = firstPartyProvider(key, v.litellm_provider);
+    if (!provider) continue;
+    const rates = normalizeLitellmPrice(v);
+    if (!rates) continue;
+    entries.push([key, { ...rates, source: 'litellm', provider, ...litellmLimits(v) }]);
   }
   return { records: recordsFromEntries(entries) };
 }
 
-export async function getPricing({ offline = false, force = false, env, home, now = Date.now, fetchImpl = fetch } = {}) {
+export async function getPricing({ offline = false, force = false, env, home, selectedSources, now = Date.now, fetchImpl = fetch } = {}) {
   const dir = configDir({ env, home });
   const warnings = [];
 
   const userMap = await loadUserPricing(dir);
-  const lite = await loadLitellmPricing(path.join(dir, 'cache', 'litellm-pricing.json'), { offline, force, now, fetchImpl });
-  if (lite.warning) warnings.push(`LiteLLM pricing unavailable, using cached/built-in estimates: ${lite.warning}`);
+  const enabled = selectedSources ?? savedPriceSources(path.join(dir, 'usage.sqlite'), warnings);
+  const lite = enabled.includes('litellm')
+    ? await loadLitellmPricing(path.join(dir, 'cache', 'litellm-pricing.json'), { offline, force, now, fetchImpl })
+    : { map: null, state: 'disabled', fetchedAt: null };
+  if (lite.warning) warnings.push(`LiteLLM pricing unavailable, using cached estimates: ${lite.warning}`);
   const records = [
-    ...BUILTIN_RULES.map((rule) => priceRecord({ name: rule.match, ...perToken({ ...rule, source: 'builtin' }) })),
     ...(lite.map?.records ?? []),
     ...(userMap?.records ?? []),
   ].filter(Boolean);
@@ -173,7 +150,7 @@ export async function getPricing({ offline = false, force = false, env, home, no
     priceFor: lookup,
     records,
     warnings,
-    sources: { user: Boolean(userMap), litellm: lite.state, builtin: true },
+    sources: { user: Boolean(userMap), litellm: lite.state },
     sourceDetails: { litellm: { fetchedAt: lite.fetchedAt == null ? null : new Date(lite.fetchedAt).toISOString(), url: LITELLM_URL, state: lite.state } },
     configDir: dir,
   };

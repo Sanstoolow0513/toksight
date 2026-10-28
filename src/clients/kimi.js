@@ -56,8 +56,14 @@ export async function collect({ env, home, roots } = {}) {
       (state && typeof state.cwd === 'string' && state.cwd) ||
       path.basename(path.dirname(sessionDir));
     const title = (state && typeof state.title === 'string' && state.title) || null;
+    const requests = new Map();
+    const agentId = path.basename(path.dirname(file));
 
     await readJsonl(file, (o) => {
+      if (o?.type === 'llm.request') {
+        requests.set(`${o.agentId ?? agentId}\0${o.kind ?? ''}`, { model:o.model, provider:o.provider });
+        return;
+      }
       if (!o || o.type !== 'usage.record') return;
       const usage = o.usage;
       if (!usage || typeof usage !== 'object') return;
@@ -67,11 +73,14 @@ export async function collect({ env, home, roots } = {}) {
       const cacheWrite = usage.inputCacheCreation ?? 0;
       if (!input && !output && !cacheRead && !cacheWrite) return;
       const time = typeof o.time === 'number' ? o.time : o.time ? Date.parse(o.time) : NaN;
+      const request = requests.get(`${o.agentId ?? agentId}\0${o.usageScope ?? ''}`);
+      const providerId = request?.model === o.model && typeof request.provider === 'string' ? request.provider : null;
 
       entries.push({
         client: id,
         sessionId,
         model: o.model || 'unknown',
+        ...(providerId ? { providerId } : {}),
         timestamp: Number.isFinite(time) ? time : null,
         inputTokens: input,
         outputTokens: output,

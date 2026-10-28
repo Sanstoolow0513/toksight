@@ -15,11 +15,13 @@
 | Kimi Code | `~/.kimi-code/sessions/**/agents/*/wire.jsonl` | 每条 `usage.record` 都是真实请求，`turn` 与 `session` scope 都计入；`state.json` 给会话元数据 |
 | OpenCode | `<base>/opencode.db` 的 `message`，联结 `session` | DB 存在且可读时只用 DB；缺失或打不开才退到 `storage/message/*.json`，绝不合算两处。DB 中 `cost: 0` 是占位，只有非零自报费用可信；旧 JSON 的数值费用照录 |
 | ZCode | `~/.zcode/cli/db/db.sqlite` 的 `model_usage`，联结 `session` | DB 优先，缺失或打不开才退到 `cli/rollout/*.jsonl`；两种来源的 `input_tokens` 都包含 cache read，需扣掉后作为新鲜输入 |
-| Cursor | toksight SQLite 中的 `cursor_imports` | 从 Usage Events CSV 导入；没有 session ID，因此不产生会话明细/计数 |
 
 OpenCode 和 ZCode 的“数据库存在但表不可查询”会给 warning；当前代码在这种情况下返回空结果，不再读取旧格式。调整回退条件时应同时核对这些解析器测试。
 
 ## 容错与过滤
+
+可选提供商信息和 Claude 1h 缓存写入子集见[本机价格库](local-pricing.md#提供商映射)。
+这些元数据不参与去重身份，也不改变五类 token 数的原有含义。
 
 坏文件/坏行应跳过或给 warning，解析器不因单个来源损坏而抛出；空用量行跳过。`collectAll` 用 `Promise.allSettled` 隔离各客户端异常。根目录不存在时 `walkFiles` 静默，其他读取失败（如 `EACCES`、`ENOTDIR`）报警；存在但不可读或不可解析的 Kimi `state.json` 也报警。
 

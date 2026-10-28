@@ -1,0 +1,68 @@
+'use client';
+
+// The overview's day sections; `SessionRow` is shared with the calendar's
+// detail pane. Rendered sections stay in the normal page flow and exports.
+
+import { useMemo, useState } from 'react';
+import { Layers3 } from 'lucide-react';
+import ActivityChart from '@/components/ActivityChart';
+import TokenBreakdown from '@/components/TokenBreakdown';
+import AgentTable from '@/components/AgentTable';
+import { CostValue, agentStyle } from '@/components/Marks';
+import { Button, Panel } from '@/components/ui';
+import { sessionRows } from '@/lib/report';
+import { fmtClockRange, fmtInt, fmtTokens } from '@/lib/format';
+import { durationLabel } from '@/lib/i18n';
+
+const SESSION_LIMIT = 10;
+const countLabel = (tx, key, n) => tx(n === 1 ? `${key}One` : key, { n: fmtInt(n) });
+export function SessionRow({ row, index, agentLabel, locale, tx, timezone }) {
+  const meta = [
+    agentLabel(row.client),
+    fmtClockRange(row.startedAt, row.endedAt, timezone),
+    row.activeMs > 0 ? tx('sessionActive', { time: durationLabel(locale, row.activeMs) }) : null,
+    tx('rowRequests', { n: fmtInt(row.requests) }),
+  ].filter(Boolean);
+  const detail = [row.directory, (row.models ?? []).join(', ')].filter(Boolean).join(' · ');
+  const name = row.name ?? tx('sessionUntitled');
+  return (
+    <li className="session-row" style={agentStyle(row.client)}>
+      <span className="session-index" aria-hidden="true">{String(index + 1).padStart(2, '0')}</span>
+      <div className="session-line">
+        <span className="session-name" title={row.name ?? row.sessionId}>
+          {name}
+        </span>
+        <span className="cell-value">{fmtTokens(row.totalTokens)}</span>
+        <CostValue row={row} tx={tx} />
+      </div>
+      <div className="session-meta">{meta.join(' · ')}</div>
+      {detail ? (
+        <div className="session-detail" title={detail}>
+          {detail}
+        </div>
+      ) : null}
+    </li>
+  );
+}
+
+// The overview day anatomy: hourly (2fr) beside the token mix (1fr), then the
+// agent table (models nest under their agent), sessions and `quota` last.
+export function DayBody({ data, day, sortBy, onSort, locale, tx, agentLabel, open, onToggle, overview = false, quota = null }) {
+  const [expanded, setExpanded] = useState(false);
+  const sessions = useMemo(() => sessionRows(data.topSessions, SESSION_LIMIT), [data.topSessions]);
+  const visible = expanded ? sessions : sessions.slice(0, 5);
+  return <div className={'day-sections' + (overview ? ' is-overview' : '')}>
+    <div className="analysis-grid"><ActivityChart data={data} tx={tx} /><TokenBreakdown data={data} tx={tx} /></div>
+    {!data.totals?.requests ? <div className="day-empty plate plate--inset"><h3>{tx('noSessions')}</h3><p>{tx('noSessionsNote')}</p></div> : null}
+    {Object.keys(data.clients ?? {}).length ? <Panel className="day-section section-agents" icon={<Layers3 size={16} aria-hidden="true" />} title={tx('cardAgents')}
+      sub={tx(sortBy === 'cost' ? 'sortedByCost' : 'sortedByTokens')} count={countLabel(tx, 'countAgents', Object.keys(data.clients).length)}>
+      <AgentTable clients={data.clients} models={data.models} pricing={data.pricing} sortBy={sortBy} onSort={onSort} agentLabel={agentLabel} tx={tx} open={open} onToggle={onToggle} />
+    </Panel> : null}
+    {sessions.length ? <Panel className="day-section section-sessions" title={tx('secSessions')}
+      count={`${visible.length} / ${fmtInt(data.totals.sessions ?? sessions.length)}`}
+      actions={sessions.length > 5 ? <Button variant="text" className="no-export" aria-expanded={expanded} onClick={() => setExpanded(!expanded)}>{tx(expanded ? 'hideSessions' : 'viewSessions')}</Button> : null}>
+      <ol className="session-list">{visible.map((row, index) => <SessionRow key={row.client + '/' + row.sessionId} row={row} index={index} agentLabel={agentLabel} locale={locale} tx={tx} timezone={data.timezone} />)}</ol>
+    </Panel> : null}
+    {overview ? quota : null}
+  </div>;
+}

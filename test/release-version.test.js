@@ -10,9 +10,9 @@ import { hasMergedReleasePr, highestStableVersion, matchesPublishedSource, planR
 async function makeReleaseFiles(t, version = '0.4.0') {
   const root = await mkdtemp(join(tmpdir(), 'toksight-release-'));
   t.after(() => rm(root, { recursive: true, force: true }));
-  await mkdir(join(root, 'web'));
-  for (const prefix of ['', 'web/']) {
-    const name = prefix ? 'toksight-web' : 'toksight';
+  await mkdir(join(root, 'frontend'));
+  for (const prefix of ['', 'frontend/']) {
+    const name = prefix ? 'toksight-frontend' : 'toksight';
     await writeFile(join(root, prefix, 'package.json'), JSON.stringify({ name, version }, null, 2) + '\n');
     await writeFile(join(root, prefix, 'package-lock.json'), JSON.stringify({ name, version, packages: { '': { name, version } } }, null, 2) + '\n');
   }
@@ -23,7 +23,7 @@ for (const [bump, expected] of [['patch', '0.4.1'], ['minor', '0.5.0'], ['major'
   test(`release ${bump} updates both packages and lockfiles`, async (t) => {
     const root = await makeReleaseFiles(t);
     assert.equal(await bumpReleaseVersion(root, bump), expected);
-    for (const prefix of ['', 'web/']) {
+    for (const prefix of ['', 'frontend/']) {
       const manifest = JSON.parse(await readFile(join(root, prefix, 'package.json'), 'utf8'));
       const lock = JSON.parse(await readFile(join(root, prefix, 'package-lock.json'), 'utf8'));
       assert.equal(manifest.version, expected);
@@ -35,10 +35,10 @@ for (const [bump, expected] of [['patch', '0.4.1'], ['minor', '0.5.0'], ['major'
 
 test('release refuses mismatched versions without changing any file', async (t) => {
   const root = await makeReleaseFiles(t);
-  const webPath = join(root, 'web', 'package.json');
-  await writeFile(webPath, JSON.stringify({ name: 'toksight-web', version: '0.3.0' }, null, 2) + '\n');
+  const webPath = join(root, 'frontend', 'package.json');
+  await writeFile(webPath, JSON.stringify({ name: 'toksight-frontend', version: '0.3.0' }, null, 2) + '\n');
   const rootBefore = await readFile(join(root, 'package.json'), 'utf8');
-  await assert.rejects(bumpReleaseVersion(root, 'patch'), /web\/package\.json version does not match/);
+  await assert.rejects(bumpReleaseVersion(root, 'patch'), /frontend\/package\.json version does not match/);
   assert.equal(await readFile(join(root, 'package.json'), 'utf8'), rootBefore);
 });
 
