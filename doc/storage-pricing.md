@@ -10,6 +10,7 @@ CLI refresh 和 POST /api/refresh 全量重扫并事务替换；失败保留旧�
 SQLite data_version 发现其他进程提交。普通 CLI 仍由 collectAll 读取当前文件，并合并 usage_imports。
 
 价格页和 CLI reset-prices 清除价格、历史、缓存及存储回退，保留用量和导入，随后重新引导建库。
+打开数据库时删除 model_prices 中来源不是 litellm 或 user 的旧行；这些行已不参与计价和展示。
 具体事务与并发边界见[重置价格库](local-pricing.md#重置价格库)。
 
 ## 数据库备份

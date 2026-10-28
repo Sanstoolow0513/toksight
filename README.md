@@ -264,17 +264,18 @@ status with `completed: false` and rejects a reset with HTTP 409 while that serv
 
 The **Update prices** button calls `POST /api/prices/update` to download LiteLLM prices
 on this machine, bypassing the 7-day interval. **Prices** in the left navigation shows
-the saved catalog, source download times, and input/output/cache rates in USD per million tokens.
-Search or filter by provider and select a model to inspect its original ID, context
-tiers and locally observed price history. This page also controls automatic updates.
+current official first-party rates in USD per million tokens, one row per model: catalog IDs that
+name the same model at the same rates (provider prefixes, dated snapshots) are merged. It shows the
+models you used by default; untick **Only models you used** to browse the full catalog. Select a
+model to see its catalog IDs, channel and billing conditions such as context tiers. This page also controls automatic updates.
 Browsing prices reads only the local database. When automatic updates are enabled, the server
 checks hourly as well as on startup/report requests; expired sources refresh and failed checks
 retry after an hour. Checks stop when the server closes. Price changes revalue the applicable
 requests without rescanning usage or replacing reported amounts. `--offline` prevents network
 updates. Continuing with local prices during setup defers the first automatic check for an hour.
 `GET /api/prices/status` returns setup/update status; `POST /api/setup` completes setup or updates
-the automatic-update preference. `GET /api/prices` reads the catalog; add `key=<record id>` to
-read a model's revisions, newest first. API token rates remain USD per token. These endpoints
+the automatic-update preference. `GET /api/prices` reads the catalog (`records`, plus `models`: one merged row per model with
+`names`, `ids` and `used`); add `key=<record id>` to read a model's revisions, newest first. API token rates remain USD per token. These endpoints
 use the existing Host/Origin checks.
 
 The UI lives in `frontend/` and follows a plain, dense "Plain Workbench" design language: one sans-serif family (bundled

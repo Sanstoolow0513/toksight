@@ -13,11 +13,13 @@ Web 首次启动离线建立用量快照，`PriceSetup` 引导下载 LiteLLM 价
 备份不会覆盖目的库的来源和自动更新偏好。
 
 `GET /api/prices/status` 返回 completed、completedAt、autoUpdate、selectedSources、availableSources、prices、
-revisions、observedAt、offline、updating 和 warnings。`GET /api/prices` 返回 records、updates、status、offline、
-updating、warnings。价格保留 USD/token 四类单价、上下文元数据及稳定 id、revisions、observedAt。
+revisions、observedAt、offline、updating 和 warnings。`GET /api/prices` 返回 records、models、updates、status、offline、
+updating、warnings。models 由 src/pricegroups.js 生成：同来源、同渠道、同基础名（去掉提供商前缀、
+`:latest` 与日期后缀）且全部费率、档位和规则一致的 records 合并为一行，带 names、ids，
+`used` 表示当前快照里有请求命中该价格；用过的排在前面。合并只影响展示，计价键与逐请求选价不变。价格保留 USD/token 四类单价、上下文元数据及稳定 id、revisions、observedAt。
 单个 `key=<id>` 返回该项 history（observedAt / record），从新到旧；未知 key 返回空历史。
 未知、重复或空参数返回 400。目录和历史 GET 只读已提交事务，不初始化引导、采集或联网。
-页面显示美元/百万 token，并明确标注本机观察时间；用户覆盖没有观察历史。
+页面显示美元/百万 token，只展示 models 的当前单价，默认只看用过的模型；历史仍保存在库中并用于计费。
 
 自动更新使用可清理、unref 的小时定时器，也在启动和报告读取时检查。成功价格七天到期，失败一小时后重试。
 手动更新强制检查；并发自动/手动更新共享任务。关闭服务停止定时器，并防止未完成下载写入已关闭数据库。

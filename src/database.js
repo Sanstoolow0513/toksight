@@ -14,6 +14,7 @@ import { PRICE_SOURCES, priceEnabled } from './priceselection.js';
 import { installLocalPriceDatabase } from './localpricedb.js';
 import { createHistoricalPriceLookup, historyPriceKey } from './pricehistory.js';
 import { bindProvider, readProviderBindings } from './providerbindings.js';
+import { groupPriceRecords } from './pricegroups.js';
 
 const SCHEMA_VERSION = 1;
 
@@ -83,6 +84,10 @@ export function createUsageDatabase({ file, env, home } = {}) {
         if (!db.prepare('PRAGMA table_info(model_prices)').all().some((column) => column.name === 'metadata_json')) throw err;
       }
     }
+    // Older versions stored vendor-page and built-in rates beside LiteLLM. No
+    // lookup, export or report reads them any more, so they only duplicated
+    // rows; drop them once. User overrides and LiteLLM rows are kept.
+    db.exec("DELETE FROM model_prices WHERE source NOT IN ('litellm', 'user')");
   } catch (err) {
     db.close();
     throw err;
@@ -155,6 +160,23 @@ export function createUsageDatabase({ file, env, home } = {}) {
       const previous = getPriceUpdate.get(source);
       putPriceUpdate.run(source, detail.fetchedAt ?? previous?.fetched_at ?? null, checkedAt, detail.state, detail.url ?? null);
     }
+  }
+
+  // Catalog IDs that price at least one request in the committed snapshot.
+  function usedPriceIds(records, snapshot) {
+    const used = new Set();
+    if (!snapshot?.entries?.length || !records.length) return used;
+    const lookup = createPriceLookup(records);
+    const seen = new Set();
+    for (const entry of snapshot.entries) {
+      const provider = entry.pricingProvider ?? entry.providerId ?? null;
+      const probe = JSON.stringify([entry.model, entry.client, provider]);
+      if (seen.has(probe)) continue;
+      seen.add(probe);
+      const rate = lookup(entry.model, entry.client, { pricingProvider: entry.pricingProvider, providerId: entry.providerId });
+      if (rate) used.add(historyPriceKey(rate));
+    }
+    return used;
   }
 
   function read() {
@@ -356,6 +378,10 @@ export function createUsageDatabase({ file, env, home } = {}) {
     priceStatus: () => localPrices.status(),
     priceCatalog(key = null) {
       // Read only committed price data, without collecting usage or downloading.
+      let snapshot = null;
+      if (key == null) {
+        try { snapshot = read(); } catch { snapshot = null; }
+      }
       db.exec('BEGIN');
       try {
         const status = localPrices.status();
@@ -370,7 +396,7 @@ export function createUsageDatabase({ file, env, home } = {}) {
           });
           const updates = Object.fromEntries(getPriceUpdates.all().filter((row) => priceEnabled(row, status.selectedSources)).map((row) => [row.source,
             { fetchedAt: row.fetched_at, checkedAt: row.checked_at, state: row.state, url: row.url }]));
-          result = { records, updates, status };
+          result = { records, updates, status, models: groupPriceRecords(records, usedPriceIds(records, snapshot)) };
         }
         db.exec('COMMIT');
         return result;
