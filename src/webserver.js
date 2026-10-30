@@ -3,6 +3,8 @@
 // read a committed snapshot; POST /api/refresh collects and writes,
 // POST /api/prices/update checks LiteLLM first-party rates. GET /api/quota
 // reads local Codex limits; POST /api/quota/refresh also queries Kimi Code.
+// /api/sync/* backs the database up to, or restores it from, a private
+// GitHub repository on explicit request (loopback clients only).
 
 import http from 'node:http';
 import { isIP } from 'node:net';
@@ -37,14 +39,14 @@ const JSON_HEADERS = {
   'x-content-type-options': 'nosniff',
 };
 
-async function readSetupBody(req) {
+async function readSetupBody(req, kind = 'setup', code = 'BAD_SETUP') {
   let text = '';
   for await (const chunk of req) {
     text += chunk.toString('utf8');
-    if (text.length > 8192) { const err = new Error('setup request is too large'); err.status = 413; throw err; }
+    if (text.length > 8192) { const err = new Error(`${kind} request is too large`); err.status = 413; throw err; }
   }
   try { return text ? JSON.parse(text) : {}; }
-  catch { const err = new Error('invalid setup JSON'); err.status = 400; err.code = 'BAD_SETUP'; throw err; }
+  catch { const err = new Error(`invalid ${kind} JSON`); err.status = 400; err.code = code; throw err; }
 }
 
 async function readDatabaseBody(req) {
@@ -124,6 +126,7 @@ function sendJson(res, status, payload, method = 'GET', extraHeaders = {}) {
   res.end(method === 'HEAD' ? undefined : JSON.stringify(payload));
 }
 
+const SYNC_ROUTES = ['/api/sync/status', '/api/sync/config', '/api/sync/upload', '/api/sync/restore'];
 const isLoopbackHost = (host) => host?.toLowerCase() === 'localhost' || isLoopbackAddress(host);
 
 function isAllowedRefreshOrigin(req, localHostHeader, host) {
@@ -230,7 +233,7 @@ export function createWebServer({
     // 127.0.0.1 is still remoteAddress-loopback, but its Host header is not.
     const localHostHeader = isLocalHostHeader(req.headers.host);
 
-    if (['/api/data', '/api/refresh', '/api/prices', '/api/prices/update', '/api/prices/reset', '/api/prices/status', '/api/setup', '/api/import/db', '/api/export/db', '/api/quota', '/api/quota/refresh'].includes(pathname)) {
+    if (['/api/data', '/api/refresh', '/api/prices', '/api/prices/update', '/api/prices/reset', '/api/prices/status', '/api/setup', '/api/import/db', '/api/export/db', '/api/quota', '/api/quota/refresh', ...SYNC_ROUTES].includes(pathname)) {
       // Loopback-bound servers (the default) reject foreign Host headers;
       // a user who deliberately binds --host 0.0.0.0 exposes the dashboard
       // to the LAN on purpose, so the Host check would only break that.
@@ -250,7 +253,17 @@ export function createWebServer({
       // Not a write, but it spends the user's Kimi token on a network call, so
       // it gets the same POST + Origin checks as the write routes.
       const quotaRefresh = pathname === '/api/quota/refresh';
-      const writing = refresh || priceUpdate || priceReset || setup || importingDb || quotaRefresh;
+      // GitHub backup routes handle a saved token and push usage history, so
+      // they are served only to clients on this machine, even with --host 0.0.0.0.
+      const syncStatus = pathname === '/api/sync/status';
+      const syncConfig = pathname === '/api/sync/config';
+      const syncUpload = pathname === '/api/sync/upload';
+      const syncRestore = pathname === '/api/sync/restore';
+      if (SYNC_ROUTES.includes(pathname) && (!isLoopbackAddress(req.socket.remoteAddress) || !localHostHeader)) {
+        sendJson(res, 403, { error: 'GitHub backup is only available from this computer', code: 'SYNC_LOCAL_ONLY' }, req.method);
+        return;
+      }
+      const writing = refresh || priceUpdate || priceReset || setup || importingDb || quotaRefresh || syncConfig || syncUpload || syncRestore;
       const allowed = writing ? req.method === 'POST' : req.method === 'GET' || req.method === 'HEAD';
       if (!allowed) {
         sendJson(res, 405, { error: 'method not allowed', code: 'METHOD_NOT_ALLOWED' }, req.method, { allow: writing ? 'POST' : 'GET, HEAD' });
@@ -263,7 +276,8 @@ export function createWebServer({
       try {
         if ((priceReset && !getData.resetPrices) || (refresh && !getData.refresh) || (priceUpdate && !getData.updatePrices) ||
           (importingDb && !getData.importDatabase) || (exportingDb && !getData.exportDatabase) || (setup && !getData.setup) || (priceStatus && !getData.priceStatus) || (prices && !getData.prices)
-          || (quota && !getData.quota) || (quotaRefresh && !getData.refreshQuota)) {
+          || (quota && !getData.quota) || (quotaRefresh && !getData.refreshQuota)
+          || (syncStatus && !getData.syncStatus) || (syncConfig && !getData.syncConfig) || (syncUpload && !getData.syncUpload) || (syncRestore && !getData.syncRestore)) {
           sendJson(res, 501, { error: 'operation is not configured', code: 'NOT_IMPLEMENTED' }, req.method);
           return;
         }
@@ -274,14 +288,17 @@ export function createWebServer({
           res.end(req.method === 'HEAD' ? undefined : bytes);
           return;
         }
-        const payload = quota ? await getData.quota() : quotaRefresh ? await getData.refreshQuota() : priceReset ? await getData.resetPrices() : refresh ? await getData.refresh() : priceUpdate ? await getData.updatePrices()
+        const payload = syncStatus ? await getData.syncStatus(url.searchParams) : syncConfig ? await getData.syncConfig(await readSetupBody(req, 'backup settings', 'SYNC_BAD_CONFIG'))
+          : syncUpload ? await getData.syncUpload() : syncRestore ? await getData.syncRestore()
+          : quota ? await getData.quota() : quotaRefresh ? await getData.refreshQuota() : priceReset ? await getData.resetPrices() : refresh ? await getData.refresh() : priceUpdate ? await getData.updatePrices()
           : setup ? await getData.setup(await readSetupBody(req)) : priceStatus ? await getData.priceStatus() : prices ? await getData.prices(url.searchParams)
           : importingDb ? await getData.importDatabase(await readDatabaseBody(req)) : await getData(url.searchParams);
         sendJson(res, 200, payload, req.method);
       } catch (err) {
-        const status = err?.status === 400 || err?.status === 409 || err?.status === 413 ? err.status : 500;
+        // 404 and 502 come only from GitHub backup (no remote backup / GitHub or network failure).
+        const status = [400, 409, 413].includes(err?.status) || (SYNC_ROUTES.includes(pathname) && [404, 502].includes(err?.status)) ? err.status : 500;
         if (status === 500) logger?.warn?.(`toksight web: ${pathname} failed: ${err?.message || err}`);
-        sendJson(res, status, { error: String(err?.message || err), ...(err?.code ? { code: err.code } : {}) }, req.method);
+        sendJson(res, status, { error: String(err?.message || err), ...(err?.code ? { code: err.code } : {}), ...(err?.retryAt ? { retryAt: err.retryAt } : {}) }, req.method);
       }
       return;
     }

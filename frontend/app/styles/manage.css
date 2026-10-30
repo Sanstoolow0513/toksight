@@ -131,6 +131,20 @@
   .settings-row p { font-size: var(--fs-xs); color: var(--ink-3); }
   .settings-body { padding: var(--pad-y) var(--pad-x); }
   .timezone-field { display: flex; max-width: 460px; }
+  .backup-form { display: grid; gap: var(--sp-2); }
+  .backup-fields { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--sp-3); }
+  .backup-field { flex: 1 1 240px; }
+  .backup-field input { width: 100%; }
+  .backup-form .muted-note .btn--text { vertical-align: baseline; }
+  .backup-gh { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-1) var(--sp-3); font-size: var(--fs-sm); color: var(--ink-2); }
+  .backup-gh-state { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); min-width: 0; }
+  .backup-last { font-size: var(--fs-sm); color: var(--ink-2); text-align: right; }
+  .backup-actions { display: flex; flex: none; flex-wrap: wrap; justify-content: flex-end; gap: var(--sp-2); }
+  .backup-error-row { padding-top: 0; }
+  .backup-error p { margin-top: var(--sp-1); color: var(--ink-2); overflow-wrap: anywhere; }
+  .dialog .backup-error { margin-top: var(--sp-3); }
+  .dialog .backup-error p { margin-top: var(--sp-1); }
+  .dialog-note code { overflow-wrap: anywhere; }
   .timezone-preview { display: inline-block; margin: var(--sp-2) 0 var(--sp-1); padding: var(--sp-1) var(--sp-2); border-radius: var(--r-sm); background: var(--surface-2); font-size: var(--fs-xs); color: var(--ink-2); }
 
   @media (max-width: 760px) {

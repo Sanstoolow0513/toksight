@@ -3,9 +3,10 @@ import { DatabaseBackup, DatabaseZap, Globe2, Monitor, Moon, Palette, Sun } from
 import { Button, Field, Panel, Segmented } from './ui';
 import { timezoneOptions } from '@/lib/period';
 import { fmtDateTime } from '@/lib/format';
+import GitHubBackup from './GitHubBackup';
 
 export default function Settings({ tx, timezone, timezonePref, systemZone, onTimezone, now, loading, theme, locale, onTheme, onLocale,
-  databaseBusy, onImportDatabase, onExportDatabase }) {
+  databaseBusy, onImportDatabase, onExportDatabase, backup, onBackupSave, onBackupUpload, onBackupRestore }) {
   const databaseInput = useRef(null);
   const zones = useMemo(() => timezoneOptions(timezone), [timezone]);
   return <div className="settings-content">
@@ -41,5 +42,6 @@ export default function Settings({ tx, timezone, timezonePref, systemZone, onTim
         </Button>
       </div>
     </Panel>
+    {backup ? <GitHubBackup backup={backup} loading={loading} timezone={timezone} tx={tx} onSave={onBackupSave} onUpload={onBackupUpload} onConfirmRestore={onBackupRestore} onDetect={() => void backup.detect()} /> : null}
   </div>;
 }

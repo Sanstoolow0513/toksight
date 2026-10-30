@@ -11,11 +11,12 @@ import { PRICE_SOURCES, validPriceSources } from './priceselection.js';
 import { resetPriceDatabase } from './pricereset.js';
 import { collectQuotas, QUOTA_CLIENTS } from './quota.js';
 import { buildPayload, buildQuotaPayload } from './payload.js';
+import { createGitHubBackup } from './ghsync.js';
 
 // The database is loaded before serving. Requests reuse its in-memory snapshot;
 // refreshes share a single collection/write and swap only after commit.
 export function createWebDataService(base, { collect = collectAll, env, home, database = createUsageDatabase({ env, home }), now = Date.now, genericPricing = getPricing,
-  setIntervalImpl = setInterval, clearIntervalImpl = clearInterval, quotaFetch } = {}) {
+  setIntervalImpl = setInterval, clearIntervalImpl = clearInterval, quotaFetch, syncFetch, syncApiBase, syncGh } = {}) {
   let inflightRefresh = null;
   let inflightPrices = null;
   let initialized = false;
@@ -220,6 +221,19 @@ export function createWebDataService(base, { collect = collectAll, env, home, da
     // all later scans through its own durable table.
     if (inflightRefresh) await inflightRefresh;
     return database.importDatabase(bytes);
+  };
+  // GitHub backup: status and settings are local; upload and restore are
+  // explicit user actions. Restore waits for a running scan like an import.
+  const githubBackup = createGitHubBackup({ env, home, database, now, offline: Boolean(base.offline),
+    ...(syncFetch ? { fetchImpl: syncFetch } : {}), ...(syncApiBase ? { apiBase: syncApiBase } : {}), ...(syncGh ? { ghRunner: syncGh } : {}) });
+  getData.syncStatus = (params = new URLSearchParams()) => { assertOpen(); return githubBackup.status({ refresh: params.get('refresh') === '1' }); };
+  getData.syncConfig = (input) => { assertOpen(); return githubBackup.configure(input); };
+  getData.syncUpload = async () => { assertOpen(); await snapshot(); return githubBackup.upload(); };
+  getData.syncRestore = async () => {
+    assertOpen();
+    await snapshot();
+    if (inflightRefresh) await inflightRefresh;
+    return githubBackup.restore({ importDatabase: (bytes) => { assertOpen(); return database.importDatabase(bytes); } });
   };
   // Quota: GET re-reads Codex logs and returns the last Kimi result held in
   // memory (never persisted); only the explicit refresh calls the Kimi API.

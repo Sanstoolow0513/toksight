@@ -17,8 +17,12 @@
 | `/api/import/db` | POST | 验证并合并 SQLite 备份 |
 | `/api/quota` | GET/HEAD | Codex 本地额度 + 内存中上次 Kimi 结果，不联网；见[订阅额度](quota.md) |
 | `/api/quota/refresh` | POST | 查询 Kimi Code 额度（离线启动时跳过），按写路由做 Origin 检查 |
+| `/api/sync/status` | GET/HEAD | GitHub 备份设置与上次备份 / 恢复记录，不联网、不返回令牌；见[GitHub 备份](github-backup.md) |
+| `/api/sync/config` | POST | 保存仓库与令牌（JSON：`repo`、`token`、`clearToken`） |
+| `/api/sync/upload` | POST | 把快照上传到私有仓库的 `toksight/usage.sqlite` |
+| `/api/sync/restore` | POST | 下载、校验并合并远端备份，合并前保存本机安全副本 |
 
-默认回环绑定时，所有已定义 API 路由都拒绝非 localhost 的 Host 头，防止 DNS rebinding；写路由还拒绝跨站 Origin / Fetch 请求。Next 开发代理允许本机不同端口。显式 `--host 0.0.0.0` 意味着主动对局域网开放，不适用回环 Host 限制。新增 API 必须纳入相同检查；不提供修改 Agent 配置的写路由。
+默认回环绑定时，所有已定义 API 路由都拒绝非 localhost 的 Host 头，防止 DNS rebinding；写路由还拒绝跨站 Origin / Fetch 请求。Next 开发代理允许本机不同端口。显式 `--host 0.0.0.0` 意味着主动对局域网开放，不适用回环 Host 限制。新增 API 必须纳入相同检查；不提供修改 Agent 配置的写路由。`/api/sync/*` 另外只接受本机回环地址的请求（不论绑定地址）。
 
 ## 页面与数据流
 
@@ -32,7 +36,7 @@ Next App Router 从 `frontend/` 静态导出为 `frontend/out/`，生产由 CLI 
 `AppHeader` 为固定顶部工具栏：左侧品牌标（按钮，回到今天；当前页名为视觉隐藏的唯一 `h1`），右侧 `PageActions` 页面操作、配色菜单（`MenuButton`，支持 Escape 关闭和焦点返回）、语言切换与 GitHub 链接，全部为带按钮提示的 `IconButton` / `IconLink`。
 `Sidebar` 分为数据洞察和工作台管理两组，底部依次为本机说明、时区入口与收起按钮；≤700px 改为吸附横向导航。
 视觉为“素面工作台”设计语言（令牌见 `frontend/app/styles/tokens.css`）：纯色底面上无外框的平面面板（统一圆角、内部发丝线分隔、无投影），52px 顶栏与 220px 侧栏；全站一种无衬线字体（Geist + 中文无衬线回退）与 tabular 数字，Mono 仅用于模型 ID 与路径；根字号 16px、正文 15px，任何文字不小于 13px；强调橙只用于选中、峰值、输入 token、今天与焦点，缺失 / 未来 / 剩余额度为浅色平涂，热图为五档灰度。样式按 `@layer` 分为 tokens / base / primitives / shell / components / pages / utilities。
-`PageActions` 在顶栏以图标按钮提供刷新和图片导出，价格页换为更新单价与重置；卡片专属操作（刷新 Kimi 额度）留在卡片内。`Settings` 提供外观、语言、时区、SQLite 备份 / 合并。
+`PageActions` 在顶栏以图标按钮提供刷新和图片导出，价格页换为更新单价与重置；卡片专属操作（刷新 Kimi 额度）留在卡片内。`Settings` 提供外观、语言、时区、SQLite 备份 / 合并，以及 `GitHubBackup` 面板（仓库与令牌、上次备份、上传 / 恢复按钮与恢复确认对话框，错误内联显示）。
 共享原语位于 `components/ui/`：`Segmented`（配色、指标等共用，支持方向键、Home / End 与单一 Tab 焦点）、`Button`、`IconButton` / `IconLink`（`label` 即可访问名称与按钮提示 `AnchorTip`，不用 `title`）、`MenuButton`、`Panel`、`Stat`、`Meter`（额度窗口，`role="meter"`）、`Badge`、`Field` 与 `Tooltip` + `useTip`（小时柱、日历格、周单元和账表行共用的指针 / 焦点定位；提示为 fixed 定位，显示期间任一祖先或窗口滚动（捕获阶段监听）、滚轮或窗口缩放都会隐藏它，只有锚定在当前焦点元素上的提示在该元素仍处于滚动框内时跟随移动；按钮提示同样在滚动、滚轮与缩放时隐藏）。视觉与交互以 `design-spec.md` 为准。
 
 `PriceCatalog` 从独立的 `/api/prices` 读取第一方 LiteLLM 目录：页头 plate 含搜索、“只看用过的模型”开关（`role="switch"`）、元信息行与设置浮层，下面是厂商筛选标签（`aria-pressed`）和按厂商分区（用过的厂商在前、分区标题吸顶）的卡片网格。

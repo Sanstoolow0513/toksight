@@ -3,15 +3,17 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useToasts } from '@/components/Toasts';
 import { useRangeReport, useReport, useSelectionReport } from '@/lib/useReport';
 import { dayKey, detectedTimezone, isContiguous, periodKey, quickPeriod, shiftDay, validTimezone } from '@/lib/period';
-import { fmtInt } from '@/lib/format';
+import { fmtBytes, fmtInt } from '@/lib/format';
 import { DEFAULT_LOCALE, t } from '@/lib/i18n';
 import { exportReportImage } from '@/lib/exportImage';
 import * as prefs from '@/lib/prefs';
 import { usePriceDatabase } from '@/lib/usePriceDatabase';
+import { useGitHubBackup } from '@/lib/useGitHubBackup';
 
 export function useWorkspace() {
   const prices = usePriceDatabase();
   const [view, setView] = useState('today');
+  const backup = useGitHubBackup(view === 'settings');
   const [locale, setLocale] = useState(DEFAULT_LOCALE);
   const [theme, setTheme] = useState(null);
   const [now, setNow] = useState(null);
@@ -76,7 +78,8 @@ export function useWorkspace() {
   const reportBusy = current.loading || (pending && !current.error);
   const selectionPending = view === 'calendar' && (selectionReport.key !== selected.join(',') || !selectionReport.data || selectionReport.loading || Boolean(selectionReport.error));
   const updatingPrices = priceUpdating || Boolean(prices.status?.updating);
-  const busy = prices.busy || refreshing || updatingPrices || Boolean(databaseBusy) || exporting;
+  const backupWorking = backup.busy === 'upload' || backup.busy === 'restore';
+  const busy = prices.busy || refreshing || updatingPrices || Boolean(databaseBusy) || exporting || backupWorking;
   const hasData = view === 'calendar' ? Boolean(data) : Boolean(data && shown && shown.preset === '1d');
 
   useEffect(() => {
@@ -234,6 +237,30 @@ export function useWorkspace() {
     } finally { setDatabaseBusy(null); }
   };
 
+  // GitHub backup: errors stay inline (panel or restore dialog); results toast.
+  const onBackupSave = async (settings) => {
+    const body = await backup.save(settings);
+    if (body) pushToast({ key: 'backup', tone: 'success', message: ['backupSaved'] });
+    return Boolean(body);
+  };
+  const onBackupUpload = async () => {
+    const body = await backup.upload();
+    if (body) pushToast({ key: 'backup', tone: 'success', message: body.result.unchanged ? ['backupUploadUnchanged'] : ['backupUploadSuccess', { size: fmtBytes(body.result.size) }] });
+  };
+  const onBackupConfirm = () => { backup.setError(null); backup.setConfirming(true); };
+  const onBackupCancel = () => { if (backup.busy !== 'restore') { backup.setConfirming(false); backup.setError(null); } };
+  const onBackupRestore = async () => {
+    if (busy) return;
+    const body = await backup.restore();
+    if (!body) return;
+    backup.setConfirming(false);
+    pushToast({ key: 'backup', tone: 'success', message: ['backupRestoreSuccess', {
+      imported: fmtInt(body.result.imported), updated: fmtInt(body.result.updated), duplicates: fmtInt(body.result.duplicates),
+    }] });
+    await prices.reload();
+    setRefreshRevision((n) => n + 1);
+  };
+
   const canExport = reportView && hasData && !reportBusy && !pending && !(view === 'calendar' && selectionPending) && !current.error && !busy;
   const onExport = async () => {
     if (!canExport || !reportRef.current) return;
@@ -255,5 +282,6 @@ export function useWorkspace() {
     onTheme, onLocale, onTimezone, onToggleAgent, onRefresh, onUpdatePrices, onSelect, onCalendarZoom,
     onResetPrices, onSetup, onSelectDatabase, onImportDatabase, onExportDatabase,
     onExport, setPriceResetOpen, setPriceResetError, setDatabaseFile,
+    backup, onBackupSave, onBackupUpload, onBackupConfirm, onBackupCancel, onBackupRestore,
   };
 }

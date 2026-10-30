@@ -217,6 +217,29 @@ CLI 提供 `toksight export-db <文件>` 与 `toksight import-db <文件>`，加
 返回 JSON 合并统计）；两者均保留本机 Host 检查，导入还需通过来源检查。
 导入导出支持离线操作，不会写入 Agent 文件。
 
+### GitHub 备份（可选）
+
+**设置**中的 **GitHub 备份**会把同样的完整快照上传到你自己的**私有** GitHub 仓库默认分支上的
+`toksight/usage.sqlite`，**从 GitHub 恢复**再把它合并回本机。两者都只在点击时运行，没有自动同步或
+多设备同步，暂不提供 CLI 命令。
+
+- 填写 `owner/name` 和令牌后点**保存**。建议使用只授权该仓库、带 **Contents 读写**权限的细粒度令牌
+  （Metadata 只读会自动包含）。令牌优先级：`TOKSIGHT_GITHUB_TOKEN`、`GITHUB_TOKEN`，然后是已通过
+  `gh auth login` 登录 github.com 的 GitHub CLI 令牌，最后是页面保存的令牌。面板显示 gh 是否安装和登录，
+  可点**重新检测**；gh 在本机检测（不调用 GitHub API），toksight 不保存 gh 令牌。gh 令牌通常可访问全部仓库，
+  细粒度令牌更稳妥。保存的令牌位于 `<toksight-dir>/github-backup.json`（在支持的系统上仅本人可读写）。
+  任何令牌都不会返回给页面。
+- 公开仓库会被拒绝，因为快照包含会话标题与目录。超过 90 MiB 的快照不会上传（GitHub 单文件上限 100 MiB）。
+  超过 1 MiB 的快照通过 Git Data API 提交，上传中断时远端仍是上一份备份，直接重试即可；快照未变化时不重复上传。
+  大文件上传会保留仓库其他文件；GitHub 返回的父提交或目录树信息不完整或无效时会停止上传。
+- 恢复会下载备份，校验完整性和结构，先把当前数据库保存到
+  `<toksight-dir>/backups/before-github-restore.sqlite`，再按**导入数据库**的方式合并（去重、单个事务、
+  失败回滚），不会删除本机记录。
+- 令牌无效、权限不足、仓库不存在、触发限流、网络错误或远端还没有备份时，会显示具体原因，本机数据不变。
+  `toksight web --offline` 启动时该功能不可用。
+- 接口：`GET /api/sync/status`、`POST /api/sync/config`、`POST /api/sync/upload`、`POST /api/sync/restore`，
+  只接受来自本机的请求。详见 [doc/github-backup.md](doc/github-backup.md)。
+
 价格页顶栏中“更新单价”旁的**重置价格库**会清除已保存的单价、价格观察历史、LiteLLM 下载缓存以及快照和导入记录中的价格回退值，
 弹窗说明清除范围，执行中禁止重复操作，失败可在弹窗内重试；确认成功后返回首次建库引导。可选择重新下载公开价格，或使用自定义定价本地继续。
 历史估算费用会重新计算；用量、自报费用、数据库导入、已选价格来源、`pricing.json` 和
@@ -263,7 +286,7 @@ Web 使用 `POST /api/prices/reset`，返回 `completed: false` 的引导状态�
   以及按 Agent 和按模型的用量拆分（同一模型在多个 Agent 中使用时合并为一行）；**查看当日会话**把拆分切换为会话列表。
   拆分的滚动区可以用 Tab 聚焦，再用方向键和 PageUp/PageDown 滚动。
   宽度小于 1200px 时，日历（视口高度的 70%）在上，详情在下。
-- **设置**：调整外观、语言和统计时区，导入 / 导出完整数据库。
+- **设置**：调整外观、语言和统计时区，导入 / 导出完整数据库，以及可选的 GitHub 备份。
 
 统计时区默认自动读取浏览器，也可手动选择，例如系统设为美国时间时选 `Asia/Shanghai`。
 今天、日期边界、小时归属和显示时间都使用所选时区，时钟变化自动处理，界面始终采用统一的日视图。
