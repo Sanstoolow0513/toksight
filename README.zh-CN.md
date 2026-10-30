@@ -224,8 +224,11 @@ CLI 提供 `toksight export-db <文件>` 与 `toksight import-db <文件>`，加
 多设备同步，暂不提供 CLI 命令。
 
 - 填写 `owner/name` 和令牌后点**保存**。建议使用只授权该仓库、带 **Contents 读写**权限的细粒度令牌
-  （Metadata 只读会自动包含）。环境变量 `TOKSIGHT_GITHUB_TOKEN`、其次 `GITHUB_TOKEN` 优先于已保存的令牌。
-  保存的令牌位于 `<toksight-dir>/github-backup.json`（在支持的系统上仅本人可读写），不会再返回给页面。
+  （Metadata 只读会自动包含）。令牌优先级：`TOKSIGHT_GITHUB_TOKEN`、`GITHUB_TOKEN`，然后是已通过
+  `gh auth login` 登录 github.com 的 GitHub CLI 令牌，最后是页面保存的令牌。面板显示 gh 是否安装和登录，
+  可点**重新检测**；gh 在本机检测（不调用 GitHub API），toksight 不保存 gh 令牌。gh 令牌通常可访问全部仓库，
+  细粒度令牌更稳妥。保存的令牌位于 `<toksight-dir>/github-backup.json`（在支持的系统上仅本人可读写）。
+  任何令牌都不会返回给页面。
 - 公开仓库会被拒绝，因为快照包含会话标题与目录。超过 90 MiB 的快照不会上传（GitHub 单文件上限 100 MiB）。
   超过 1 MiB 的快照通过 Git Data API 提交，上传中断时远端仍是上一份备份，直接重试即可；快照未变化时不重复上传。
 - 恢复会下载备份，校验完整性和结构，先把当前数据库保存到

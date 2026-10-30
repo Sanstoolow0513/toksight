@@ -8,6 +8,7 @@
 // Data API (blob → tree → commit → ref), whose final ref update is atomic, so
 // an interrupted upload leaves the previous backup in place.
 
+import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
@@ -62,13 +63,63 @@ function writePrivateFile(file, data) {
   catch (err) { rmSync(temp, { force: true }); throw err; }
 }
 
-export function resolveToken(env, config) {
+// Precedence: TOKSIGHT_GITHUB_TOKEN → GITHUB_TOKEN → the GitHub CLI's
+// token for github.com → the token saved from the web page.
+export function resolveToken(env, config, gh = null) {
   for (const name of TOKEN_ENV) {
     const value = env?.[name]?.trim();
     if (value) return { token: value, source: name };
   }
+  if (gh?.token) return { token: gh.token, source: 'gh' };
   return config.token ? { token: config.token, source: 'config' } : { token: null, source: null };
 }
+
+// Runs `gh` directly (no shell), hidden on Windows, killed after `timeout`.
+// Resolves trimmed stdout; rejects on a missing binary, non-zero exit or timeout.
+export function createGhRunner({ bin = 'gh', timeout = 5000 } = {}) {
+  return (args) => new Promise((resolve, reject) => {
+    execFile(bin, args, { timeout, windowsHide: true, encoding: 'utf8', maxBuffer: 64 * 1024,
+      env: { ...process.env, GH_PROMPT_DISABLED: '1', GH_NO_UPDATE_NOTIFIER: '1', NO_COLOR: '1' } },
+    (err, stdout) => (err ? reject(err) : resolve(String(stdout).trim())));
+  });
+}
+
+// GitHub CLI detection. Every command only reads gh's local config/keyring
+// (`gh --version`, `gh auth token`, `gh config get user`), so detection never
+// calls the GitHub API. Any failure means "skip gh"; errors are never
+// surfaced because they could echo command output. The token stays in memory
+// only, and results are cached for `ttl` so status polling does not respawn gh.
+export function createGhProbe({ run = createGhRunner(), now = Date.now, ttl = 60_000 } = {}) {
+  let cached = null, at = 0, inflight = null;
+  async function detect() {
+    const state = { installed: false, loggedIn: false, user: null, version: null, token: null };
+    let version;
+    try { version = await run(['--version']); }
+    catch { return state; }
+    state.installed = true;
+    state.version = /gh version (\S+)/.exec(version)?.[1] ?? null;
+    let token = '';
+    try { token = await run(['auth', 'token', '--hostname', 'github.com']); }
+    catch { return state; }
+    if (!TOKEN_RE.test(token)) return state;
+    state.loggedIn = true;
+    state.token = token;
+    try {
+      const user = await run(['config', 'get', 'user', '--host', 'github.com']);
+      if (/^[A-Za-z0-9-]{1,39}$/.test(user)) state.user = user;
+    } catch { /* the login name is optional */ }
+    return state;
+  }
+  return function probe({ force = false } = {}) {
+    if (inflight) return inflight;
+    if (!force && cached && now() - at < ttl) return Promise.resolve(cached);
+    inflight = detect().catch(() => ({ installed: false, loggedIn: false, user: null, version: null, token: null }))
+      .then((state) => { cached = state; at = now(); return state; })
+      .finally(() => { inflight = null; });
+    return inflight;
+  };
+}
+const publicGh = ({ installed, loggedIn, user, version }) => ({ installed, loggedIn, user, version });
 
 function rateLimitError(res) {
   const reset = Number(res.headers.get('x-ratelimit-reset'));
@@ -183,23 +234,25 @@ function integrityCheck(bytes) {
   } finally { rmSync(dir, { recursive: true, force: true }); }
 }
 
-export function createGitHubBackup({ env = process.env, home = os.homedir(), database, fetchImpl = globalThis.fetch, apiBase = API, now = Date.now, offline = false } = {}) {
+export function createGitHubBackup({ env = process.env, home = os.homedir(), database, fetchImpl = globalThis.fetch, apiBase = API, now = Date.now, offline = false,
+  ghRunner, ghProbe = createGhProbe({ now, ...(ghRunner ? { run: ghRunner } : {}) }) } = {}) {
   const file = backupConfigFile({ env, home });
   let busy = null;
 
-  function status() {
+  async function status({ refresh = false } = {}) {
+    const gh = await ghProbe({ force: refresh });
     const config = readConfig(file);
-    const { token, source } = resolveToken(env, config);
+    const { token, source } = resolveToken(env, config, gh);
     const repo = validRepo(config.repo) ? config.repo : null;
     const same = (record) => record && record.repo === repo ? record : null;
     return {
       configured: Boolean(repo && token), repo, tokenSource: source, tokenSaved: Boolean(config.token),
       remotePath: REMOTE_PATH, maxBytes: MAX_SNAPSHOT_BYTES, offline: Boolean(offline), busy, safetyBackup: safetyBackupFile({ env, home }),
-      lastBackup: same(config.lastBackup), lastRestore: same(config.lastRestore),
+      lastBackup: same(config.lastBackup), lastRestore: same(config.lastRestore), gh: publicGh(gh),
     };
   }
 
-  function configure(input) {
+  async function configure(input) {
     if (!input || typeof input !== 'object' || Array.isArray(input) || Object.keys(input).some((key) => !['repo', 'token', 'clearToken'].includes(key))) {
       throw syncError('SYNC_BAD_CONFIG', 'invalid backup settings', 400);
     }
@@ -221,19 +274,18 @@ export function createGitHubBackup({ env = process.env, home = os.homedir(), dat
     return status();
   }
 
-  function prepare() {
+  // Claims the single operation slot synchronously, then re-checks gh so a
+  // fresh `gh auth login` / logout is honoured on every upload and restore.
+  async function exclusive(kind, fn) {
     if (offline) throw syncError('SYNC_OFFLINE_MODE', 'GitHub backup needs network access; this web session was started with --offline.', 400);
     if (busy) throw syncError('SYNC_BUSY', 'A GitHub backup or restore is already running', 409);
-    const config = readConfig(file);
-    const { token } = resolveToken(env, config);
-    if (!validRepo(config.repo) || !token) throw syncError('SYNC_NOT_CONFIGURED', 'Set a private repository and a GitHub token first', 400);
-    return { config, repo: config.repo, client: createGitHubClient({ token, repo: config.repo, fetchImpl, apiBase }) };
-  }
-
-  async function exclusive(kind, fn) {
     busy = kind;
-    try { return await fn(); }
-    finally { busy = null; }
+    try {
+      const config = readConfig(file);
+      const { token } = resolveToken(env, config, validRepo(config.repo) ? await ghProbe({ force: true }) : null);
+      if (!validRepo(config.repo) || !token) throw syncError('SYNC_NOT_CONFIGURED', 'Set a private repository and a GitHub token first', 400);
+      return await fn({ repo: config.repo, client: createGitHubClient({ token, repo: config.repo, fetchImpl, apiBase }) });
+    } finally { busy = null; }
   }
 
   function remember(key, value) {
@@ -243,8 +295,7 @@ export function createGitHubBackup({ env = process.env, home = os.homedir(), dat
   }
 
   async function upload() {
-    const { repo, client } = prepare();
-    return exclusive('upload', async () => {
+    return exclusive('upload', async ({ repo, client }) => {
       // The local database is only read (VACUUM INTO a temporary file).
       const bytes = database.exportDatabase();
       if (bytes.length > MAX_SNAPSHOT_BYTES) {
@@ -265,13 +316,12 @@ export function createGitHubBackup({ env = process.env, home = os.homedir(), dat
       }
       const record = { repo, branch, at, size: bytes.length, sha: result.sha, commit: result.commit };
       remember('lastBackup', record);
-      return { ...status(), result: { ...record, unchanged: result.unchanged } };
+      return { ...(await status()), result: { ...record, unchanged: result.unchanged } };
     });
   }
 
   async function restore({ importDatabase = (bytes) => database.importDatabase(bytes) } = {}) {
-    const { repo, client } = prepare();
-    return exclusive('restore', async () => {
+    return exclusive('restore', async ({ repo, client }) => {
       const { branch } = await openRepo(client, repo, { requirePrivate: false });
       const remote = await remoteFile(client, repo, branch);
       if (!remote) throw syncError('SYNC_NO_BACKUP', `There is no backup at ${REMOTE_PATH} in ${repo} yet.`, 404);
@@ -297,7 +347,7 @@ export function createGitHubBackup({ env = process.env, home = os.homedir(), dat
       }
       const record = { repo, at: new Date(now()).toISOString(), sha: remote.sha, size: bytes.length, safetyBackup: safety };
       remember('lastRestore', record);
-      return { ...status(), result: { ...merged, ...record } };
+      return { ...(await status()), result: { ...merged, ...record } };
     });
   }
 

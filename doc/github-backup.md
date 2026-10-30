@@ -4,7 +4,7 @@
 
 ## 模块与数据流
 
-- `src/ghsync.js`：零依赖 GitHub REST 客户端（内置 `fetch`，可注入 `fetchImpl` / `apiBase` 供测试），以及 `createGitHubBackup({ env, home, database, fetchImpl, now, offline })` 返回的 `status` / `configure` / `upload` / `restore`。
+- `src/ghsync.js`：GitHub CLI 令牌检测（`createGhProbe` / `createGhRunner`）、零依赖 GitHub REST 客户端（内置 `fetch`，可注入 `fetchImpl` / `apiBase` 供测试），以及 `createGitHubBackup({ env, home, database, fetchImpl, now, offline })` 返回的 `status` / `configure` / `upload` / `restore`。
 - `src/webservice.js` 暴露 `getData.syncStatus|syncConfig|syncUpload|syncRestore`；上传前确保已有快照，恢复先等待进行中的刷新（与导入一致）。测试可通过 `syncFetch` / `syncApiBase` 注入假 GitHub。
 - 前端：`components/GitHubBackup.jsx`（设置页面板与恢复确认 `GitHubRestore` 对话框）、`lib/useGitHubBackup.js`（只在设置页加载状态）、`useWorkspace.js` 负责 toast 和恢复后重载报告。
 
@@ -13,8 +13,16 @@
 ## 设置与令牌
 
 - 设置保存在 `<toksight-dir>/github-backup.json`：`repo`、可选 `token`、`lastBackup`、`lastRestore`。文件以临时文件 + 重命名原子替换，创建为 `0600`、目录 `0700`（Windows 继承用户目录的私有 ACL）。
-- 令牌优先级：`TOKSIGHT_GITHUB_TOKEN` → `GITHUB_TOKEN` → 设置文件。存在环境变量时页面禁用令牌输入框。
-- API 和页面永远不返回令牌，只返回 `tokenSource`（`TOKSIGHT_GITHUB_TOKEN` / `GITHUB_TOKEN` / `config` / `null`）与 `tokenSaved`。错误信息不包含令牌。
+- 令牌优先级：`TOKSIGHT_GITHUB_TOKEN` → `GITHUB_TOKEN` → GitHub CLI（`gh auth token --hostname github.com`）→ 设置文件。令牌来自环境变量或 gh 时页面禁用令牌输入框并注明来源；gh 生效时提示 gh 令牌通常权限较宽。
+- API 和页面永远不返回令牌，只返回 `tokenSource`（`TOKSIGHT_GITHUB_TOKEN` / `GITHUB_TOKEN` / `gh` / `config` / `null`）与 `tokenSaved`。错误信息不包含令牌。
+
+### GitHub CLI 检测
+
+- `createGhProbe` 依次运行 `gh --version`、`gh auth token --hostname github.com`、`gh config get user --host github.com`。三条命令都只读 gh 的本地配置 / 凭据存储，不访问 GitHub API，因此状态接口仍然不联网；登录名取自 gh 本地配置（`hosts.yml` 中的 `user`），读不到时省略。
+- 通过 `node:child_process` 的 `execFile` 直接运行（不经 shell），`windowsHide`、5 秒超时，环境追加 `GH_PROMPT_DISABLED=1`、`GH_NO_UPDATE_NOTIFIER=1`。未安装（ENOENT）、未登录（非零退出）、超时或输出不像令牌时静默跳过，回落到下一个来源；命令输出与错误不写日志、不返回。
+- gh 令牌只保存在进程内存，从不写入 toksight 设置。检测结果缓存 60 秒（并发请求共享一次检测）；`GET /api/sync/status?refresh=1`（页面“重新检测”）以及每次上传 / 恢复都会强制重新检测。
+- 状态返回 `gh: { installed, loggedIn, user, version }`。页面显示“未安装 gh / gh 未登录（提示运行 `gh auth login`）/ 已登录为 {user}”，gh 提供令牌时加“正在使用”徽标。
+- 测试通过 `ghRunner`（`createGitHubBackup`）/ `syncGh`（`createWebDataService`）注入假 gh。
 - 仓库写成 `owner/name`，也接受 `https://github.com/owner/name(.git)`。令牌留空表示保留已保存的令牌；`clearToken: true` 删除它。
 
 ## 上传
@@ -54,6 +62,6 @@
 
 ## HTTP 边界
 
-`GET /api/sync/status`（只读本机设置，不联网）、`POST /api/sync/config`（JSON：`repo`、`token`、`clearToken`）、`POST /api/sync/upload`、`POST /api/sync/restore`。四个路由除常规回环 Host 与写请求 Origin 检查外，还要求请求来自本机回环地址；即使用 `--host 0.0.0.0` 启动，局域网客户端也会得到 `403 SYNC_LOCAL_ONLY`。
+`GET /api/sync/status`（只读本机设置与 gh 本地状态，不访问 GitHub API；`?refresh=1` 重新检测 gh）、`POST /api/sync/config`（JSON：`repo`、`token`、`clearToken`）、`POST /api/sync/upload`、`POST /api/sync/restore`。四个路由除常规回环 Host 与写请求 Origin 检查外，还要求请求来自本机回环地址；即使用 `--host 0.0.0.0` 启动，局域网客户端也会得到 `403 SYNC_LOCAL_ONLY`。
 
-测试见 `test/ghsync.test.js`：内存假 GitHub（真实 blob sha、只能快进的引用）覆盖小 / 大文件上传、跳过未变化、中断后重试、恢复与安全副本、损坏 / 缺失备份、合并回滚、401 / 403 / 404 / 限流 / 离线、公开仓库、超限、并发与 HTTP 路由。
+测试见 `test/ghsync.test.js`：内存假 GitHub（真实 blob sha、只能快进的引用）覆盖小 / 大文件上传、跳过未变化、中断后重试、恢复与安全副本、损坏 / 缺失备份、合并回滚、401 / 403 / 404 / 限流 / 离线、公开仓库、超限、并发与 HTTP 路由；gh 未安装 / 未登录 / 已登录 / 超时、缓存与强制重测、与环境变量和已保存令牌的优先级、令牌不泄露。

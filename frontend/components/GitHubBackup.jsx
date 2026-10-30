@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import { CloudDownload, CloudUpload, TriangleAlert, X } from 'lucide-react';
-import { Button, Field, IconButton, Panel } from './ui';
+import { Badge, Button, Field, IconButton, Panel } from './ui';
 import { fmtBytes, fmtDateTime } from '@/lib/format';
 
 const ERROR_KEYS = {
@@ -52,13 +52,28 @@ export function GitHubRestore({ status, busy, error, onRestore, onClose, tx, tim
   </dialog>;
 }
 
-export default function GitHubBackup({ backup, loading, timezone, tx, onSave, onUpload, onConfirmRestore }) {
+// GitHub CLI state: not installed / logged out (hint) / logged in, with an
+// "in use" badge when it supplies the token, and a local re-check.
+function GhStatus({ gh, active, detecting, disabled, onDetect, tx }) {
+  const text = !gh?.installed ? tx('backupGhMissing') : !gh.loggedIn ? tx('backupGhLoggedOut')
+    : gh.user ? tx('backupGhLoggedIn', { user: gh.user }) : tx('backupGhLoggedInAnon');
+  return <div className="backup-gh">
+    <span className="field-label">GitHub CLI</span>
+    <span className="backup-gh-state">{gh?.installed && gh.loggedIn ? <Badge tone={active ? 'signal' : 'neutral'}>{tx(active ? 'backupGhInUse' : 'backupGhAvailable')}</Badge> : null}
+      <span>{text}</span>
+      <Button variant="text" loading={detecting} disabled={disabled} onClick={onDetect}>{tx(detecting ? 'backupGhChecking' : 'backupGhRecheck')}</Button></span>
+  </div>;
+}
+
+export default function GitHubBackup({ backup, loading, timezone, tx, onSave, onUpload, onConfirmRestore, onDetect }) {
   const { status, busy, error, confirming } = backup;
   const [repo, setRepo] = useState('');
   const [token, setToken] = useState('');
   const savedRepo = status?.repo ?? '';
   useEffect(() => { setRepo(savedRepo); }, [savedRepo]);
-  const envToken = status?.tokenSource && status.tokenSource !== 'config' ? status.tokenSource : null;
+  const ghToken = status?.tokenSource === 'gh';
+  const envToken = status?.tokenSource && !['config', 'gh'].includes(status.tokenSource) ? status.tokenSource : null;
+  const external = Boolean(envToken) || ghToken;
   const working = Boolean(busy);
   const blocked = !status || loading || working || status.offline;
   const ready = Boolean(status?.configured) && savedRepo === repo.trim();
@@ -76,12 +91,13 @@ export default function GitHubBackup({ backup, loading, timezone, tx, onSave, on
           <input value={repo} onChange={(e) => setRepo(e.target.value)} placeholder={tx('backupRepoPlaceholder')} spellCheck={false} autoComplete="off" disabled={!status || working} />
         </Field>
         <Field label={tx('backupToken')} className="backup-field">
-          <input type="password" value={token} onChange={(e) => setToken(e.target.value)} autoComplete="off" spellCheck={false} disabled={!status || working || Boolean(envToken)}
-            placeholder={envToken ? tx('backupTokenEnv', { name: envToken }) : status?.tokenSaved ? tx('backupTokenSaved') : tx('backupTokenPlaceholder')} />
+          <input type="password" value={token} onChange={(e) => setToken(e.target.value)} autoComplete="off" spellCheck={false} disabled={!status || working || external}
+            placeholder={envToken ? tx('backupTokenEnv', { name: envToken }) : ghToken ? tx('backupTokenGh') : status?.tokenSaved ? tx('backupTokenSaved') : tx('backupTokenPlaceholder')} />
         </Field>
         <Button type="submit" loading={busy === 'save'} disabled={!status || working || (repo.trim() === savedRepo && !token.trim())}>{tx(busy === 'save' ? 'backupSaving' : 'backupSave')}</Button>
       </div>
-      <p className="muted-note">{envToken ? `${tx('backupTokenEnv', { name: envToken })} · ` : ''}{tx('backupTokenHint')}
+      <GhStatus gh={status?.gh} active={ghToken} detecting={busy === 'detect'} disabled={!status || working} onDetect={onDetect} tx={tx} />
+      <p className="muted-note">{envToken ? `${tx('backupTokenEnv', { name: envToken })} · ` : ''}{ghToken ? tx('backupGhScope') : tx('backupTokenHint')}
         {status?.tokenSaved && !envToken ? <> <Button variant="text" disabled={working} onClick={() => void onSave({ clearToken: true })}>{tx('backupClearToken')}</Button></> : null}</p>
     </form>
     <div className="settings-row">

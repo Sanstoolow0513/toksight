@@ -255,10 +255,13 @@ default branch of your own **private** GitHub repository, and **Restore from Git
 Both run only when you click them; there is no automatic or multi-device sync, and no CLI command yet.
 
 - Enter `owner/name` and a token, then **Save**. Use a fine-grained token limited to that repository
-  with **Contents: read and write** (Metadata: read is included). `TOKSIGHT_GITHUB_TOKEN`, then
-  `GITHUB_TOKEN`, take precedence over a saved token. A saved token is stored in
-  `<toksight-dir>/github-backup.json` (owner-only permissions where supported) and is never sent
-  back to the page.
+  with **Contents: read and write** (Metadata: read is included). Token precedence:
+  `TOKSIGHT_GITHUB_TOKEN`, `GITHUB_TOKEN`, then the GitHub CLI's token if you are logged in with
+  `gh auth login` (github.com), then the saved token. The panel shows whether `gh` is installed and
+  logged in, with **Check again**; gh is detected locally (no GitHub API call), and its token is
+  never saved by toksight. gh tokens usually reach all your repositories, so a fine-grained token is
+  tighter. A saved token is stored in `<toksight-dir>/github-backup.json` (owner-only permissions
+  where supported). No token is ever sent back to the page.
 - Public repositories are refused, because the snapshot contains session titles and directories.
   Snapshots over 90 MiB are not uploaded (GitHub's per-file limit is 100 MiB). Snapshots over 1 MiB
   are committed through the Git Data API, so an interrupted upload leaves the previous backup in

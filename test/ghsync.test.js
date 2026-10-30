@@ -8,7 +8,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { createUsageDatabase } from '../src/database.js';
 import { priceRecord } from '../src/pricecatalog.js';
-import { createGitHubBackup, gitBlobSha, MAX_SNAPSHOT_BYTES, REMOTE_PATH, resolveToken, validRepo } from '../src/ghsync.js';
+import { createGhProbe, createGhRunner, createGitHubBackup, gitBlobSha, MAX_SNAPSHOT_BYTES, REMOTE_PATH, resolveToken, validRepo } from '../src/ghsync.js';
 import { createWebDataService } from '../src/webservice.js';
 import { createWebServer } from '../src/webserver.js';
 import { parseArgs } from '../src/args.js';
@@ -22,6 +22,22 @@ const entry = (extra = {}) => ({ client: 'opencode', sessionId: 'one', model: 's
   costUsd: 0.5, directory: '/project', title: 'title', ...extra });
 const collected = (entries) => ({ entries, warnings: [], reportedCosts: new WeakSet(),
   pricing: { sources: { user: true }, configDir: '/fixture', priceFor: () => rate, records: [priceRecord({ ...rate, name: 'sync-model' })] } });
+const GH_TOKEN = 'gho_GHCLITOKEN0123456789abcdef';
+const enoent = () => Object.assign(new Error('spawn gh ENOENT'), { code: 'ENOENT' });
+const noGh = async () => { throw enoent(); };
+// A fake `gh`: `state` is 'missing' | 'loggedOut' | 'loggedIn' | 'hang'.
+function fakeGh(state = 'loggedIn', calls = []) {
+  return async (args) => {
+    calls.push(args.join(' '));
+    if (state === 'missing') throw enoent();
+    if (state === 'hang') throw Object.assign(new Error('Command failed: gh'), { killed: true, signal: 'SIGTERM', code: null });
+    if (args[0] === '--version') return 'gh version 2.103.3 (2026-10-26)\nhttps://github.com/cli/cli/releases/tag/v2.103.3';
+    if (state === 'loggedOut') throw Object.assign(new Error('no oauth token found for github.com'), { code: 1 });
+    if (args[0] === 'auth') { assert.deepEqual(args, ['auth', 'token', '--hostname', 'github.com']); return GH_TOKEN; }
+    if (args[0] === 'config') return 'octo-cat';
+    throw new Error('unexpected gh call');
+  };
+}
 const json = (status, body, headers = {}) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json', ...headers } });
 
 // An in-memory GitHub: one repository, real git blob ids, fast-forward-only
@@ -94,8 +110,8 @@ async function setup(t, { entries = [entry()], github = fakeGitHub(), env: extra
   database.replace(collected(entries));
   t.after(async () => { database.close(); await rm(dir, { recursive: true, force: true }); });
   const env = { TOKSIGHT_CONFIG_DIR: dir, ...extraEnv };
-  const backup = createGitHubBackup({ env, home: dir, database, fetchImpl: github.fetch, apiBase: API, now: () => Date.parse('2026-10-29T08:00:00Z'), ...options });
-  if (configure) backup.configure({ repo: REPO, token: TOKEN });
+  const backup = createGitHubBackup({ env, home: dir, database, fetchImpl: github.fetch, apiBase: API, now: () => Date.parse('2026-10-29T08:00:00Z'), ghRunner: noGh, ...options });
+  if (configure) await backup.configure({ repo: REPO, token: TOKEN });
   return { dir, env, database, backup, github };
 }
 const rejects = (promise, code, extra = () => {}) => assert.rejects(promise, (err) => { assert.equal(err.code, code, err.message); assert.ok(!err.message.includes(TOKEN)); extra(err); return true; });
@@ -112,20 +128,20 @@ test('repository names and token precedence', () => {
 
 test('settings are stored privately and the token is never reported back', async (t) => {
   const { backup, dir } = await setup(t, { configure: false });
-  assert.deepEqual([backup.status().configured, backup.status().tokenSource], [false, null]);
-  await assert.throws(() => backup.configure({ repo: 'not a repo' }), { code: 'SYNC_BAD_REPO' });
-  await assert.throws(() => backup.configure({ token: 'has space inside' }), { code: 'SYNC_BAD_TOKEN' });
-  await assert.throws(() => backup.configure({ repo: REPO, extra: 1 }), { code: 'SYNC_BAD_CONFIG' });
-  const status = backup.configure({ repo: `https://github.com/${REPO}.git`, token: ` ${TOKEN} ` });
+  assert.deepEqual([(await backup.status()).configured, (await backup.status()).tokenSource], [false, null]);
+  await assert.rejects(backup.configure({ repo: 'not a repo' }), { code: 'SYNC_BAD_REPO' });
+  await assert.rejects(backup.configure({ token: 'has space inside' }), { code: 'SYNC_BAD_TOKEN' });
+  await assert.rejects(backup.configure({ repo: REPO, extra: 1 }), { code: 'SYNC_BAD_CONFIG' });
+  const status = await backup.configure({ repo: `https://github.com/${REPO}.git`, token: ` ${TOKEN} ` });
   assert.deepEqual([status.configured, status.repo, status.tokenSource, status.tokenSaved, status.remotePath], [true, REPO, 'config', true, REMOTE_PATH]);
   assert.ok(!JSON.stringify(status).includes(TOKEN));
   const file = path.join(dir, 'github-backup.json');
   assert.equal(JSON.parse(readFileSync(file, 'utf8')).token, TOKEN);
   if (process.platform !== 'win32') assert.equal(statSync(file).mode & 0o777, 0o600);
-  assert.equal(backup.configure({ token: '' }).tokenSaved, true, 'an empty token field keeps the saved token');
-  assert.deepEqual([backup.configure({ clearToken: true }).tokenSaved, backup.status().configured], [false, false]);
-  const fromEnv = createGitHubBackup({ env: { TOKSIGHT_CONFIG_DIR: dir, GITHUB_TOKEN: 'env-token' }, home: dir });
-  assert.deepEqual([fromEnv.status().configured, fromEnv.status().tokenSource], [true, 'GITHUB_TOKEN']);
+  assert.equal((await backup.configure({ token: '' })).tokenSaved, true, 'an empty token field keeps the saved token');
+  assert.deepEqual([(await backup.configure({ clearToken: true })).tokenSaved, (await backup.status()).configured], [false, false]);
+  const fromEnv = createGitHubBackup({ env: { TOKSIGHT_CONFIG_DIR: dir, GITHUB_TOKEN: 'env-token' }, home: dir, ghRunner: noGh });
+  assert.deepEqual([(await fromEnv.status()).configured, (await fromEnv.status()).tokenSource], [true, 'GITHUB_TOKEN']);
 });
 
 test('small snapshots upload through the Contents API and unchanged ones are skipped', async (t) => {
@@ -154,8 +170,8 @@ test('large snapshots use the Git Data API; an interrupted upload keeps the old 
   github.intercept = (method, route) => method === 'PATCH' && route.includes('/git/refs/') ? json(502, { message: 'Bad gateway' }) : null;
   await rejects(backup.upload(), 'SYNC_GITHUB_ERROR');
   assert.equal(github.remote(), null, 'the ref was never moved');
-  assert.equal(backup.status().lastBackup, null);
-  assert.equal(backup.status().busy, null);
+  assert.equal((await backup.status()).lastBackup, null);
+  assert.equal((await backup.status()).busy, null);
   github.intercept = null;
   const done = await backup.upload();
   assert.ok(done.lastBackup.size > 1024 * 1024);
@@ -194,7 +210,7 @@ test('restore refuses missing, corrupt or unmergeable backups without touching l
   assert.equal(database.read().entries.length, 1);
   await rejects(backup.restore({ importDatabase: () => { throw new Error('disk full'); } }), 'SYNC_MERGE_FAILED', (err) => assert.match(err.message, /rolled back/));
   assert.equal(database.read().entries.length, 1);
-  assert.equal(backup.status().lastRestore, null);
+  assert.equal((await backup.status()).lastRestore, null);
 });
 
 test('GitHub failures map to specific errors and change nothing', async (t) => {
@@ -216,7 +232,7 @@ test('GitHub failures map to specific errors and change nothing', async (t) => {
     });
     await rejects(backup.restore(), ['SYNC_FORBIDDEN'].includes(code) ? 'SYNC_NO_BACKUP' : code);
     assert.equal(github.remote(), null);
-    assert.equal(backup.status().lastBackup, null);
+    assert.equal((await backup.status()).lastBackup, null);
     assert.equal(database.read().entries.length, 1);
   }
   const { backup, github } = await setup(t);
@@ -230,7 +246,7 @@ test('public repositories, oversized snapshots, offline sessions and missing set
   await rejects(pub.backup.upload(), 'SYNC_PUBLIC_REPO', (err) => assert.equal(err.status, 400));
   assert.ok(!pub.github.calls.some((call) => !call.startsWith('GET')), 'nothing is written to a public repository');
   const big = await setup(t);
-  const huge = createGitHubBackup({ env: big.env, home: big.dir, fetchImpl: big.github.fetch, apiBase: API,
+  const huge = createGitHubBackup({ env: big.env, home: big.dir, ghRunner: noGh, fetchImpl: big.github.fetch, apiBase: API,
     database: { exportDatabase: () => Buffer.alloc(MAX_SNAPSHOT_BYTES + 1) } });
   await rejects(huge.upload(), 'SYNC_TOO_LARGE', (err) => assert.equal(err.status, 413));
   assert.deepEqual(big.github.calls, []);
@@ -248,15 +264,15 @@ test('only one backup or restore runs at a time', async (t) => {
   const gate = new Promise((resolve) => { release = resolve; });
   const fetch = github.fetch;
   github.fetch = async (...args) => { await gate; return fetch(...args); };
-  const slow = createGitHubBackup({ env: { TOKSIGHT_CONFIG_DIR: path.dirname(backup.file) }, database: { exportDatabase: () => Buffer.from('x') },
+  const slow = createGitHubBackup({ env: { TOKSIGHT_CONFIG_DIR: path.dirname(backup.file) }, ghRunner: noGh, database: { exportDatabase: () => Buffer.from('x') },
     fetchImpl: (...args) => github.fetch(...args), apiBase: API });
   const first = slow.upload();
-  assert.equal(slow.status().busy, 'upload');
+  assert.equal((await slow.status()).busy, 'upload');
   await rejects(slow.restore(), 'SYNC_BUSY');
-  assert.throws(() => slow.configure({ repo: REPO }), { code: 'SYNC_BUSY' });
+  await assert.rejects(slow.configure({ repo: REPO }), { code: 'SYNC_BUSY' });
   release();
   await first;
-  assert.equal(slow.status().busy, null);
+  assert.equal((await slow.status()).busy, null);
 });
 
 test('web API: loopback-only routes, Origin checks and no token in responses', async (t) => {
@@ -267,7 +283,7 @@ test('web API: loopback-only routes, Origin checks and no token in responses', a
   database.completeSetup({ autoUpdate: false });
   const getData = createWebDataService(parseArgs([]), { env: { TOKSIGHT_CONFIG_DIR: dir }, home: dir, database,
     collect: async () => collected([entry()]), genericPricing: async () => ({ records: [], warnings: [], sourceDetails: {} }),
-    syncFetch: github.fetch, syncApiBase: API });
+    syncFetch: github.fetch, syncApiBase: API, syncGh: noGh });
   const server = createWebServer({ outDir: dir, getData, port: 0, logger: null });
   const { url } = await server.start();
   t.after(() => server.close());
@@ -275,6 +291,8 @@ test('web API: loopback-only routes, Origin checks and no token in responses', a
   let res = await fetch(`${url}/api/sync/status`);
   assert.equal(res.status, 200);
   assert.equal((await res.json()).configured, false);
+  res = await fetch(`${url}/api/sync/status?refresh=1`);
+  assert.deepEqual((await res.json()).gh, { installed: false, loggedIn: false, user: null, version: null });
   assert.equal((await fetch(`${url}/api/sync/upload`)).status, 405);
   assert.equal((await post('/api/sync/config', { repo: REPO, token: TOKEN }, { origin: 'https://evil.example' })).status, 403);
   const foreignHost = await new Promise((resolve, reject) => {
@@ -305,4 +323,65 @@ test('web API: loopback-only routes, Origin checks and no token in responses', a
   assert.equal((await res.json()).result.duplicates, 1);
   res = await post('/api/sync/config', { repo: 7 });
   assert.deepEqual([res.status, (await res.json()).code], [400, 'SYNC_BAD_REPO']);
+});
+
+test('gh detection: missing, logged out, logged in and timed out; results are cached', async () => {
+  const missing = await createGhProbe({ run: fakeGh('missing') })();
+  assert.deepEqual([missing.installed, missing.loggedIn, missing.token], [false, false, null]);
+  const out = await createGhProbe({ run: fakeGh('loggedOut') })();
+  assert.deepEqual([out.installed, out.loggedIn, out.version, out.token], [true, false, '2.103.3', null]);
+  const hang = await createGhProbe({ run: fakeGh('hang') })();
+  assert.deepEqual([hang.installed, hang.loggedIn], [false, false]);
+  let time = 0;
+  const calls = [];
+  const probe = createGhProbe({ run: fakeGh('loggedIn', calls), now: () => time });
+  const [a, b] = await Promise.all([probe(), probe()]);
+  assert.deepEqual([a.loggedIn, a.user, a.token, a === b], [true, 'octo-cat', GH_TOKEN, true]);
+  assert.equal(calls.length, 3, 'concurrent probes share one run');
+  time = 59_000; await probe();
+  assert.equal(calls.length, 3, 'cached for a minute');
+  await probe({ force: true });
+  assert.equal(calls.length, 6, 'forced re-check');
+  time = 200_000; await probe();
+  assert.equal(calls.length, 9, 'expired cache re-checks');
+  // The real runner skips a missing binary instead of throwing up the stack.
+  const real = await createGhProbe({ run: createGhRunner({ bin: 'toksight-no-such-gh-binary', timeout: 2000 }) })();
+  assert.deepEqual([real.installed, real.loggedIn], [false, false]);
+});
+
+test('gh token precedence: env beats gh, gh beats the saved token, and it never leaks', async (t) => {
+  const { backup, dir } = await setup(t, { ghRunner: fakeGh('loggedIn') });
+  let status = await backup.status();
+  assert.deepEqual([status.tokenSource, status.tokenSaved, status.configured], ['gh', true, true]);
+  assert.deepEqual(status.gh, { installed: true, loggedIn: true, user: 'octo-cat', version: '2.103.3' });
+  assert.ok(!JSON.stringify(status).includes(GH_TOKEN) && !JSON.stringify(status).includes(TOKEN));
+  assert.ok(!readFileSync(path.join(dir, 'github-backup.json'), 'utf8').includes(GH_TOKEN), 'the gh token is never persisted');
+  const env = await setup(t, { ghRunner: fakeGh('loggedIn'), env: { GITHUB_TOKEN: 'env-token-123' } });
+  status = await env.backup.status();
+  assert.deepEqual([status.tokenSource, status.gh.loggedIn], ['GITHUB_TOKEN', true]);
+  const out = await setup(t, { ghRunner: fakeGh('loggedOut') });
+  assert.equal((await out.backup.status()).tokenSource, 'config', 'a logged-out gh falls through to the saved token');
+  const none = await setup(t, { ghRunner: fakeGh('missing'), configure: false });
+  await none.backup.configure({ repo: REPO });
+  assert.deepEqual([(await none.backup.status()).configured, (await none.backup.status()).gh.installed], [false, false]);
+  await rejects(none.backup.upload(), 'SYNC_NOT_CONFIGURED');
+});
+
+test('upload and restore re-check gh and send its token', async (t) => {
+  let state = 'loggedIn';
+  const ghCalls = [];
+  const runner = (args) => fakeGh(state, ghCalls)(args);
+  const github = fakeGitHub();
+  const auth = [];
+  const fetch = github.fetch;
+  github.fetch = (url, init) => { auth.push(init.headers.authorization); return fetch(url, { ...init, headers: { ...init.headers, authorization: `Bearer ${TOKEN}` } }); };
+  const { backup } = await setup(t, { github, ghRunner: runner, configure: false });
+  await backup.configure({ repo: REPO });
+  await backup.status();
+  const statusCalls = ghCalls.length;
+  await backup.upload();
+  assert.ok(ghCalls.length > statusCalls, 'upload forces a fresh gh check');
+  assert.ok(auth.length && auth.every((value) => value === `Bearer ${GH_TOKEN}`));
+  state = 'loggedOut';
+  await rejects(backup.restore(), 'SYNC_NOT_CONFIGURED', (err) => assert.ok(!err.message.includes(GH_TOKEN)));
 });

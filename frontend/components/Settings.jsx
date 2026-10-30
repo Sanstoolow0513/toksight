@@ -42,6 +42,6 @@ export default function Settings({ tx, timezone, timezonePref, systemZone, onTim
         </Button>
       </div>
     </Panel>
-    {backup ? <GitHubBackup backup={backup} loading={loading} timezone={timezone} tx={tx} onSave={onBackupSave} onUpload={onBackupUpload} onConfirmRestore={onBackupRestore} /> : null}
+    {backup ? <GitHubBackup backup={backup} loading={loading} timezone={timezone} tx={tx} onSave={onBackupSave} onUpload={onBackupUpload} onConfirmRestore={onBackupRestore} onDetect={() => void backup.detect()} /> : null}
   </div>;
 }

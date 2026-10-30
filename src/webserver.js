@@ -288,7 +288,7 @@ export function createWebServer({
           res.end(req.method === 'HEAD' ? undefined : bytes);
           return;
         }
-        const payload = syncStatus ? await getData.syncStatus() : syncConfig ? await getData.syncConfig(await readSetupBody(req, 'backup settings', 'SYNC_BAD_CONFIG'))
+        const payload = syncStatus ? await getData.syncStatus(url.searchParams) : syncConfig ? await getData.syncConfig(await readSetupBody(req, 'backup settings', 'SYNC_BAD_CONFIG'))
           : syncUpload ? await getData.syncUpload() : syncRestore ? await getData.syncRestore()
           : quota ? await getData.quota() : quotaRefresh ? await getData.refreshQuota() : priceReset ? await getData.resetPrices() : refresh ? await getData.refresh() : priceUpdate ? await getData.updatePrices()
           : setup ? await getData.setup(await readSetupBody(req)) : priceStatus ? await getData.priceStatus() : prices ? await getData.prices(url.searchParams)

@@ -136,6 +136,8 @@
   .backup-field { flex: 1 1 240px; }
   .backup-field input { width: 100%; }
   .backup-form .muted-note .btn--text { vertical-align: baseline; }
+  .backup-gh { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-1) var(--sp-3); font-size: var(--fs-sm); color: var(--ink-2); }
+  .backup-gh-state { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); min-width: 0; }
   .backup-last { font-size: var(--fs-sm); color: var(--ink-2); text-align: right; }
   .backup-actions { display: flex; flex: none; flex-wrap: wrap; justify-content: flex-end; gap: var(--sp-2); }
   .backup-error-row { padding-top: 0; }

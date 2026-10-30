@@ -17,10 +17,15 @@ export function useGitHubBackup(active) {
   const [error, setError] = useState(null); // { action, code, message, retryAt }
   const [confirming, setConfirming] = useState(false);
 
-  const reload = useCallback(async () => {
-    try { setStatus(await request('/api/sync/status')); }
+  // `refresh` re-runs local GitHub CLI detection instead of the cached result.
+  const reload = useCallback(async (refresh = false) => {
+    try { setStatus(await request(refresh ? '/api/sync/status?refresh=1' : '/api/sync/status')); }
     catch (err) { setError({ action: 'load', code: err.code, message: err.message }); }
   }, []);
+  const detect = useCallback(async () => {
+    setBusy('detect');
+    try { await reload(true); } finally { setBusy(null); }
+  }, [reload]);
   useEffect(() => { if (active) void reload(); }, [active, reload]);
 
   const run = useCallback(async (action, fn) => {
@@ -40,5 +45,5 @@ export function useGitHubBackup(active) {
   const save = useCallback((settings) => run('save', () => post('/api/sync/config', settings)), [run]);
   const upload = useCallback(() => run('upload', () => post('/api/sync/upload')), [run]);
   const restore = useCallback(() => run('restore', () => post('/api/sync/restore')), [run]);
-  return { status, busy, error, confirming, setConfirming, setError, save, upload, restore, reload };
+  return { status, busy, error, confirming, setConfirming, setError, save, upload, restore, reload, detect };
 }
