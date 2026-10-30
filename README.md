@@ -248,6 +248,31 @@ The web endpoints are `GET /api/export/db` (SQLite download) and `POST /api/impo
 bytes, merge statistics as JSON); both retain the local Host check and import requires a permitted
 origin. Transfers work offline and never write agent files.
 
+### GitHub backup (optional)
+
+**GitHub backup** in **Settings** uploads the same full snapshot to `toksight/usage.sqlite` on the
+default branch of your own **private** GitHub repository, and **Restore from GitHub** merges it back.
+Both run only when you click them; there is no automatic or multi-device sync, and no CLI command yet.
+
+- Enter `owner/name` and a token, then **Save**. Use a fine-grained token limited to that repository
+  with **Contents: read and write** (Metadata: read is included). `TOKSIGHT_GITHUB_TOKEN`, then
+  `GITHUB_TOKEN`, take precedence over a saved token. A saved token is stored in
+  `<toksight-dir>/github-backup.json` (owner-only permissions where supported) and is never sent
+  back to the page.
+- Public repositories are refused, because the snapshot contains session titles and directories.
+  Snapshots over 90 MiB are not uploaded (GitHub's per-file limit is 100 MiB). Snapshots over 1 MiB
+  are committed through the Git Data API, so an interrupted upload leaves the previous backup in
+  place; just retry. An unchanged snapshot is not uploaded again.
+- Restore downloads the backup, checks its integrity and structure, saves the current database to
+  `<toksight-dir>/backups/before-github-restore.sqlite`, then merges like **Import database**
+  (deduplicated, one transaction, rolled back on failure). Local records are never deleted.
+- Invalid tokens, missing permissions, unknown repositories, rate limits, network errors and a
+  missing remote backup show a specific message and change nothing locally. The feature is
+  disabled in `toksight web --offline`.
+- Endpoints: `GET /api/sync/status`, `POST /api/sync/config`, `POST /api/sync/upload`,
+  `POST /api/sync/restore`. They accept requests only from this computer. Details:
+  [doc/github-backup.md](doc/github-backup.md).
+
 **Reset price database** beside **Update prices** in the top bar of the **Prices** page clears saved rates, observed price history,
 the downloaded LiteLLM cache and stored fallback rates, then returns to price setup.
 The confirmation dialog shows what will be cleared and keeps any error visible for retry.
@@ -316,7 +341,7 @@ horizontal navigation keeps all four views within reach. See `design-spec.md` fo
   one row); **View sessions** swaps the split for the sessions list. The split's scroll area takes Tab focus and
   scrolls with the arrow and Page keys. Below 1200px the calendar (70% of the
   viewport height) stacks above the details.
-- **Settings** contains appearance, language, the reporting time zone, and database import/export.
+- **Settings** contains appearance, language, the reporting time zone, database import/export, and optional GitHub backup.
 
 The time zone defaults to the browser's detected zone and can be set explicitly, for example
 `Asia/Shanghai` when the operating system is set to US time. Today, date boundaries, hourly

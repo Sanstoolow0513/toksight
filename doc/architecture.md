@@ -38,6 +38,7 @@ frontend/ 源码 -> Next 静态导出 frontend/out/ -> src/webserver.js 提供�
 | `src/payload.js`、`src/render.js`、`src/format.js` | CLI JSON 契约、文本输出、ANSI/数字格式 |
 | `src/database.js`、`src/usageimports.js` | 项目数据库、持久导入、快照和跨进程版本检测 |
 | `src/dbtransfer.js`、`src/dbcommand.js` | SQLite 备份验证/合并与 CLI 文件操作 |
+| `src/ghsync.js` | 可选的私有 GitHub 仓库手动备份与合并恢复（见[GitHub 备份](github-backup.md)） |
 | `src/pricing.js`、`src/pricecatalog.js`、`src/costcoverage.js` | 价格来源、模型身份/作用域、费用来源统计 |
 | `src/pricing.js`、`src/localpricedb.js`、`src/pricehistory.js`、`src/providerbindings.js` | 第一方 LiteLLM 下载、观察历史、逐请求历史查价及用户提供商绑定 |
 | `src/priceselection.js`、`src/firstparty.js`、`src/nativeproviders.js` | 来源偏好与统一筛选、LiteLLM 提供商和模型归属校验、计价渠道别名 |
