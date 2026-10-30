@@ -266,6 +266,8 @@ Both run only when you click them; there is no automatic or multi-device sync, a
   Snapshots over 90 MiB are not uploaded (GitHub's per-file limit is 100 MiB). Snapshots over 1 MiB
   are committed through the Git Data API, so an interrupted upload leaves the previous backup in
   place; just retry. An unchanged snapshot is not uploaded again.
+  Large uploads preserve other repository files and stop if GitHub returns incomplete or invalid
+  parent commit or tree information.
 - Restore downloads the backup, checks its integrity and structure, saves the current database to
   `<toksight-dir>/backups/before-github-restore.sqlite`, then merges like **Import database**
   (deduplicated, one transaction, rolled back on failure). Local records are never deleted.

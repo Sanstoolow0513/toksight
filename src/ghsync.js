@@ -155,7 +155,9 @@ export function createGitHubClient({ token, repo, fetchImpl = globalThis.fetch, 
     }
     if (res.ok) {
       if (raw) return { status: res.status, body: Buffer.from(await res.arrayBuffer()) };
-      return { status: res.status, body: res.status === 204 ? null : await res.json().catch(() => null) };
+      if (res.status === 204) return { status: res.status, body: null };
+      try { return { status: res.status, body: await res.json() }; }
+      catch { throw syncError('SYNC_GITHUB_ERROR', 'GitHub returned an unreadable JSON response. Try again.'); }
     }
     if (allow.includes(res.status)) { await res.body?.cancel?.().catch?.(() => {}); return { status: res.status, body: null }; }
     const detail = await res.json().catch(() => ({}));
@@ -174,6 +176,13 @@ export function createGitHubClient({ token, repo, fetchImpl = globalThis.fetch, 
 }
 
 const encodeRef = (ref) => ref.split('/').map(encodeURIComponent).join('/');
+
+function requireGitSha(sha, object) {
+  if (typeof sha !== 'string' || sha.length !== 40 || /[^0-9a-f]/.test(sha)) {
+    throw syncError('SYNC_GITHUB_ERROR', `GitHub returned an invalid ${object} SHA. Try again.`);
+  }
+  return sha;
+}
 
 async function openRepo(client, repo, { requirePrivate }) {
   const { body } = await client.call('GET', `/repos/${repo}`, { scope: 'repo' });
@@ -209,16 +218,22 @@ async function putLarge(client, repo, branch, bytes, message) {
     await putContents(client, repo, branch, 'toksight/README.md', Buffer.from('Backups written by toksight (https://github.com/Sanstoolow0513/toksight).\n'), 'Initialize toksight backup');
     ref = await client.call('GET', refRoute);
   }
-  const parent = ref.body?.object?.sha;
+  const parent = requireGitSha(ref.body?.object?.sha, 'parent commit');
   const { body: commit } = await client.call('GET', `/repos/${repo}/git/commits/${parent}`);
+  // Omitting base_tree creates a tree containing only the backup, deleting
+  // every other file when committed. Validate it before writing any objects.
+  const baseTree = requireGitSha(commit?.tree?.sha, 'parent tree');
   const { body: blob } = await client.call('POST', `/repos/${repo}/git/blobs`, { scope: 'write', timeout: TRANSFER_TIMEOUT_MS,
     body: { content: bytes.toString('base64'), encoding: 'base64' } });
+  const blobSha = requireGitSha(blob?.sha, 'blob');
   const { body: tree } = await client.call('POST', `/repos/${repo}/git/trees`, { scope: 'write',
-    body: { base_tree: commit?.tree?.sha, tree: [{ path: REMOTE_PATH, mode: '100644', type: 'blob', sha: blob?.sha }] } });
+    body: { base_tree: baseTree, tree: [{ path: REMOTE_PATH, mode: '100644', type: 'blob', sha: blobSha }] } });
+  const treeSha = requireGitSha(tree?.sha, 'tree');
   const { body: created } = await client.call('POST', `/repos/${repo}/git/commits`, { scope: 'write',
-    body: { message, tree: tree?.sha, parents: [parent] } });
-  await client.call('PATCH', `/repos/${repo}/git/refs/heads/${encodeRef(branch)}`, { scope: 'write', body: { sha: created?.sha, force: false } });
-  return { sha: blob?.sha ?? null, commit: created?.sha ?? null };
+    body: { message, tree: treeSha, parents: [parent] } });
+  const commitSha = requireGitSha(created?.sha, 'commit');
+  await client.call('PATCH', `/repos/${repo}/git/refs/heads/${encodeRef(branch)}`, { scope: 'write', body: { sha: commitSha, force: false } });
+  return { sha: blobSha, commit: commitSha };
 }
 
 function integrityCheck(bytes) {

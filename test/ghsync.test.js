@@ -8,7 +8,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { createUsageDatabase } from '../src/database.js';
 import { priceRecord } from '../src/pricecatalog.js';
-import { createGhProbe, createGhRunner, createGitHubBackup, gitBlobSha, MAX_SNAPSHOT_BYTES, REMOTE_PATH, resolveToken, validRepo } from '../src/ghsync.js';
+import { createGhProbe, createGhRunner, createGitHubBackup, createGitHubClient, gitBlobSha, MAX_SNAPSHOT_BYTES, REMOTE_PATH, resolveToken, validRepo } from '../src/ghsync.js';
 import { createWebDataService } from '../src/webservice.js';
 import { createWebServer } from '../src/webserver.js';
 import { parseArgs } from '../src/args.js';
@@ -178,6 +178,75 @@ test('large snapshots use the Git Data API; an interrupted upload keeps the old 
   assert.ok(github.calls.includes(`POST /repos/${REPO}/git/blobs`) && github.calls.includes(`PATCH /repos/${REPO}/git/refs/heads/main`));
   assert.equal(gitBlobSha(github.remote()), done.lastBackup.sha);
   assert.equal(createUsageDatabase({ file: ':memory:' }).importDatabase(github.remote()).entries, 700);
+});
+
+test('successful GitHub responses must contain valid JSON unless they are HTTP 204', async () => {
+  const client = (response) => createGitHubClient({ token: TOKEN, repo: REPO, fetchImpl: async () => response });
+  await rejects(client(new Response(`{"message":"${TOKEN}`, { status: 200 })).call('GET', '/test'),
+    'SYNC_GITHUB_ERROR', (err) => assert.equal(err.status, 502));
+  assert.deepEqual(await client(new Response(null, { status: 204 })).call('PATCH', '/test'), { status: 204, body: null });
+  await rejects(client(new Response('not JSON', { status: 401 })).call('GET', '/test'), 'SYNC_AUTH');
+});
+
+test('large uploads reject invalid parent responses before writing and preserve existing files on retry', async (t) => {
+  const { backup, database, github } = await setup(t);
+  const { lastBackup } = await backup.upload();
+  const oldRef = github.ref;
+  const oldFiles = new Map(github.trees.get(github.commits.get(oldRef).tree));
+  const oldBackup = github.remote();
+  database.replace(collected(Array.from({ length: 700 }, (_, i) => entry({ sessionId: `s${i}`, title: 'x'.repeat(2000) }))));
+  assert.ok(database.exportDatabase().length > 1024 * 1024);
+
+  const badResponses = [
+    () => new Response('{"tree":', { status: 200 }),
+    () => json(200, null),
+    () => json(200, {}),
+    ...[undefined, null, '', 42, ['a'.repeat(40)], 'g'.repeat(40), 'a'.repeat(39), 'a'.repeat(41), `${'a'.repeat(40)}\n`].map((sha) =>
+      (isRef) => json(200, isRef ? { object: { sha } } : { tree: { sha } })),
+  ];
+  for (const isRef of [false, true]) {
+    for (const response of badResponses) {
+      github.calls.length = 0;
+      github.intercept = (method, route) => method === 'GET' && route === `/repos/${REPO}/git/${isRef ? 'ref/heads/main' : `commits/${oldRef}`}`
+        ? response(isRef) : null;
+      await rejects(backup.upload(), 'SYNC_GITHUB_ERROR');
+      assert.ok(github.calls.every((call) => call.startsWith('GET ')), 'invalid parent data must prevent every write');
+      assert.equal(github.ref, oldRef);
+      assert.deepEqual(github.trees.get(github.commits.get(github.ref).tree), oldFiles);
+      assert.deepEqual(github.remote(), oldBackup);
+      const status = await backup.status();
+      assert.deepEqual(status.lastBackup, lastBackup);
+      assert.equal(status.busy, null);
+    }
+  }
+  github.intercept = null;
+  const done = await backup.upload();
+  assert.equal(done.result.unchanged, false);
+  assert.notEqual(github.ref, oldRef);
+  const newFiles = github.trees.get(github.commits.get(github.ref).tree);
+  assert.equal(newFiles.get('README.md'), oldFiles.get('README.md'), 'unrelated repository files are preserved');
+  assert.equal(gitBlobSha(github.remote()), done.lastBackup.sha);
+});
+
+test('large uploads stop on invalid created-object responses without moving the branch', async (t) => {
+  const many = Array.from({ length: 700 }, (_, i) => entry({ sessionId: `s${i}`, title: 'x'.repeat(2000) }));
+  const { backup, github } = await setup(t, { entries: many });
+  const oldRef = github.ref;
+  const oldFiles = new Map(github.trees.get(github.commits.get(oldRef).tree));
+  for (const object of ['blobs', 'trees', 'commits']) {
+    const route = `/repos/${REPO}/git/${object}`;
+    for (const response of [() => new Response('{"sha":', { status: 201 }), () => json(201, {}), () => json(201, { sha: null })]) {
+      github.calls.length = 0;
+      github.intercept = (method, requested) => method === 'POST' && requested === route ? response() : null;
+      await rejects(backup.upload(), 'SYNC_GITHUB_ERROR');
+      assert.equal(github.calls.at(-1), `POST ${route}`, 'no dependent write follows an invalid response');
+      assert.equal(github.ref, oldRef);
+      assert.deepEqual(github.trees.get(github.commits.get(github.ref).tree), oldFiles);
+      const status = await backup.status();
+      assert.equal(status.lastBackup, null);
+      assert.equal(status.busy, null);
+    }
+  }
 });
 
 test('restore merges a validated download after a safety snapshot', async (t) => {

@@ -33,6 +33,8 @@
 4. ≤ 1 MiB 用 Contents API `PUT`（带旧文件 sha）；更大的快照用 Git Data API：blob → tree → commit → 非强制 `PATCH refs/heads/<默认分支>`。只有最后的引用更新让新提交可见，所以中途失败时远端仍是旧备份，可直接重试。空仓库先用 Contents API 写入 `toksight/README.md` 建立默认分支。
 5. 成功后记录 `lastBackup { repo, branch, at, size, sha, commit }`。
 
+Git Data API 在创建 blob 前校验父提交 SHA 及其目录树 SHA；新树必须显式传入已验证的 `base_tree`，以保留仓库其他文件。新 blob、tree、commit 的 SHA 也必须有效才可继续下一步。预期的 JSON 响应无法解析（包括 HTTP 200 内容截断），或必需的 SHA 缺失 / 无效时，立即返回 `SYNC_GITHUB_ERROR`，不再执行后续写请求，也不记录上传成功。
+
 ## 恢复
 
 1. 读取远端文件元数据；不存在时返回 `SYNC_NO_BACKUP`（HTTP 404）。
@@ -51,7 +53,7 @@
 | `SYNC_RATE_LIMIT` | 502 | 429，或 403 且 `x-ratelimit-remaining: 0` / 次级限流；返回 `retryAt`（若可得） |
 | `SYNC_OFFLINE` | 502 | 网络错误或超时（普通请求 30 秒，传输 10 分钟） |
 | `SYNC_CONFLICT` | 409 | 409 / 422：远端在操作期间变化或引用无法快进 |
-| `SYNC_GITHUB_ERROR` | 502 | 其他 GitHub 状态码 |
+| `SYNC_GITHUB_ERROR` | 502 | 其他 GitHub 状态码、JSON 响应无法解析，或必需的 Git 对象 SHA 缺失 / 无效 |
 | `SYNC_PUBLIC_REPO`、`SYNC_NOT_CONFIGURED`、`SYNC_OFFLINE_MODE`、`SYNC_BAD_*` | 400 | 公开仓库、未配置、`--offline` 启动、参数或备份无效 |
 | `SYNC_TOO_LARGE` | 413 | 快照超过 90 MiB（或远端超过 256 MB） |
 | `SYNC_NO_BACKUP` | 404 | 远端还没有备份 |
@@ -64,4 +66,4 @@
 
 `GET /api/sync/status`（只读本机设置与 gh 本地状态，不访问 GitHub API；`?refresh=1` 重新检测 gh）、`POST /api/sync/config`（JSON：`repo`、`token`、`clearToken`）、`POST /api/sync/upload`、`POST /api/sync/restore`。四个路由除常规回环 Host 与写请求 Origin 检查外，还要求请求来自本机回环地址；即使用 `--host 0.0.0.0` 启动，局域网客户端也会得到 `403 SYNC_LOCAL_ONLY`。
 
-测试见 `test/ghsync.test.js`：内存假 GitHub（真实 blob sha、只能快进的引用）覆盖小 / 大文件上传、跳过未变化、中断后重试、恢复与安全副本、损坏 / 缺失备份、合并回滚、401 / 403 / 404 / 限流 / 离线、公开仓库、超限、并发与 HTTP 路由；gh 未安装 / 未登录 / 已登录 / 超时、缓存与强制重测、与环境变量和已保存令牌的优先级、令牌不泄露。
+测试见 `test/ghsync.test.js`：内存假 GitHub（真实 blob sha、只能快进的引用）覆盖小 / 大文件上传、保留仓库其他文件、截断响应和无效 SHA 阻止后续写入、跳过未变化、中断后重试、恢复与安全副本、损坏 / 缺失备份、合并回滚、401 / 403 / 404 / 限流 / 离线、公开仓库、超限、并发与 HTTP 路由；gh 未安装 / 未登录 / 已登录 / 超时、缓存与强制重测、与环境变量和已保存令牌的优先级、令牌不泄露。
