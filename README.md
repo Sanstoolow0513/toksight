@@ -32,6 +32,31 @@ npx toksight
 Requires Node.js >= 22.5. The built-in `node:sqlite` reads ZCode and OpenCode databases and
 stores toksight's own local usage database; no runtime package is installed.
 
+### Experimental native Windows app
+
+The `exp` branch also contains a **C# / WinUI 3 / XAML desktop app** with Today, Calendar,
+Prices and Settings pages. Its interface is native, with no WebView; it reuses the same
+local data engine through a bundled Node process. CLI and Web remain available.
+
+```powershell
+# Developer build: Windows, Node, .NET 10 SDK and Windows SDK required
+npm run desktop:build
+npm run desktop:check
+npm run desktop:run -- --offline
+npm run desktop:package -- --no-build
+```
+
+The target is Windows 10 2004+; x64 is the initial prototype target and ARM64 is unverified.
+Published desktop folders bundle Node, .NET and Windows App SDK runtimes, so end users do
+not need to install Node or .NET. Packaging produces a ZIP and an **unsigned MSIX**; an
+installer EXE is additionally built when Inno Setup 6.3+ is installed. This is not yet a
+signed or Microsoft Store release. Native calendar image export currently contains the
+selected-range details, rather than the Web report's visible-month composition.
+
+Usage data continues to use `~/.config/toksight` (`TOKSIGHT_CONFIG_DIR` honored); desktop
+preferences are separate. See [Windows desktop development and distribution](doc/desktop.md)
+for build requirements, runtime verification, installation and channel differences.
+
 ## Usage
 
 ```bash

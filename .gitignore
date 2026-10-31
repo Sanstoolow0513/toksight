@@ -11,3 +11,7 @@ frontend/out/
 usage-events-*.csv
 .codex/
 .grok/
+desktop/**/bin/
+desktop/**/obj/
+desktop/runtime/
+desktop/.cache/

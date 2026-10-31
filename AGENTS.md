@@ -2,7 +2,7 @@
 
 ## 项目与入口
 
-`toksight` 是 Node >=22.5 的 ESM CLI，读取本机 AI 编码 Agent 用量，统计 token、费用与缓存命中率，并提供本地静态 Web 报告。前端源码与依赖统一在 `frontend/`。根包零运行时依赖；刷新和导入更新 toksight 自己的 SQLite，价格抓取更新自己的缓存，绝不修改 Agent 文件。没有 TUI。
+`toksight` 是 Node >=22.5 的 ESM CLI，读取本机 AI 编码 Agent 用量，统计 token、费用与缓存命中率，并提供本地静态 Web 报告。Web 前端源码与依赖统一在 `frontend/`。`exp` 分支的纯 WinUI 3 / XAML 桌面客户端在 `desktop/`，复用 Node 数据核心，开发与分发见 [Windows 桌面](doc/desktop.md)。根包零运行时依赖；刷新和导入更新 toksight 自己的 SQLite，价格抓取更新自己的缓存，绝不修改 Agent 文件。没有 TUI。
 
 开发知识从 [doc/README.md](doc/README.md) 按主题查：
 
@@ -17,6 +17,7 @@
 - `node bin/toksight.js`：从源码运行 CLI，读取真实本机数据。
 - `npm run web:ci` 后 `npm run web:build`：安装锁定的前端依赖并构建 `frontend/out/`；未构建时 Web 首页显示指引页，API 仍可用。
 - `npm run web:dev`：一起启动 API 4729 与 Next 3000；`npm run check:package`：验证安装包、页面、API 和刷新。
+- Windows 桌面：`npm run desktop:build` 构建含运行时的原生应用；`npm run desktop:check` 用隔离 fixture 检查原生页面；`npm run desktop:run` 启动现有构建。
 
 ## 修改边界
 

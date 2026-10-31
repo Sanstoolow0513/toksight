@@ -13,8 +13,15 @@
 | `npm run web:dev` | 同时启动 API 4729 和 Next 3000；`-- --port <ui> --api-port <api> --offline` 可覆盖，Ctrl+C 关闭两者 |
 | `npm run web:dev:ui` | 只运行 Next；与 `node bin/toksight.js web --api-only` 配合，`TOKSIGHT_DEV_API` 可改开发代理目标 |
 | `npm run check:package` | 打包、临时离线安装并用 fixture 验证页面、静态资源、API 和数据库刷新 |
+| `npm run desktop:runtime` | 下载并校验固定 Node 运行时，仅提取桌面所需的可执行文件与许可证 |
+| `npm run desktop:build` | Windows 上用 .NET 10 SDK 构建纯 WinUI 3 Release，输出 `dist/desktop/win-x64/app/` |
+| `npm run desktop:run -- --offline` | 启动已有原生桌面构建；`--offline` 可省略 |
+| `npm run desktop:check` | 隔离数据，按浅色宽窗中文 / 深色窄窗英文遍历四页并生成 8 张 PNG；`-- --fresh` 验证新用户价格引导 |
+| `npm run desktop:package -- --no-build` | 为已有桌面构建生成 ZIP 和未签名 MSIX；检测到 Inno Setup 时另生成安装器 |
 
-Next 生产构建始终静态导出，不受 `TOKSIGHT_DEV_API` 影响。源码运行 `toksight web` 前需要构建 `frontend/out/`，否则 `/` 显示指引页。根包不添加运行时依赖；依赖只放在 `frontend/package.json`。项目使用 JavaScript ESM，没有独立 linter 或 typechecker。
+Next 生产构建始终静态导出，不受 `TOKSIGHT_DEV_API` 影响。源码运行 `toksight web` 前需要构建 `frontend/out/`，否则 `/` 显示指引页。根包不添加运行时依赖；Web 依赖只放在 `frontend/package.json`。CLI / Web 使用 JavaScript ESM，没有独立 linter 或 typechecker。
+
+`exp` 的原生 Windows 客户端单独使用 C# / WinUI 3，NuGet 依赖和锁文件在 `desktop/Toksight.Desktop/`，不加入根 npm 包；它不需要网页构建。桌面运行时、缓存、`bin/obj` 与 `dist/` 均忽略。完整前提、ARM64 限制、包身份与安装器命令见[Windows 桌面](desktop.md)。
 
 前端源码与依赖统一位于 `frontend/`。也可使用同义的
 `frontend:install` / `frontend:ci` / `frontend:dev` / `frontend:dev:ui` / `frontend:build` 命令。
@@ -39,6 +46,7 @@ Next 生产构建始终静态导出，不受 `TOKSIGHT_DEV_API` 影响。源码�
 | SQLite / 导入 / HTTP | 核对事务回滚、重复导入、Host/Origin、跨进程读取；运行 `npm test` 与安装包检查 |
 | Web 布局或交互 | 对照 `design-spec.md`，运行 `npm run web:build`；用户可见改动同步两份 README |
 | CLI 选项、来源、价格或 JSON 形状 | 同步 `README.md` 与 `README.zh-CN.md`，保持两份文档结构大体一致 |
+| 原生桌面与服务协议 | `npm test`、`npm run desktop:build`、`npm run desktop:check`，实际窗口验收交互与文件操作，再验证 ZIP / MSIX；不要用成功编译代替 UI / 安装验收 |
 
 `npm run check:package` 会先准备网页构建依赖，再打包到临时目录，用 fixture 检查安装包的页面、资源、`/api/data` 查询范围/周期、SQLite 备份合并和刷新。`scripts/` 不进入 npm 包。Windows 路径和 `C:\\...` fixture 是测试范围的一部分。
 
@@ -48,6 +56,7 @@ Next 生产构建始终静态导出，不受 `TOKSIGHT_DEV_API` 影响。源码�
 | --- | --- | --- |
 | `dev` | 日常开发，开发 PR 的目标分支 | `.github/workflows/ci.yml` 运行测试与安装包检查 |
 | `release` | 仓库默认分支，接收发布和维护 PR | `.github/workflows/release.yml` 重跑检查，再按版本决定是否发布 |
+| `exp` | Windows 原生桌面实验，保留 CLI / Web | 桌面相关 PR 或手动触发 `desktop.yml` 构建 x64 ZIP / 未签名 MSIX；原生窗口检查在本机，不自动 Store 上架 |
 
 日常在 `dev` 开发，用 `git push origin dev` 推送；PR 均运行 CI，以 `release` 为目标的 PR 额外校验版本。GitHub 默认分支不会改写本地分支的 upstream，也不会自动同步分支。合入 `release` 后，将 `origin/release` 合回 `dev` 并推送，同步版本和维护改动。
 

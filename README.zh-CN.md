@@ -31,6 +31,28 @@ npx toksight
 需要 Node.js >= 22.5。内置 `node:sqlite` 用于读取 ZCode 与 OpenCode 数据库，并保存
 toksight 自己的本地用量数据库；无需安装运行时依赖。
 
+### Windows 原生桌面实验版
+
+`exp` 分支另有 **C# / WinUI 3 / XAML 原生桌面版**，包含今天、日历、价格和设置四页。
+界面不使用 WebView，随包 Node 进程复用现有本地数据引擎，CLI 与 Web 继续保留。
+
+```powershell
+# 开发构建需要 Windows、Node、.NET 10 SDK 和 Windows SDK
+npm run desktop:build
+npm run desktop:check
+npm run desktop:run -- --offline
+npm run desktop:package -- --no-build
+```
+
+目标系统为 Windows 10 2004 及以上，首版以 x64 原型为主，ARM64 尚未实机验证。
+桌面发布目录自带 Node、.NET 和 Windows App SDK 运行时，用户无需另装 Node 或 .NET。
+打包生成 ZIP 与**未签名 MSIX**；检测到 Inno Setup 6.3+ 时另生成安装器 EXE。
+当前尚未完成签名或 Microsoft Store 发布。原生日历图片导出目前包含选区详情，
+与 Web 版的可见月份拼接导出不同。
+
+统计数据继续使用 `~/.config/toksight`（支持 `TOKSIGHT_CONFIG_DIR`），桌面偏好单独保存。
+构建前提、运行时校验、安装和渠道差异见 [Windows 桌面开发与分发](doc/desktop.md)。
+
 ## 使用
 
 ```bash

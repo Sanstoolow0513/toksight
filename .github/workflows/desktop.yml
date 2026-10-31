@@ -1,0 +1,60 @@
+name: Windows desktop
+
+on:
+  pull_request:
+    paths:
+      - 'desktop/**'
+      - 'scripts/desktop-*.js'
+      - '.github/workflows/desktop.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: desktop-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-package:
+    name: WinUI x64 build and unsigned packages
+    runs-on: windows-latest
+    timeout-minutes: 30
+    env:
+      DOTNET_NOLOGO: 'true'
+      DOTNET_CLI_TELEMETRY_OPTOUT: 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+          cache: true
+          cache-dependency-path: desktop/Toksight.Desktop/packages.lock.json
+      - name: Cache pinned Node archive
+        uses: actions/cache@v4
+        with:
+          path: desktop/.cache
+          key: windows-desktop-node-${{ hashFiles('desktop/runtime.json') }}
+      - run: npm ci
+      - name: Check offline sidecar protocol
+        run: node --test test/desktop-service.test.js test/webserver.test.js
+      - name: Publish self-contained native app
+        run: npm run desktop:build
+      - name: Create ZIP and unsigned MSIX
+        run: npm run desktop:package -- --no-build
+      # Native window/screenshot checks require an interactive desktop and run
+      # locally with desktop:check, not in the hosted runner's service session.
+      - name: Upload unsigned desktop artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: toksight-desktop-win-x64-${{ github.run_number }}
+          path: |
+            dist/desktop/win-x64/*.zip
+            dist/desktop/win-x64/*.msix
+            dist/desktop/win-x64/*-setup.exe
+            dist/desktop/win-x64/package-info.json
+          if-no-files-found: error
+          retention-days: 14

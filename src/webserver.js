@@ -7,6 +7,7 @@
 // GitHub repository on explicit request (loopback clients only).
 
 import http from 'node:http';
+import { timingSafeEqual } from 'node:crypto';
 import { isIP } from 'node:net';
 import path from 'node:path';
 import { readFile } from 'node:fs/promises';
@@ -150,8 +151,15 @@ export function createWebServer({
   getData,
   apiOnly = false,
   logger = console,
+  desktopToken,
 } = {}) {
-  const root = path.resolve(outDir);
+  // The native desktop host owns this secret and passes it over stdin, never
+  // in a URL or command line. CLI/browser servers leave this option unset.
+  if (desktopToken !== undefined && (typeof desktopToken !== 'string' || !/^[a-f\d]{64}$/i.test(desktopToken))) {
+    throw new TypeError('desktopToken must be a 64-character hexadecimal secret');
+  }
+  const expectedToken = desktopToken === undefined ? null : Buffer.from(desktopToken, 'ascii');
+  const root = apiOnly ? null : path.resolve(outDir);
   const html = (extra = {}) => ({ 'content-type': MIME['.html'], ...extra });
 
   async function serveStatic(pathname, res) {
@@ -213,6 +221,19 @@ export function createWebServer({
   }
 
   async function handle(req, res) {
+    if (expectedToken) {
+      const supplied = req.headers['x-toksight-desktop-token'];
+      const validLength = typeof supplied === 'string' && Buffer.byteLength(supplied) === expectedToken.length;
+      const candidate = Buffer.alloc(expectedToken.length);
+      if (validLength) candidate.write(supplied, 'utf8');
+      // Compare fixed-size buffers even for absent or malformed credentials.
+      const matches = timingSafeEqual(expectedToken, candidate);
+      if (!validLength || !matches) {
+        req.resume();
+        sendJson(res, 401, { error: 'desktop authentication required', code: 'DESKTOP_UNAUTHORIZED' }, req.method, { connection: 'close' });
+        return;
+      }
+    }
     let url;
     let pathname;
     try {
