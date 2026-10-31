@@ -12,6 +12,8 @@ if (process.platform !== 'win32') throw new Error('Native desktop smoke tests re
 const root = fileURLToPath(new URL('../', import.meta.url));
 const args = process.argv.slice(2);
 const fresh = args.includes('--fresh');
+const collapsed = args.includes('--collapsed');
+const compact = args.includes('--compact');
 const results = path.join(root, 'dist', 'desktop', 'checks');
 await mkdir(results, { recursive: true });
 const profile = await mkdtemp(path.join(results, 'native-'));
@@ -36,8 +38,8 @@ await writeFile(path.join(config, 'pricing.json'), JSON.stringify({
   'claude-opus-4-5': { input: 5, output: 25, cacheRead: .5, cacheWrite: 6.25 },
 }));
 await writeFile(path.join(state, 'preferences.json'), JSON.stringify(fresh
-  ? { Language: 'invalid', Theme: null, TimeZonePreference: null }
-  : { Language: 'zh-CN', Theme: 'light', TimeZonePreference: 'UTC' }));
+  ? { Language: 'invalid', Theme: null, TimeZonePreference: null, RailCollapsed: collapsed, CalendarCompact: compact }
+  : { Language: 'zh-CN', Theme: 'light', TimeZonePreference: 'UTC', RailCollapsed: collapsed, CalendarCompact: compact }));
 const service = createWebDataService(parseArgs(['web', '--offline']), { env: { TOKSIGHT_CONFIG_DIR: config }, home });
 try { await service.initialize(); if (!fresh) await service.setup({ offline: true, autoUpdate: false }); }
 finally { service.close(); }

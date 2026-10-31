@@ -50,7 +50,6 @@ public sealed partial class TodayPage : UserControl, IDesktopPage
     private void Render(JsonNode data, JsonNode trend)
     {
         var p = _preferences; ReportPanel.Children.Clear();
-        ReportPanel.Children.Add(ReportUi.Text($"{ReportUi.S(data["view"], "today")} · {p.T("截至", "As of")} {ReportUi.Stamp(data["generatedAt"], p.TimeZone)} · {p.TimeZone}", 15));
         ReportPanel.Children.Add(ReportUi.Kpis(data, p, true));
         var hourly = ReportUi.Hourly(data, p); var breakdown = ReportUi.Breakdown(data, p);
         var analysis = ReportUi.Columns(hourly, breakdown); analysis.ColumnDefinitions[0].Width = new GridLength(2, GridUnitType.Star);
@@ -66,12 +65,13 @@ public sealed partial class TodayPage : UserControl, IDesktopPage
         if (ReportUi.N(data["totals"], "requests") == 0) ReportPanel.Children.Add(ReportUi.Text(p.T("今天还没有会话记录。可以刷新以重新扫描本机 Agent。", "No sessions today. Refresh to scan local agents again."), 14, true));
         ReportPanel.Children.Add(ReportUi.Agents(data, p));
         ReportPanel.Children.Add(ReportUi.Sessions(data, p));
-        var trendPanel = ReportUi.Panel(p.T("近 30 天趋势", "Last 30 days"), out var trendBody);
-        var metric = new ComboBox { ItemsSource = new[] { "Tokens", p.T("参考费用", "Reference cost") }, SelectedIndex = 0, MinWidth = 130 };
-        trendBody.Children.Add(metric); var host = new ContentControl { HorizontalContentAlignment = HorizontalAlignment.Stretch }; trendBody.Children.Add(host);
-        void DrawTrend() => host.Content = ReportUi.Chart(ReportUi.A(trend["selection"], "rows"), metric.SelectedIndex == 1, "tokens", row => ReportUi.S(row, "date"), p, 100);
-        metric.SelectionChanged += (_, _) => DrawTrend(); DrawTrend();
-        trendBody.Children.Add(ReportUi.Text($"{ReportUi.S(trend["view"], "since")} — {ReportUi.S(trend["view"], "until")}", 13, true));
+        var trendPanel = ReportUi.Panel("", out var trendBody);
+        var metric = 0;
+        var host = new ContentControl { HorizontalContentAlignment = HorizontalAlignment.Stretch };
+        void DrawTrend() => host.Content = ReportUi.Chart(ReportUi.A(trend["selection"], "rows"), metric == 1, "tokens", row => ReportUi.S(row, "date"), p, 88);
+        var segmented = ReportUi.Segmented(["Tokens", p.T("费用", "Cost")], 0, index => { metric = index; DrawTrend(); });
+        trendBody.Children.Add(ReportUi.Header(p.T("近 30 天趋势", "Last 30 days"), "Activity", null, segmented));
+        trendBody.Children.Add(host); DrawTrend();
         ReportPanel.Children.Add(trendPanel);
         foreach (var warning in ReportUi.A(data, "warnings")) ReportPanel.Children.Add(ReportUi.Text(warning.ToString(), 13, true));
         ReportPanel.Children.Add(ReportUi.Text($"toksight {ReportUi.S(data, "version")} · {p.T("刷新于", "Refreshed")} {ReportUi.Stamp(data["snapshot"]?["refreshedAt"], p.TimeZone)}\n{p.T("本机处理 · 费用仅供参考", "Processed locally · Costs are estimates")}", 13, true));
@@ -85,8 +85,9 @@ public sealed partial class TodayPage : UserControl, IDesktopPage
     private void RenderQuota(JsonNode data)
     {
         var p = _preferences; QuotaPanel.Children.Clear();
-        var panel = ReportUi.Panel(p.T("订阅额度", "Subscription quotas"), out var body);
-        var refresh = new Button { Content = p.T("刷新 Kimi 额度", "Refresh Kimi quota"), IsEnabled = ReportUi.S(data, "offline") != "true" && !_quotaBusy };
+        var panel = ReportUi.Panel("", out var body);
+        var refresh = ReportUi.Ghost(p.T("刷新 Kimi 额度", "Refresh Kimi quota"), "Refresh");
+        refresh.IsEnabled = ReportUi.S(data, "offline") != "true" && !_quotaBusy;
         var message = ReportUi.Text("", 13, true);
         refresh.Click += async (_, _) =>
         {
@@ -96,21 +97,40 @@ public sealed partial class TodayPage : UserControl, IDesktopPage
             catch (Exception ex) { message.Text = ex.Message; }
             finally { _quotaBusy = false; refresh.IsEnabled = ReportUi.S(data, "offline") != "true"; }
         };
-        body.Children.Add(refresh); body.Children.Add(message);
+        body.Children.Add(ReportUi.Header(p.T("订阅额度", "Subscription quotas"), "Zap", null, refresh));
+        body.Children.Add(message);
+        var clients = new Grid { ColumnSpacing = 24, RowSpacing = 14 };
+        var clientPanels = new List<StackPanel>();
         foreach (var quota in ReportUi.A(data, "quotas"))
         {
-            body.Children.Add(ReportUi.Text(ReportUi.S(quota, "label") + "  " + ReportUi.S(quota, "plan"), 15));
+            var client = new StackPanel { Spacing = 8 };
+            client.Children.Add(ReportUi.Header(ReportUi.S(quota, "label"), "", null, ReportUi.Text(ReportUi.S(quota, "plan"), 13, true)));
             foreach (var window in ReportUi.A(quota, "windows"))
             {
                 var used = window["usedPercent"];
                 var name = ReportUi.S(window, "label");
-                body.Children.Add(ReportUi.Text($"{name} · {(used is null ? "—" : $"{ReportUi.N(used):0.#}%")}", 13));
-                body.Children.Add(new ProgressBar { Minimum = 0, Maximum = 100, Value = Math.Clamp(ReportUi.N(used), 0, 100), Foreground = ReportUi.B(ReportUi.N(used) >= 80 ? "SignalBrush" : "InkBrush") });
-                body.Children.Add(ReportUi.Text(p.T("重置时间：", "Resets: ") + ReportUi.Stamp(window["resetsAt"], p.TimeZone), 13, true));
+                var line = new Grid { ColumnSpacing = 12, RowSpacing = 3 };
+                line.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(52) }); line.ColumnDefinitions.Add(new ColumnDefinition()); line.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+                line.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto }); line.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+                line.Children.Add(ReportUi.Text(name, 13, true));
+                var meter = new ProgressBar { Minimum = 0, Maximum = 100, Value = Math.Clamp(ReportUi.N(used), 0, 100), Height = 8, VerticalAlignment = VerticalAlignment.Center, Foreground = ReportUi.B(ReportUi.N(used) >= 80 ? "SignalBrush" : "InkBrush"), Background = ReportUi.B("Surface3Brush") };
+                Grid.SetColumn(meter, 1); line.Children.Add(meter);
+                var value = ReportUi.Text(used is null ? "—" : $"{ReportUi.N(used):0.#}%", 14); Grid.SetColumn(value, 2); line.Children.Add(value);
+                var reset = ReportUi.Text(p.T("重置时间：", "Resets: ") + ReportUi.Stamp(window["resetsAt"], p.TimeZone), 13, true);
+                Grid.SetColumn(reset, 1); Grid.SetColumnSpan(reset, 2); Grid.SetRow(reset, 1); line.Children.Add(reset); client.Children.Add(line);
             }
-            if (quota["error"] is { } error) body.Children.Add(ReportUi.Text(ReportUi.S(error, "message"), 13, true));
-            else body.Children.Add(ReportUi.Text((ReportUi.S(quota, "source") == "local" ? p.T("本地记录 · ", "Local record · ") : p.T("API 查询 · ", "API query · ")) + ReportUi.Stamp(quota["observedAt"] ?? quota["fetchedAt"], p.TimeZone), 13, true));
+            if (quota["error"] is { } error) client.Children.Add(ReportUi.Text(ReportUi.S(error, "message"), 13, true));
+            else client.Children.Add(ReportUi.Text((ReportUi.S(quota, "source") == "local" ? p.T("本地记录 · ", "Local record · ") : p.T("API 查询 · ", "API query · ")) + ReportUi.Stamp(quota["observedAt"] ?? quota["fetchedAt"], p.TimeZone), 13, true));
+            clientPanels.Add(client); clients.Children.Add(client);
         }
+        void Arrange(double width)
+        {
+            var columns = width >= 650 ? 2 : 1; clients.ColumnDefinitions.Clear(); clients.RowDefinitions.Clear();
+            for (var i = 0; i < columns; i++) clients.ColumnDefinitions.Add(new ColumnDefinition());
+            for (var i = 0; i < clientPanels.Count; i++) { if (i % columns == 0) clients.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto }); Grid.SetColumn(clientPanels[i], i % columns); Grid.SetRow(clientPanels[i], i / columns); }
+        }
+        var wasWide = true; Arrange(900); clients.SizeChanged += (_, e) => { var wide = e.NewSize.Width >= 650; if (wide == wasWide) return; wasWide = wide; Arrange(e.NewSize.Width); };
+        body.Children.Add(clients);
         QuotaPanel.Children.Add(panel);
     }
     private async void Retry_Click(object sender, RoutedEventArgs e) => await ReloadAsync();

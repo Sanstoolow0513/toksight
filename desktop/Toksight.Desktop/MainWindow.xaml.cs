@@ -26,6 +26,7 @@ public sealed partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+        DesktopPalette.ThemeRoot = Root;
         Title = "toksight";
         AppWindow.Resize(new SizeInt32(1380, 900));
         if (AppWindow.Presenter is OverlappedPresenter presenter) presenter.PreferredMinimumWidth = 760;
@@ -34,6 +35,7 @@ public sealed partial class MainWindow : Window
         AppWindow.TitleBar.PreferredHeightOption = TitleBarHeightOption.Tall;
         TitleBar.Loaded += (_, _) => UpdateTitleRegions();
         TitleBar.SizeChanged += (_, _) => UpdateTitleRegions();
+        TitleActions.SizeChanged += (_, _) => UpdateTitleRegions();
         AppWindow.Closing += Closing;
         Root.Loaded += async (_, _) => await StartAsync();
         preferences.Changed += PreferencesChanged;
@@ -51,10 +53,11 @@ public sealed partial class MainWindow : Window
             currentDay = day;
         };
         clock.Start();
-        Root.SizeChanged += (_, e) => RailColumn.Width = new GridLength(e.NewSize.Width < 1050 ? 166 : 206);
+        Root.SizeChanged += (_, _) => UpdateRail();
         Root.ActualThemeChanged += (_, _) =>
         {
             UpdateCaptionColors();
+            RefreshShellVisuals();
             if (preferences.Theme == "system" && api is not null) DispatcherQueue.TryEnqueue(async () => await NavigateAsync(currentPage));
         };
     }
@@ -62,10 +65,13 @@ public sealed partial class MainWindow : Window
     {
         if (Root.XamlRoot is null) return;
         var scale = Root.XamlRoot.RasterizationScale;
-        var bounds = TitleActions.TransformToVisual(Root).TransformBounds(new Windows.Foundation.Rect(0, 0, TitleActions.ActualWidth, TitleActions.ActualHeight));
-        InputNonClientPointerSource.GetForWindowId(AppWindow.Id).SetRegionRects(NonClientRegionKind.Passthrough,
-            [new RectInt32((int)(bounds.X * scale), (int)(bounds.Y * scale), (int)Math.Ceiling(bounds.Width * scale), (int)Math.Ceiling(bounds.Height * scale))]);
-        TitleBar.Padding = new Thickness(20, 0, Math.Max(140, AppWindow.TitleBar.RightInset / scale + 12), 0);
+        var regions = new[] { (FrameworkElement)TitleActions, BrandButton }.Select(element =>
+        {
+            var bounds = element.TransformToVisual(Root).TransformBounds(new Windows.Foundation.Rect(0, 0, element.ActualWidth, element.ActualHeight));
+            return new RectInt32((int)(bounds.X * scale), (int)(bounds.Y * scale), (int)Math.Ceiling(bounds.Width * scale), (int)Math.Ceiling(bounds.Height * scale));
+        }).ToArray();
+        InputNonClientPointerSource.GetForWindowId(AppWindow.Id).SetRegionRects(NonClientRegionKind.Passthrough, regions);
+        TitleBar.Padding = new Thickness(12, 0, Math.Max(140, AppWindow.TitleBar.RightInset / scale + 12), 0);
         UpdateCaptionColors();
     }
     private void UpdateCaptionColors()
@@ -77,11 +83,12 @@ public sealed partial class MainWindow : Window
     private void ApplyPreferences()
     {
         Root.RequestedTheme = preferences.Theme switch { "light" => ElementTheme.Light, "dark" => ElementTheme.Dark, _ => ElementTheme.Default };
-        InsightsLabel.Text = preferences.T("数据洞察", "INSIGHTS");
-        WorkspaceLabel.Text = preferences.T("工作台管理", "WORKSPACE");
+        InsightsLabel.Text = preferences.T("数据洞察", "Data insights");
+        WorkspaceLabel.Text = preferences.T("工作台管理", "Workspace");
         TodayLabel.Text = preferences.T("今天", "Today"); CalendarLabel.Text = preferences.T("日历", "Calendar");
-        PricesLabel.Text = preferences.T("价格库", "Prices"); SettingsLabel.Text = preferences.T("设置", "Settings");
-        LocalNote.Text = preferences.T("在本机读取 Agent 用量。刷新不会修改 Agent 文件。", "Agent usage stays local. Refresh never changes agent files.");
+        PricesLabel.Text = preferences.T("价格", "Prices"); SettingsLabel.Text = preferences.T("设置", "Settings");
+        PrivacyTitle.Text = preferences.T("你的数据，留在本机", "Your data stays local");
+        LocalNote.Text = preferences.T("只读取 Agent 记录，所有用量都在本地统计。", "Agent records are read only. Usage is calculated on your computer.");
         ZoneLabel.Text = preferences.TimeZone;
         StartupText.Text = preferences.T("正在打开本机用量数据库…", "Opening the local usage database…");
         RetryButton.Content = preferences.T("重试", "Retry");
@@ -89,7 +96,56 @@ public sealed partial class MainWindow : Window
         AutomationProperties.SetName(ExportButton, preferences.T("导出报表图片", "Export report image"));
         ToolTipService.SetToolTip(RefreshButton, preferences.T("刷新本机用量", "Refresh local usage"));
         ToolTipService.SetToolTip(ExportButton, preferences.T("导出 PNG", "Export PNG"));
+        ToolTipService.SetToolTip(ThemeButton, preferences.T("配色", "Appearance"));
+        ToolTipService.SetToolTip(LanguageButton, preferences.T("界面语言 · 简体中文", "Language · English"));
+        AutomationProperties.SetName(ThemeButton, preferences.T("配色", "Appearance"));
+        AutomationProperties.SetName(LanguageButton, preferences.T("切换界面语言", "Change language"));
+        AutomationProperties.SetName(ZoneButton, preferences.T("统计时区", "Report time zone") + " · " + preferences.TimeZone);
+        RefreshShellVisuals();
+        UpdateRail();
         preferenceKey = $"{preferences.Theme}|{preferences.Language}|{preferences.TimeZonePreference}";
+    }
+    private void RefreshShellVisuals()
+    {
+        BrandButton.Content = NativeIcons.Brand();
+        ExportButton.Content = NativeIcons.Create("ImageDown", 17, "SubtleBrush");
+        RefreshButton.Content = NativeIcons.Create("Refresh", 17, "SubtleBrush");
+        ThemeButton.Content = NativeIcons.Create(preferences.Theme switch { "light" => "Sun", "dark" => "Moon", _ => "Monitor" }, 17, "SubtleBrush");
+        LanguageButton.Content = NativeIcons.Create("Languages", 17, "SubtleBrush");
+        GitHubButton.Content = NativeIcons.Create("ExternalLink", 17, "SubtleBrush");
+        PrivacyIcon.Content = NativeIcons.Create("ShieldCheck", 15);
+        CollapseButton.Content = NativeIcons.Create(preferences.RailCollapsed ? "PanelLeftOpen" : "PanelLeftClose", 16);
+        foreach (var (button, label, marker, icon, name, key) in new[]
+        {
+            (TodayButton, TodayLabel, TodayMarker, TodayIcon, "Activity", "today"),
+            (CalendarButton, CalendarLabel, CalendarMarker, CalendarIcon, "Calendar", "calendar"),
+            (PricesButton, PricesLabel, PricesMarker, PricesIcon, "Coins", "prices"),
+            (SettingsButton, SettingsLabel, SettingsMarker, SettingsIcon, "Settings", "settings"),
+        })
+        {
+            var selected = key == currentPage;
+            button.Background = selected ? DesktopPalette.Brush("Surface3Brush") : new SolidColorBrush(Colors.Transparent);
+            label.Foreground = DesktopPalette.Brush(selected ? "InkBrush" : "SubtleBrush");
+            label.FontWeight = selected ? Microsoft.UI.Text.FontWeights.Medium : Microsoft.UI.Text.FontWeights.Normal;
+            marker.Opacity = selected ? 1 : 0;
+            icon.Content = NativeIcons.Create(name, 17, selected ? "InkBrush" : "SubtleBrush");
+            AutomationProperties.SetName(button, label.Text);
+            ToolTipService.SetToolTip(button, preferences.RailCollapsed ? label.Text : null);
+        }
+    }
+    private void UpdateRail()
+    {
+        RailColumn.Width = new GridLength(preferences.RailCollapsed ? 64 : Root.ActualWidth is > 0 and < 1200 ? 196 : 220);
+        var visibility = preferences.RailCollapsed ? Visibility.Collapsed : Visibility.Visible;
+        foreach (var element in new FrameworkElement[] { InsightsLabel, WorkspaceLabel, TodayLabel, CalendarLabel, PricesLabel, SettingsLabel, PrivacyCard, ZoneButton }) element.Visibility = visibility;
+        foreach (var button in new[] { TodayButton, CalendarButton, PricesButton, SettingsButton })
+        {
+            button.Padding = preferences.RailCollapsed ? new Thickness(8, 0, 8, 0) : new Thickness(12, 0, 12, 0);
+            button.HorizontalContentAlignment = preferences.RailCollapsed ? HorizontalAlignment.Center : HorizontalAlignment.Stretch;
+        }
+        foreach (var marker in new[] { TodayMarker, CalendarMarker, PricesMarker, SettingsMarker }) marker.Margin = new Thickness(preferences.RailCollapsed ? -8 : -12, 0, 0, 0);
+        ToolTipService.SetToolTip(CollapseButton, preferences.RailCollapsed ? preferences.T("展开侧栏", "Expand sidebar") : preferences.T("收起侧栏", "Collapse sidebar"));
+        AutomationProperties.SetName(CollapseButton, preferences.RailCollapsed ? preferences.T("展开侧栏", "Expand sidebar") : preferences.T("收起侧栏", "Collapse sidebar"));
     }
     private void PreferencesChanged()
     {
@@ -123,6 +179,8 @@ public sealed partial class MainWindow : Window
             if (!J.Bool(await api.GetAsync("/api/prices/status", lifetime.Token), "completed")) currentPage = "prices";
             StartupPanel.Visibility = Visibility.Collapsed;
             await NavigateAsync(currentPage);
+            PageHost.IsTabStop = true;
+            PageHost.Focus(FocusState.Programmatic);
             if (backendStopped || !runtime.IsRunning) throw new InvalidOperationException(preferences.T("本机数据服务已退出，请重试。", "The local data service stopped. Please retry."));
             var args = Environment.GetCommandLineArgs();
             var smoke = Array.IndexOf(args, "--smoke-test");
@@ -154,11 +212,7 @@ public sealed partial class MainWindow : Window
             _ => new TodayPage(api, preferences),
         };
         PageHost.Content = page;
-        foreach (var (button, key) in new[] { (TodayButton, "today"), (CalendarButton, "calendar"), (PricesButton, "prices"), (SettingsButton, "settings") })
-        {
-            button.Foreground = DesktopPalette.Brush(key == destination ? "SignalBrush" : "InkBrush");
-            button.Background = key == destination ? DesktopPalette.Brush("SurfaceBrush") : new SolidColorBrush(Colors.Transparent);
-        }
+        RefreshShellVisuals();
         EnableActions(false);
         try { await page.ReloadAsync(); }
         catch (Exception ex) { ShowMessage(ex.Message, true); }
@@ -174,6 +228,7 @@ public sealed partial class MainWindow : Window
     {
         RefreshButton.Visibility = currentPage is "today" or "calendar" ? Visibility.Visible : Visibility.Collapsed;
         ExportButton.Visibility = RefreshButton.Visibility;
+        ActionsDivider.Visibility = RefreshButton.Visibility;
         RefreshButton.IsEnabled = enabled && !busy;
         ExportButton.IsEnabled = enabled && !busy && currentPage is "today" or "calendar";
         Rail.IsHitTestVisible = api is not null;
@@ -213,7 +268,26 @@ public sealed partial class MainWindow : Window
     }
     private void ThemeClick(object sender, RoutedEventArgs e)
     {
-        try { preferences.Theme = preferences.Theme switch { "system" => "light", "light" => "dark", _ => "system" }; preferences.Save(); }
+        var choices = new StackPanel { Spacing = 4, MinWidth = 148 };
+        var flyout = new Flyout { Content = choices, Placement = Microsoft.UI.Xaml.Controls.Primitives.FlyoutPlacementMode.BottomEdgeAlignedRight };
+        foreach (var (value, name, label) in new[] { ("light", "Sun", preferences.T("浅色", "Light")), ("dark", "Moon", preferences.T("深色", "Dark")), ("system", "Monitor", preferences.T("跟随系统", "System")) })
+        {
+            var content = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+            content.Children.Add(NativeIcons.Create(name, 16)); content.Children.Add(new TextBlock { Text = label });
+            var button = new Button { Content = content, HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Left, BorderThickness = new Thickness(0), Background = DesktopPalette.Brush(value == preferences.Theme ? "Surface3Brush" : "SurfaceBrush") };
+            button.Click += (_, _) => { try { flyout.Hide(); preferences.Theme = value; preferences.Save(); } catch (Exception ex) { ShowMessage(ex.Message, true); } };
+            choices.Children.Add(button);
+        }
+        flyout.ShowAt(ThemeButton);
+    }
+    private void CollapseClick(object sender, RoutedEventArgs e)
+    {
+        try { preferences.RailCollapsed = !preferences.RailCollapsed; preferences.Save(); }
+        catch (Exception ex) { ShowMessage(ex.Message, true); }
+    }
+    private async void GitHubClick(object sender, RoutedEventArgs e)
+    {
+        try { await Windows.System.Launcher.LaunchUriAsync(new Uri("https://github.com/Sanstoolow0513/toksight")); }
         catch (Exception ex) { ShowMessage(ex.Message, true); }
     }
     private void LanguageClick(object sender, RoutedEventArgs e)

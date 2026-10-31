@@ -8,35 +8,139 @@
                 <ResourceDictionary x:Key="Light">
                     <SolidColorBrush x:Key="BgBrush" Color="#F3F3F1" />
                     <SolidColorBrush x:Key="SurfaceBrush" Color="#FFFFFF" />
+                    <SolidColorBrush x:Key="Surface2Brush" Color="#0918181A" />
+                    <SolidColorBrush x:Key="Surface3Brush" Color="#1218181A" />
+                    <SolidColorBrush x:Key="SubtleBrush" Color="#4B4B4D" />
+                    <SolidColorBrush x:Key="SignalSoftBrush" Color="#1FE8590C" />
+                    <SolidColorBrush x:Key="SignalInkBrush" Color="#B03F00" />
+                    <SolidColorBrush x:Key="TokenReadBrush" Color="#2B2B2E" />
+                    <SolidColorBrush x:Key="TokenWriteBrush" Color="#8C8C90" />
+                    <SolidColorBrush x:Key="TokenOutputBrush" Color="#C8C8CB" />
+                    <SolidColorBrush x:Key="ChartBrush" Color="#59595B" />
                     <SolidColorBrush x:Key="InkBrush" Color="#18181A" />
                     <SolidColorBrush x:Key="MutedBrush" Color="#666669" />
                     <SolidColorBrush x:Key="LineBrush" Color="#1A18181A" />
                     <SolidColorBrush x:Key="SignalBrush" Color="#E8590C" />
                     <SolidColorBrush x:Key="SystemControlHighlightAccentBrush" Color="#E8590C" />
                     <Color x:Key="SystemAccentColor">#E8590C</Color>
+                    <SolidColorBrush x:Key="AccentFillColorDefaultBrush" Color="#E8590C" />
+                    <SolidColorBrush x:Key="AccentFillColorSecondaryBrush" Color="#DF530A" />
+                    <SolidColorBrush x:Key="AccentFillColorTertiaryBrush" Color="#C94B09" />
+                    <SolidColorBrush x:Key="AccentTextFillColorPrimaryBrush" Color="#B03F00" />
                 </ResourceDictionary>
                 <ResourceDictionary x:Key="Default">
                     <SolidColorBrush x:Key="BgBrush" Color="#111113" />
                     <SolidColorBrush x:Key="SurfaceBrush" Color="#1A1A1D" />
+                    <SolidColorBrush x:Key="Surface2Brush" Color="#0AECECF0" />
+                    <SolidColorBrush x:Key="Surface3Brush" Color="#14ECECF0" />
+                    <SolidColorBrush x:Key="SubtleBrush" Color="#CCCCCF" />
+                    <SolidColorBrush x:Key="SignalSoftBrush" Color="#29FF7A2E" />
+                    <SolidColorBrush x:Key="SignalInkBrush" Color="#FF9A5C" />
+                    <SolidColorBrush x:Key="TokenReadBrush" Color="#E2E2E6" />
+                    <SolidColorBrush x:Key="TokenWriteBrush" Color="#8E8E94" />
+                    <SolidColorBrush x:Key="TokenOutputBrush" Color="#4A4A50" />
+                    <SolidColorBrush x:Key="ChartBrush" Color="#B5B5B9" />
                     <SolidColorBrush x:Key="InkBrush" Color="#ECECF0" />
                     <SolidColorBrush x:Key="MutedBrush" Color="#B4B4B9" />
                     <SolidColorBrush x:Key="LineBrush" Color="#29ECECF0" />
                     <SolidColorBrush x:Key="SignalBrush" Color="#FF7A2E" />
                     <SolidColorBrush x:Key="SystemControlHighlightAccentBrush" Color="#FF7A2E" />
                     <Color x:Key="SystemAccentColor">#FF7A2E</Color>
+                    <SolidColorBrush x:Key="AccentFillColorDefaultBrush" Color="#FF7A2E" />
+                    <SolidColorBrush x:Key="AccentFillColorSecondaryBrush" Color="#F2732B" />
+                    <SolidColorBrush x:Key="AccentFillColorTertiaryBrush" Color="#DB6826" />
+                    <SolidColorBrush x:Key="AccentTextFillColorPrimaryBrush" Color="#FF9A5C" />
                 </ResourceDictionary>
                 <ResourceDictionary x:Key="HighContrast">
                     <SolidColorBrush x:Key="BgBrush" Color="{ThemeResource SystemColorWindowColor}" />
                     <SolidColorBrush x:Key="SurfaceBrush" Color="{ThemeResource SystemColorWindowColor}" />
+                    <SolidColorBrush x:Key="Surface2Brush" Color="{ThemeResource SystemColorWindowColor}" />
+                    <SolidColorBrush x:Key="Surface3Brush" Color="{ThemeResource SystemColorWindowColor}" />
+                    <SolidColorBrush x:Key="SubtleBrush" Color="{ThemeResource SystemColorWindowTextColor}" />
+                    <SolidColorBrush x:Key="SignalSoftBrush" Color="{ThemeResource SystemColorWindowColor}" />
+                    <SolidColorBrush x:Key="SignalInkBrush" Color="{ThemeResource SystemColorHighlightColor}" />
+                    <SolidColorBrush x:Key="TokenReadBrush" Color="{ThemeResource SystemColorWindowTextColor}" />
+                    <SolidColorBrush x:Key="TokenWriteBrush" Color="{ThemeResource SystemColorWindowTextColor}" />
+                    <SolidColorBrush x:Key="TokenOutputBrush" Color="{ThemeResource SystemColorWindowTextColor}" />
+                    <SolidColorBrush x:Key="ChartBrush" Color="{ThemeResource SystemColorWindowTextColor}" />
                     <SolidColorBrush x:Key="InkBrush" Color="{ThemeResource SystemColorWindowTextColor}" />
                     <SolidColorBrush x:Key="MutedBrush" Color="{ThemeResource SystemColorWindowTextColor}" />
                     <SolidColorBrush x:Key="LineBrush" Color="{ThemeResource SystemColorWindowTextColor}" />
                     <SolidColorBrush x:Key="SignalBrush" Color="{ThemeResource SystemColorHighlightColor}" />
                 </ResourceDictionary>
             </ResourceDictionary.ThemeDictionaries>
-            <FontFamily x:Key="AppFontFamily">Segoe UI Variable</FontFamily>
-            <Style TargetType="TextBlock"><Setter Property="FontFamily" Value="{StaticResource AppFontFamily}" /><Setter Property="FontSize" Value="14" /><Setter Property="Foreground" Value="{ThemeResource InkBrush}" /></Style>
-            <Style TargetType="Button"><Setter Property="FontFamily" Value="{StaticResource AppFontFamily}" /><Setter Property="FontSize" Value="14" /><Setter Property="CornerRadius" Value="6" /></Style>
+            <FontFamily x:Key="AppFontFamily">ms-appx:///Assets/Fonts/Geist-Variable.ttf#Geist</FontFamily>
+            <FontFamily x:Key="MonoFontFamily">ms-appx:///Assets/Fonts/GeistMono-Variable.ttf#Geist Mono</FontFamily>
+            <Style TargetType="TextBlock">
+                <Setter Property="FontFamily" Value="{StaticResource AppFontFamily}" />
+                <Setter Property="FontSize" Value="14" />
+                <Setter Property="Foreground" Value="{ThemeResource InkBrush}" />
+                <Setter Property="Typography.NumeralAlignment" Value="Tabular" />
+            </Style>
+            <Style x:Key="WorkbenchButtonStyle" TargetType="Button">
+                <Setter Property="FontFamily" Value="{StaticResource AppFontFamily}" />
+                <Setter Property="FontSize" Value="14" />
+                <Setter Property="FontWeight" Value="Medium" />
+                <Setter Property="MinHeight" Value="34" />
+                <Setter Property="Padding" Value="12,0" />
+                <Setter Property="CornerRadius" Value="6" />
+                <Setter Property="Background" Value="{ThemeResource SurfaceBrush}" />
+                <Setter Property="Foreground" Value="{ThemeResource InkBrush}" />
+                <Setter Property="BorderBrush" Value="{ThemeResource LineBrush}" />
+                <Setter Property="BorderThickness" Value="1" />
+                <Setter Property="HorizontalContentAlignment" Value="Center" />
+                <Setter Property="VerticalContentAlignment" Value="Center" />
+                <Setter Property="UseSystemFocusVisuals" Value="True" />
+                <Setter Property="FocusVisualPrimaryBrush" Value="{ThemeResource SignalBrush}" />
+                <Setter Property="FocusVisualSecondaryBrush" Value="{ThemeResource BgBrush}" />
+                <Setter Property="Template"><Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="ButtonRoot" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="{TemplateBinding CornerRadius}" Padding="{TemplateBinding Padding}">
+                            <VisualStateManager.VisualStateGroups><VisualStateGroup x:Name="CommonStates">
+                                <VisualStateGroup.Transitions><VisualTransition GeneratedDuration="0:0:0.12" /></VisualStateGroup.Transitions>
+                                <VisualState x:Name="Normal" />
+                                <VisualState x:Name="PointerOver"><VisualState.Setters><Setter Target="ButtonRoot.Background" Value="{ThemeResource Surface3Brush}" /></VisualState.Setters></VisualState>
+                                <VisualState x:Name="Pressed"><VisualState.Setters><Setter Target="ButtonRoot.Background" Value="{ThemeResource LineBrush}" /></VisualState.Setters></VisualState>
+                                <VisualState x:Name="Disabled"><VisualState.Setters><Setter Target="ButtonRoot.Opacity" Value="0.4" /></VisualState.Setters></VisualState>
+                            </VisualStateGroup></VisualStateManager.VisualStateGroups>
+                            <ContentPresenter Content="{TemplateBinding Content}" ContentTemplate="{TemplateBinding ContentTemplate}" Foreground="{TemplateBinding Foreground}" HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}" VerticalAlignment="{TemplateBinding VerticalContentAlignment}" FontFamily="{TemplateBinding FontFamily}" FontSize="{TemplateBinding FontSize}" FontWeight="{TemplateBinding FontWeight}" />
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value></Setter>
+            </Style>
+            <Style TargetType="Button" BasedOn="{StaticResource WorkbenchButtonStyle}" />
+            <Style x:Key="SmallButtonStyle" TargetType="Button" BasedOn="{StaticResource WorkbenchButtonStyle}"><Setter Property="MinHeight" Value="28"/><Setter Property="Padding" Value="8,0"/><Setter Property="FontSize" Value="13"/></Style>
+            <Style x:Key="GhostButtonStyle" TargetType="Button" BasedOn="{StaticResource WorkbenchButtonStyle}"><Setter Property="Background" Value="Transparent"/><Setter Property="BorderThickness" Value="0"/></Style>
+            <Style x:Key="IconButtonStyle" TargetType="Button" BasedOn="{StaticResource WorkbenchButtonStyle}"><Setter Property="Width" Value="34"/><Setter Property="Height" Value="34"/><Setter Property="MinWidth" Value="34"/><Setter Property="Padding" Value="0"/><Setter Property="BorderThickness" Value="0"/></Style>
+            <Style x:Key="GhostIconButtonStyle" TargetType="Button" BasedOn="{StaticResource IconButtonStyle}"><Setter Property="Background" Value="Transparent"/></Style>
+            <Style x:Key="RailButtonStyle" TargetType="Button" BasedOn="{StaticResource GhostButtonStyle}"><Setter Property="Height" Value="36"/><Setter Property="HorizontalAlignment" Value="Stretch"/><Setter Property="HorizontalContentAlignment" Value="Stretch"/><Setter Property="Padding" Value="12,0"/><Setter Property="FontWeight" Value="Normal"/></Style>
+            <Style TargetType="ComboBox" BasedOn="{StaticResource DefaultComboBoxStyle}"><Setter Property="FontFamily" Value="{StaticResource AppFontFamily}"/><Setter Property="FontSize" Value="14"/><Setter Property="MinHeight" Value="34"/><Setter Property="Padding" Value="10,5,30,5"/><Setter Property="CornerRadius" Value="6"/><Setter Property="Background" Value="{ThemeResource SurfaceBrush}"/></Style>
+            <Style TargetType="TextBox" BasedOn="{StaticResource DefaultTextBoxStyle}"><Setter Property="FontFamily" Value="{StaticResource AppFontFamily}"/><Setter Property="FontSize" Value="14"/><Setter Property="MinHeight" Value="34"/><Setter Property="Padding" Value="10,5"/><Setter Property="CornerRadius" Value="6"/><Setter Property="Background" Value="{ThemeResource SurfaceBrush}"/></Style>
+            <Style TargetType="PasswordBox" BasedOn="{StaticResource DefaultPasswordBoxStyle}"><Setter Property="FontFamily" Value="{StaticResource AppFontFamily}"/><Setter Property="FontSize" Value="14"/><Setter Property="MinHeight" Value="34"/><Setter Property="Padding" Value="10,5"/><Setter Property="CornerRadius" Value="6"/></Style>
+            <Style TargetType="ToolTip"><Setter Property="FontFamily" Value="{StaticResource AppFontFamily}"/><Setter Property="FontSize" Value="13"/></Style>
+            <Style TargetType="ToggleButton">
+                <Setter Property="FontFamily" Value="{StaticResource AppFontFamily}"/><Setter Property="FontSize" Value="14"/>
+                <Setter Property="MinHeight" Value="28"/><Setter Property="Padding" Value="8,0"/><Setter Property="CornerRadius" Value="4"/>
+                <Setter Property="Background" Value="{ThemeResource SurfaceBrush}"/><Setter Property="Foreground" Value="{ThemeResource InkBrush}"/>
+                <Setter Property="BorderThickness" Value="1"/><Setter Property="BorderBrush" Value="{ThemeResource LineBrush}"/>
+                <Setter Property="HorizontalContentAlignment" Value="Center"/><Setter Property="VerticalContentAlignment" Value="Center"/>
+                <Setter Property="UseSystemFocusVisuals" Value="True"/><Setter Property="FocusVisualPrimaryBrush" Value="{ThemeResource SignalBrush}"/><Setter Property="FocusVisualSecondaryBrush" Value="{ThemeResource BgBrush}"/>
+                <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="ToggleButton">
+                    <Border x:Name="ToggleRoot" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="{TemplateBinding CornerRadius}" Padding="{TemplateBinding Padding}">
+                        <VisualStateManager.VisualStateGroups>
+                            <VisualStateGroup x:Name="CommonStates">
+                                <VisualStateGroup.Transitions><VisualTransition GeneratedDuration="0:0:0.12"/></VisualStateGroup.Transitions>
+                                <VisualState x:Name="Normal"/>
+                                <VisualState x:Name="PointerOver"><VisualState.Setters><Setter Target="ToggleRoot.Opacity" Value="0.8"/></VisualState.Setters></VisualState>
+                                <VisualState x:Name="Pressed"><VisualState.Setters><Setter Target="ToggleRoot.Opacity" Value="0.65"/></VisualState.Setters></VisualState>
+                                <VisualState x:Name="Disabled"><VisualState.Setters><Setter Target="ToggleRoot.Opacity" Value="0.4"/></VisualState.Setters></VisualState>
+                            </VisualStateGroup>
+                            <VisualStateGroup x:Name="CheckStates"><VisualState x:Name="Checked"/><VisualState x:Name="Unchecked"/><VisualState x:Name="Indeterminate"/></VisualStateGroup>
+                        </VisualStateManager.VisualStateGroups>
+                        <ContentPresenter Content="{TemplateBinding Content}" ContentTemplate="{TemplateBinding ContentTemplate}" Foreground="{TemplateBinding Foreground}" HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}" VerticalAlignment="{TemplateBinding VerticalContentAlignment}" FontFamily="{TemplateBinding FontFamily}" FontSize="{TemplateBinding FontSize}" FontWeight="{TemplateBinding FontWeight}"/>
+                    </Border>
+                </ControlTemplate></Setter.Value></Setter>
+            </Style>
         </ResourceDictionary>
     </Application.Resources>
 </Application>

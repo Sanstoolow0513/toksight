@@ -11,6 +11,7 @@ public sealed class DesktopPreferences
     public string Theme { get; set; } = "system";
     public string TimeZonePreference { get; set; } = "auto";
     public bool CalendarCompact { get; set; }
+    public bool RailCollapsed { get; set; }
     [System.Text.Json.Serialization.JsonIgnore]
     public string TimeZone
     {
@@ -36,7 +37,7 @@ public sealed class DesktopPreferences
                 try
                 {
                     _ = TimeZoneInfo.FindSystemTimeZoneById(value.TimeZonePreference);
-                    if (TimeZoneInfo.TryConvertWindowsIdToIanaId(value.TimeZonePreference, out var iana)) value.TimeZonePreference = iana;
+                    if (value.TimeZonePreference != "UTC" && TimeZoneInfo.TryConvertWindowsIdToIanaId(value.TimeZonePreference, out var iana)) value.TimeZonePreference = iana;
                 }
                 catch (Exception ex) when (ex is TimeZoneNotFoundException or InvalidTimeZoneException) { value.TimeZonePreference = "auto"; }
             }

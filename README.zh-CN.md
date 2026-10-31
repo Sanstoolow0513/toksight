@@ -34,6 +34,7 @@ toksight 自己的本地用量数据库；无需安装运行时依赖。
 ### Windows 原生桌面实验版
 
 `exp` 分支另有 **C# / WinUI 3 / XAML 原生桌面版**，包含今天、日历、价格和设置四页。
+桌面版复用 Web 的 Geist 字体、Lucide 图标与配色，使用原生分段控件、紧凑数据表、模型卡片和日历缩放动画。
 界面不使用 WebView，随包 Node 进程复用现有本地数据引擎，CLI 与 Web 继续保留。
 
 ```powershell

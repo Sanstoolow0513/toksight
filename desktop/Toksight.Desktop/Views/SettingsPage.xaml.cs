@@ -1,5 +1,6 @@
 using System.Text.Json.Nodes;
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
 using Toksight.Desktop.Services;
 
@@ -21,12 +22,15 @@ public sealed partial class SettingsPage : UserControl, IDesktopPage
     {
         _api = api; _preferences = preferences;
         InitializeComponent();
-        Heading.Text = T("设置", "Settings");
         RetryButton.Content = T("重新读取", "Reload");
+        AppearanceIcon.Content = NativeIcons.Create("Sun", 17); TimezoneIcon.Content = NativeIcons.Create("Globe", 17);
+        DatabaseIcon.Content = NativeIcons.Create("Database", 17); BackupIcon.Content = NativeIcons.Create("Upload", 17); PrivacyIcon.Content = NativeIcons.Create("Shield", 15);
         AppearanceHeading.Text = T("外观与语言", "Appearance and language");
-        ThemeCombo.Header = T("配色", "Theme"); LanguageCombo.Header = T("界面语言", "Language");
-        SetChoices(ThemeCombo, [new("system", T("跟随系统", "System")), new("light", T("浅色", "Light")), new("dark", T("深色", "Dark"))], preferences.Theme);
-        SetChoices(LanguageCombo, [new("zh-CN", "简体中文"), new("en", "English")], preferences.Language);
+        ThemeLabel.Text = T("配色", "Theme"); LanguageLabel.Text = T("界面语言", "Language");
+        ThemeSegments.Content = ManagementUi.Segmented([("light", T("浅色", "Light"), "Sun"), ("dark", T("深色", "Dark"), "Moon"), ("system", T("跟随系统", "System"), "Monitor")], preferences.Theme,
+            id => SavePreference(() => preferences.Theme = id), ThemeLabel.Text);
+        LanguageSegments.Content = ManagementUi.Segmented([("zh-CN", "简体中文", null), ("en", "English", null)], preferences.Language,
+            id => SavePreference(() => preferences.Language = id), LanguageLabel.Text);
         TimezoneHeading.Text = T("统计时区", "Report time zone");
         TimezoneDescription.Text = T("日历、小时分布和日期范围按所选时区计算；原始时间戳不会修改。", "The calendar, hourly breakdown, and date ranges use this time zone. Original timestamps are preserved.");
         var zones = TimeZoneInfo.GetSystemTimeZones().Select(z => TimeZoneInfo.TryConvertWindowsIdToIanaId(z.Id, out var iana) ? iana : z.Id)
@@ -34,15 +38,21 @@ public sealed partial class SettingsPage : UserControl, IDesktopPage
         var choices = new[] { new ManagementChoice("auto", T("跟随系统", "System time zone")) }
             .Concat(zones.Select(z => new ManagementChoice(z!, z!.Replace('_', ' ')))).ToArray();
         SetChoices(ZoneCombo, choices, preferences.TimeZonePreference);
+        AutomationProperties.SetName(ZoneCombo, TimezoneHeading.Text);
         TimezonePreview.Text = preferences.TimeZone + " · " + ManagementUi.Date(DateTimeOffset.UtcNow.ToString("O"), preferences);
         DatabaseHeading.Text = T("数据库备份与合并", "Database backup and merge");
-        DatabaseDescription.Text = T("导出完整的已提交 SQLite 快照。导入会验证备份并合并去重，不覆盖本机已有记录，也不会修改 Agent 文件。", "Export the full committed SQLite snapshot. Import validates the backup and merges records without overwriting existing local history or modifying Agent files.");
-        ExportButton.Content = T("导出 SQLite", "Export SQLite"); ImportButton.Content = T("导入并合并", "Import and merge");
+        DatabaseDescription.Text = T("在设备之间备份、迁移或合并用量记录。", "Back up, move, or merge your usage history between devices.");
+        ExportLabel.Text = T("导出完整数据库", "Export the full database"); ExportNote.Text = T("包含全部历史，不受当前日期筛选影响。", "Includes all history, regardless of the current date selection.");
+        ImportLabel.Text = T("导入并合并记录", "Import and merge records"); ImportNote.Text = T("验证 SQLite 备份并合并去重，保留本机已有记录。", "Validate a SQLite backup and merge duplicates while retaining local records.");
+        ExportButton.Content = ManagementUi.ButtonContent(T("导出 SQLite", "Export SQLite"), "Download"); ImportButton.Content = ManagementUi.ButtonContent(T("导入并合并", "Import and merge"), "Database");
+        AutomationProperties.SetName(ExportButton, ExportLabel.Text); AutomationProperties.SetName(ImportButton, ImportLabel.Text);
         BackupHeading.Text = T("GitHub 私有仓库备份", "Private GitHub repository backup");
         BackupDescription.Text = T("仅在你点击上传或恢复时联网。用量数据库包含会话标题和目录，因此仅支持你自己的私有仓库。", "Network access occurs only when you upload or restore. The usage database contains session titles and directories, so backups require your own private repository.");
         RepoInput.Header = T("私有仓库", "Private repository"); TokenInput.Header = T("GitHub 令牌", "GitHub token");
-        SaveBackupButton.Content = T("保存备份设置", "Save backup settings"); ClearTokenButton.Content = T("清除已存令牌", "Clear saved token");
-        DetectButton.Content = T("重新检测", "Check again"); UploadButton.Content = T("上传备份", "Upload backup"); RestoreButton.Content = T("恢复并合并", "Restore and merge");
+        SaveBackupButton.Content = T("保存设置", "Save settings"); ClearTokenButton.Content = T("清除已存令牌", "Clear saved token");
+        DetectButton.Content = ManagementUi.ButtonContent(T("重新检测", "Check again"), "Refresh"); UploadButton.Content = ManagementUi.ButtonContent(T("上传备份", "Upload backup"), "Upload"); RestoreButton.Content = ManagementUi.ButtonContent(T("恢复并合并", "Restore and merge"), "Download");
+        AutomationProperties.SetName(DetectButton, T("重新检测 GitHub CLI", "Check GitHub CLI again"));
+        AutomationProperties.SetName(UploadButton, T("上传备份", "Upload backup")); AutomationProperties.SetName(RestoreButton, T("恢复并合并", "Restore and merge"));
         PrivacyNote.Text = T("数据采集只读 Agent 文件。价格下载、Kimi 额度查询和 GitHub 备份遵循各自设置与显式操作。", "Data collection only reads Agent files. Price downloads, Kimi quota queries, and GitHub backups follow their settings and explicit actions.");
         _binding = false; UpdateBusy();
     }
@@ -103,7 +113,7 @@ public sealed partial class SettingsPage : UserControl, IDesktopPage
         RetryButton.IsEnabled = !working;
         BusyIndicator.Visibility = working ? Visibility.Visible : Visibility.Collapsed;
         ExportButton.IsEnabled = !working; ImportButton.IsEnabled = !working;
-        ThemeCombo.IsEnabled = !working; LanguageCombo.IsEnabled = !working; ZoneCombo.IsEnabled = !working;
+        ThemeSegments.IsEnabled = !working; LanguageSegments.IsEnabled = !working; ZoneCombo.IsEnabled = !working;
         var source = J.Str(_backup, "tokenSource"); var external = source.Length > 0 && source != "config";
         var available = _backup != null && !working;
         RepoInput.IsEnabled = available; TokenInput.IsEnabled = available && !external;
@@ -222,13 +232,20 @@ public sealed partial class SettingsPage : UserControl, IDesktopPage
     private void BackupInput_Changed(object sender, TextChangedEventArgs args) { if (!_binding) UpdateBusy(); }
     private async void Retry_Click(object sender, RoutedEventArgs args) { Notice.IsOpen = false; await ReloadAsync(); }
     private void Token_Changed(object sender, RoutedEventArgs args) { if (!_binding) UpdateBusy(); }
-    private void Theme_Changed(object sender, SelectionChangedEventArgs args)
+    private void SettingsScroller_SizeChanged(object sender, SizeChangedEventArgs args)
     {
-        if (!_binding && ThemeCombo.SelectedItem is ManagementChoice choice) SavePreference(() => _preferences.Theme = choice.Id);
+        if (SettingsContent != null) SettingsContent.Width = Math.Max(0, Math.Min(1000, args.NewSize.Width - 16));
     }
-    private void Language_Changed(object sender, SelectionChangedEventArgs args)
+    private void BackupFields_SizeChanged(object sender, SizeChangedEventArgs args)
     {
-        if (!_binding && LanguageCombo.SelectedItem is ManagementChoice choice) SavePreference(() => _preferences.Language = choice.Id);
+        if (SaveBackupButton == null) return;
+        var narrow = args.NewSize.Width < 680;
+        var actionWidth = Math.Max(100, SaveBackupButton.ActualWidth);
+        var fieldWidth = Math.Max(0, Math.Min(340, (args.NewSize.Width - (narrow ? 12 : actionWidth + 24)) / 2));
+        RepoInput.Width = TokenInput.Width = fieldWidth;
+        Grid.SetRow(SaveBackupButton, narrow ? 1 : 0); Grid.SetColumn(SaveBackupButton, narrow ? 0 : 2);
+        Grid.SetColumnSpan(SaveBackupButton, narrow ? 2 : 1);
+        SaveBackupButton.HorizontalAlignment = narrow ? HorizontalAlignment.Left : HorizontalAlignment.Stretch;
     }
     private void Zone_Changed(object sender, SelectionChangedEventArgs args)
     {

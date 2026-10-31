@@ -1,7 +1,11 @@
 using System.Globalization;
 using System.Text.Json.Nodes;
+using Microsoft.UI;
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Controls.Primitives;
+using Microsoft.UI.Xaml.Media;
 using Toksight.Desktop.Services;
 using Windows.System;
 
@@ -17,6 +21,10 @@ public sealed partial class PricesPage : UserControl, IDesktopPage
     private bool _active = true, _busy, _binding, _loading;
     private JsonNode? _status, _catalog;
     private ManagementPrice[] _models = [];
+    private string? _provider;
+    private bool _allModels;
+    private int _columns = 2;
+    private readonly HashSet<string> _expanded = [];
     public bool IsLoading => _loading || _busy;
     public FrameworkElement? ExportElement => null;
     private string T(string zh, string en) => _preferences.T(zh, en);
@@ -25,13 +33,15 @@ public sealed partial class PricesPage : UserControl, IDesktopPage
     {
         _api = api; _preferences = preferences;
         InitializeComponent();
-        Heading.Text = T("本机价格库", "Local price catalog");
         Search.PlaceholderText = T("搜索模型或厂商", "Search models or providers");
-        UsedOnly.Header = T("只看用过的模型", "Used models only");
-        UsedOnly.OnContent = T("已开启", "On"); UsedOnly.OffContent = T("已关闭", "Off");
-        PreferencesButton.Content = T("价格设置", "Price settings");
+        AutomationProperties.SetName(Search, Search.PlaceholderText);
+        SearchIcon.Content = NativeIcons.Create("Search", 15);
+        SetupIcon.Content = NativeIcons.Create("Database", 24, "SignalInkBrush");
+        ManagementUi.IconButton(PreferencesButton, "Settings", T("价格设置", "Price settings"));
+        ManagementUi.IconButton(UpdateButton, "Refresh", T("更新单价", "Update prices"));
+        ManagementUi.IconButton(ResetButton, "Database", T("重置价格库", "Reset catalog"));
+        AutomationProperties.SetName(UsedOnly, T("只看用过的模型", "Used models only"));
         RetryButton.Content = T("重新读取", "Reload");
-        UpdateButton.Content = T("更新单价", "Update prices"); ResetButton.Content = T("重置价格库", "Reset catalog");
         SetupHeading.Text = T("建立你的本机价格库", "Set up your local price catalog");
         SetupDescription.Text = T("下载 LiteLLM 第一方模型单价，用于估算缺少自报费用的请求。用量保留在本机；也可先使用本地数据，稍后再下载价格。", "Download first-party model rates from LiteLLM to estimate requests without reported costs. Usage stays on your computer. You can also continue locally and download prices later.");
         SetupAutoUpdate.Content = T("自动检查价格更新", "Automatically check for price updates");
@@ -55,15 +65,9 @@ public sealed partial class PricesPage : UserControl, IDesktopPage
             await Task.WhenAll(statusTask, catalogTask);
             if (!_active || token.IsCancellationRequested || revision != _revision) return;
             _status = await statusTask; _catalog = await catalogTask;
-            var selectedProvider = (ProviderFilter.SelectedItem as ManagementChoice)?.Id ?? "";
             _models = J.Items(_catalog, "models").Select(model => new ManagementPrice(model, _preferences)).ToArray();
-            _binding = true;
-            var providers = new[] { new ManagementChoice("", T("全部厂商", "All providers")) }
-                .Concat(_models.Select(m => m.Provider).Distinct().OrderBy(p => p).Select(p => new ManagementChoice(p, p))).ToArray();
-            ProviderFilter.ItemsSource = providers;
-            ProviderFilter.SelectedItem = providers.FirstOrDefault(p => p.Id == selectedProvider) ?? providers[0];
-            _binding = false;
             SetupPanel.Visibility = J.Bool(_status, "completed") ? Visibility.Collapsed : Visibility.Visible;
+            FilterPanel.Visibility = J.Bool(_status, "completed") ? Visibility.Visible : Visibility.Collapsed;
             SetupAutoUpdate.IsChecked = J.Bool(_status, "autoUpdate");
             var selectedSources = J.Items(_status, "selectedSources").Select(n => n.ToString()).ToHashSet();
             SetupSources.Children.Clear();
@@ -87,16 +91,169 @@ public sealed partial class PricesPage : UserControl, IDesktopPage
 
     private void ApplyFilters()
     {
-        if (_binding || Search == null) return;
-        var query = Search.Text.Trim(); var provider = (ProviderFilter.SelectedItem as ManagementChoice)?.Id ?? "";
-        var rows = _models.Where(m => (!UsedOnly.IsOn || m.Used) && (provider.Length == 0 || m.Provider == provider) &&
-            (query.Length == 0 || m.SearchText.Contains(query, StringComparison.OrdinalIgnoreCase)))
-            .OrderByDescending(m => m.Used).ThenBy(m => m.Provider).ThenBy(m => m.Name).ToArray();
+        if (_binding || Catalog == null || UsedOnly == null || ProviderChips == null) return;
+        var words = Search.Text.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
+        var usedCount = _models.Count(m => m.Used);
+        var usedOnly = usedCount > 0 && !_allModels;
+        _binding = true; UsedOnly.IsChecked = usedOnly; UsedOnly.Visibility = usedCount > 0 ? Visibility.Visible : Visibility.Collapsed;
+        PaintUsedSwitch(); _binding = false;
+        var scoped = _models.Where(m => !usedOnly || m.Used).ToArray();
+        var groups = scoped.GroupBy(m => m.Provider).Select(g => new ManagementProvider(g.Key, ManagementUi.ProviderName(g.Key), g.OrderBy(m => m.Name).ToArray()))
+            .OrderByDescending(g => g.Models.Any(m => m.Used)).ThenBy(g => g.Name).ToArray();
+        if (_provider != null && !groups.Any(g => g.Id == _provider)) _provider = null;
+        ProviderChips.Children.Clear();
+        ProviderChips.Children.Add(ProviderChip(null, T("全部", "All"), scoped.Length));
+        foreach (var group in groups) ProviderChips.Children.Add(ProviderChip(group.Id, group.Name, group.Models.Length));
+        var rows = new List<ManagementCatalogRow>(); var matched = 0;
+        var preview = !usedOnly && words.Length == 0 && _provider == null;
+        foreach (var group in groups.Where(g => _provider == null || g.Id == _provider))
+        {
+            var models = group.Models.Where(m => words.All(word => m.SearchText.Contains(word, StringComparison.OrdinalIgnoreCase))).ToArray();
+            if (models.Length == 0) continue;
+            matched += models.Length;
+            rows.Add(new ManagementCatalogRow(group with { Models = models }, [], _columns));
+            var tiles = models.Take(preview ? 5 : models.Length).Cast<object>().ToList();
+            if (tiles.Count < models.Length) tiles.Add(new ManagementMore(group, models.Length - tiles.Count));
+            for (var index = 0; index < tiles.Count; index += _columns) rows.Add(new ManagementCatalogRow(null, tiles.Skip(index).Take(_columns).ToArray(), _columns));
+        }
         Catalog.ItemsSource = rows;
-        Summary.Text = T("美元 / 百万 token", "USD / million tokens") + $" · {rows.Length:N0} / {_models.Length:N0} " + T("模型", "models") +
-            " · " + T("最近观察", "Last observed") + " " + ManagementUi.Date(J.Str(_status, "observedAt"), _preferences);
+        Summary.Text = T("美元 / 百万 token", "USD / million tokens") + $" · {matched:N0} / {_models.Length:N0} " + T("模型", "models") +
+            " · " + T("价格更新于", "Prices updated") + " " + ManagementUi.Date(J.Str(_catalog, "updates.litellm.fetchedAt", J.Str(_status, "observedAt")), _preferences);
+        ToolTipService.SetToolTip(Summary, Summary.Text);
         EmptyMessage.Text = T("没有匹配的模型。可调整筛选或更新价格库。", "No matching models. Adjust the filters or update the price catalog.");
-        EmptyMessage.Visibility = rows.Length == 0 && J.Bool(_status, "completed") ? Visibility.Visible : Visibility.Collapsed;
+        EmptyPanel.Visibility = rows.Count == 0 && J.Bool(_status, "completed") ? Visibility.Visible : Visibility.Collapsed;
+        Catalog.Visibility = J.Bool(_status, "completed") ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    private void PaintUsedSwitch()
+    {
+        var active = UsedOnly.IsChecked == true;
+        var track = new Border { Width = 30, Height = 18, CornerRadius = new CornerRadius(9), Background = ManagementUi.Brush(active ? "SignalBrush" : "LineBrush"),
+            Child = new Border { Width = 14, Height = 14, CornerRadius = new CornerRadius(7), Background = ManagementUi.Brush("SurfaceBrush"),
+                HorizontalAlignment = active ? HorizontalAlignment.Right : HorizontalAlignment.Left, Margin = new Thickness(2) } };
+        var content = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+        content.Children.Add(track); var label = ManagementUi.Text(T("只看用过的模型", "Used models only"), 14); label.IsTextSelectionEnabled = false;
+        content.Children.Add(label); UsedOnly.Content = content;
+    }
+
+    private ToggleButton ProviderChip(string? id, string title, int count)
+    {
+        var active = id == _provider;
+        var chip = new ToggleButton { IsChecked = active, MinHeight = 30, MinWidth = 0, Padding = new Thickness(10, 4, 10, 4), CornerRadius = new CornerRadius(15),
+            BorderThickness = new Thickness(0), Background = ManagementUi.Brush(active ? "InkBrush" : "Surface2Brush") };
+        var content = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 7 };
+        if (id != null && !active) content.Children.Add(ManagementUi.Logo(id, size: 16));
+        var text = ManagementUi.Text(title, 14); text.IsTextSelectionEnabled = false; text.Foreground = ManagementUi.Brush(active ? "BgBrush" : "InkBrush");
+        var number = ManagementUi.Text(count.ToString("N0"), 13, true); number.IsTextSelectionEnabled = false; number.Foreground = ManagementUi.Brush(active ? "BgBrush" : "MutedBrush");
+        content.Children.Add(text); content.Children.Add(number); chip.Content = content;
+        AutomationProperties.SetName(chip, $"{title} · {count}");
+        chip.Click += (_, _) => { _provider = id; ApplyFilters(); if (Catalog.Items.Count > 0) Catalog.ScrollIntoView(Catalog.Items[0]); };
+        return chip;
+    }
+
+    private void Catalog_SizeChanged(object sender, SizeChangedEventArgs args)
+    {
+        var columns = Math.Clamp((int)((args.NewSize.Width - 16 + 12) / (330 + 12)), 1, 3);
+        if (columns == _columns) return;
+        _columns = columns; ApplyFilters();
+    }
+
+    private void FilterRow_SizeChanged(object sender, SizeChangedEventArgs args)
+    {
+        if (HeaderActions == null) return;
+        var narrow = args.NewSize.Width < 920;
+        FilterRow.RowSpacing = narrow ? 8 : 0;
+        Grid.SetRow(HeaderActions, narrow ? 1 : 0); Grid.SetColumn(HeaderActions, 2);
+        Grid.SetColumnSpan(SearchFilters, narrow ? 3 : 1);
+        Grid.SetRow(Summary, narrow ? 1 : 0); Grid.SetColumn(Summary, narrow ? 0 : 1); Grid.SetColumnSpan(Summary, narrow ? 2 : 1);
+        Summary.HorizontalAlignment = narrow ? HorizontalAlignment.Left : HorizontalAlignment.Right;
+    }
+
+    private void Catalog_ContainerContentChanging(ListViewBase sender, ContainerContentChangingEventArgs args)
+    {
+        if (args.ItemContainer.ContentTemplateRoot is not Grid root)
+        {
+            if (!args.InRecycleQueue && args.Phase == 0) args.RegisterUpdateCallback(1, Catalog_ContainerContentChanging);
+            return;
+        }
+        root.Children.Clear(); root.ColumnDefinitions.Clear(); root.Padding = new Thickness(0); root.Margin = new Thickness(0);
+        if (args.InRecycleQueue || args.Item is not ManagementCatalogRow row) return;
+        if (row.Header is { } provider)
+        {
+            var header = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10, Margin = new Thickness(0, 4, 0, 8) };
+            header.Children.Add(ManagementUi.Logo(provider.Id, size: 22));
+            var title = ManagementUi.Text(provider.Name, 16); title.FontWeight = Microsoft.UI.Text.FontWeights.SemiBold; header.Children.Add(title);
+            var count = ManagementUi.Text($"{provider.Models.Length:N0} " + T("个模型", "models"), 13, true); count.VerticalAlignment = VerticalAlignment.Center; header.Children.Add(count);
+            root.Children.Add(header);
+        }
+        else
+        {
+            root.ColumnSpacing = 12; root.Margin = new Thickness(0, 0, 0, 12);
+            for (var index = 0; index < row.Columns; index++) root.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            for (var index = 0; index < row.Tiles.Length; index++)
+            {
+                FrameworkElement card = row.Tiles[index] is ManagementPrice model ? ModelCard(model) : MoreCard((ManagementMore)row.Tiles[index]);
+                card.VerticalAlignment = VerticalAlignment.Top; Grid.SetColumn(card, index); root.Children.Add(card);
+            }
+        }
+        args.Handled = true;
+    }
+
+    private FrameworkElement MoreCard(ManagementMore more)
+    {
+        var content = new StackPanel { Spacing = 6, HorizontalAlignment = HorizontalAlignment.Center };
+        content.Children.Add(NativeIcons.Create("Layers3", 18));
+        content.Children.Add(ManagementUi.Text(T($"查看全部 {more.Provider.Models.Length:N0} 个模型", $"View all {more.Provider.Models.Length:N0} models"), 14));
+        content.Children.Add(ManagementUi.Text(T($"还有 {more.Remaining:N0} 个 {more.Provider.Name} 模型", $"{more.Remaining:N0} more from {more.Provider.Name}"), 13, true));
+        var button = new Button { Content = content, HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Center,
+            MinHeight = 132, CornerRadius = new CornerRadius(8), Background = new SolidColorBrush(Colors.Transparent), BorderBrush = ManagementUi.Brush("LineBrush"), BorderThickness = new Thickness(1) };
+        button.Click += (_, _) => { _provider = more.Provider.Id; ApplyFilters(); if (Catalog.Items.Count > 0) Catalog.ScrollIntoView(Catalog.Items[0]); };
+        return button;
+    }
+
+    private FrameworkElement ModelCard(ManagementPrice model)
+    {
+        var id = J.Str(model.Raw, "id", model.Source + "/" + model.Name);
+        var card = new Border { Background = ManagementUi.Brush("SurfaceBrush"), CornerRadius = new CornerRadius(8), Padding = new Thickness(14), BorderThickness = new Thickness(1), BorderBrush = new SolidColorBrush(Colors.Transparent) };
+        var stack = new StackPanel { Spacing = 12 }; card.Child = stack;
+        var header = new Grid { ColumnSpacing = 10 };
+        header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto }); header.ColumnDefinitions.Add(new ColumnDefinition()); header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        header.Children.Add(ManagementUi.Logo(model.Provider, model.Name));
+        var titleStack = new StackPanel { Spacing = 3, VerticalAlignment = VerticalAlignment.Center };
+        var title = ManagementUi.Text(model.Name, 14); title.FontWeight = Microsoft.UI.Text.FontWeights.Medium; title.TextWrapping = TextWrapping.NoWrap; title.TextTrimming = TextTrimming.CharacterEllipsis;
+        title.FontFamily = (FontFamily)Application.Current.Resources["MonoFontFamily"]; ToolTipService.SetToolTip(title, model.Name); titleStack.Children.Add(title);
+        var meta = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
+        meta.Children.Add(ManagementUi.Text(ManagementUi.ProviderName(model.Provider), 13, true));
+        if (model.Used) { var used = ManagementUi.Text(T("已使用", "Used"), 13); used.Foreground = ManagementUi.Brush("SignalInkBrush"); meta.Children.Add(new Border { Child = used, Background = ManagementUi.Brush("SignalSoftBrush"), CornerRadius = new CornerRadius(4), Padding = new Thickness(5, 1, 5, 1) }); }
+        titleStack.Children.Add(meta); Grid.SetColumn(titleStack, 1); header.Children.Add(titleStack);
+        var toggle = new ToggleButton { IsChecked = _expanded.Contains(id), MinWidth = 28, MinHeight = 28, Width = 28, Height = 28, Padding = new Thickness(0), BorderThickness = new Thickness(0), Background = new SolidColorBrush(Colors.Transparent), VerticalAlignment = VerticalAlignment.Top };
+        ManagementUi.IconButton(toggle, toggle.IsChecked == true ? "ChevronRight" : "ChevronDown", model.Name + " · " + T("价格明细", "Price details"));
+        Grid.SetColumn(toggle, 2); header.Children.Add(toggle); stack.Children.Add(header);
+        stack.Children.Add(ManagementUi.Rates(model.Raw, _preferences, UsedOnly.IsChecked == true));
+        var details = new Border { BorderBrush = ManagementUi.Brush("LineBrush"), BorderThickness = new Thickness(0, 1, 0, 0), Padding = new Thickness(0, 10, 0, 0), Visibility = Visibility.Collapsed };
+        var tiers = J.Items(model.Raw, "contextTiers").ToArray();
+        if (tiers.Length > 0)
+        {
+            var label = T("长上下文 ", "Long context ") + (J.Num(tiers[0], "contextOver") / 1000).ToString("0.#") + "K+";
+            var tierButton = new Button { Content = ManagementUi.ButtonContent(label, "Layers3"), MinHeight = 26, Padding = new Thickness(8, 2, 8, 2), CornerRadius = new CornerRadius(13), Background = new SolidColorBrush(Colors.Transparent), BorderBrush = ManagementUi.Brush("LineBrush"), BorderThickness = new Thickness(1), HorizontalAlignment = HorizontalAlignment.Left };
+            tierButton.Click += (_, _) => { toggle.IsChecked = toggle.IsChecked != true; ShowDetails(); };
+            stack.Children.Add(tierButton);
+        }
+        stack.Children.Add(details);
+        void ShowDetails()
+        {
+            var open = toggle.IsChecked == true;
+            if (open) { _expanded.Add(id); details.Child ??= BuildDetails(model); } else _expanded.Remove(id);
+            details.Visibility = open ? Visibility.Visible : Visibility.Collapsed;
+            card.BorderBrush = open ? ManagementUi.Brush("LineBrush") : new SolidColorBrush(Colors.Transparent);
+            var chevron = NativeIcons.Create("ChevronDown", 15);
+            chevron.RenderTransformOrigin = new Windows.Foundation.Point(.5, .5); chevron.RenderTransform = new RotateTransform { Angle = open ? 180 : 0 };
+            toggle.Content = chevron;
+        }
+        toggle.Click += (_, _) => ShowDetails(); ShowDetails();
+        card.PointerEntered += (_, _) => card.BorderBrush = ManagementUi.Brush("LineBrush");
+        card.PointerExited += (_, _) => card.BorderBrush = toggle.IsChecked == true ? ManagementUi.Brush("LineBrush") : new SolidColorBrush(Colors.Transparent);
+        return card;
     }
 
     private void UpdateBusy()
@@ -169,18 +326,10 @@ public sealed partial class PricesPage : UserControl, IDesktopPage
     }
 
     private void Filters_Changed(object sender, TextChangedEventArgs args) => ApplyFilters();
-    private void Provider_Changed(object sender, SelectionChangedEventArgs args) => ApplyFilters();
-    private void Used_Toggled(object sender, RoutedEventArgs args) => ApplyFilters();
+    private void Used_Click(object sender, RoutedEventArgs args) { if (_binding) return; _allModels = UsedOnly.IsChecked != true; _provider = null; ApplyFilters(); }
 
-    private void Details_DataContextChanged(FrameworkElement sender, DataContextChangedEventArgs args)
+    private StackPanel BuildDetails(ManagementPrice model)
     {
-        // ListView recycles templates; never retain another model's expanded detail tree.
-        if (sender is Expander expander) { expander.IsExpanded = false; expander.Content = null; }
-    }
-
-    private void Details_Expanding(Expander sender, ExpanderExpandingEventArgs args)
-    {
-        if (sender.Content != null || sender.DataContext is not ManagementPrice model) return;
         var record = model.Raw;
         var body = new StackPanel { Spacing = 12 };
         foreach (var tier in J.Items(record, "contextTiers"))
@@ -247,7 +396,7 @@ public sealed partial class PricesPage : UserControl, IDesktopPage
             finally { historyButton.IsEnabled = true; }
         };
         body.Children.Add(historyButton); body.Children.Add(historyPanel);
-        sender.Content = body;
+        return body;
     }
 
     private static string Clock(double raw) => $"{(int)raw / 100:00}:{(int)raw % 100:00}";

@@ -35,8 +35,10 @@ stores toksight's own local usage database; no runtime package is installed.
 ### Experimental native Windows app
 
 The `exp` branch also contains a **C# / WinUI 3 / XAML desktop app** with Today, Calendar,
-Prices and Settings pages. Its interface is native, with no WebView; it reuses the same
-local data engine through a bundled Node process. CLI and Web remain available.
+Prices, and Settings. It shares the Web design's Geist fonts, Lucide icons, and palette,
+with native segmented controls, compact data tables, model cards, and calendar zoom animations.
+Its interface is native, with no WebView; it reuses the same local data engine through
+a bundled Node process. CLI and Web remain available.
 
 ```powershell
 # Developer build: Windows, Node, .NET 10 SDK and Windows SDK required

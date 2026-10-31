@@ -4,7 +4,11 @@
 
 ## 当前范围
 
-窗口提供今天、日历、价格、设置四页，沿用素面工作台的平面分区、橙色强调、灰阶热图和明暗主题。原生控件布局与动效独立实现，不承诺与 Web 像素一致。
+窗口提供今天、日历、价格、设置四页，视觉以 `design-spec.md` 的素面工作台为参照：平面分区、橙色强调、灰阶热图、34 / 28px 控件和明暗主题。字体使用与 Web 相同的 Geist / Geist Mono；Lucide 图标以原生 XAML 矢量绘制。按钮、分段切换、账表、图表标注、模型卡片和日历分别实现原生样式与布局，字体渲染和窗口装饰仍有平台差异。
+
+`App.xaml` 集中维护原生字体、主题资源与按钮模板，`Services/NativeIcons.cs` 绘制线性图标和品牌标。字体与图标几何从锁定的 Web 依赖复制到 `Assets/`，许可证随包发布；运行 `npm run web:ci` 后可用 `node scripts/desktop-assets.js` 更新。常规桌面构建直接使用已提交资产，不依赖 Web 构建产物。厂商 Logo 从 `frontend/public/logos/` 链接至发布目录 `Assets/Logos/`，单色 Logo 跟随主题。
+
+概览使用带说明及差值徽标的指标、含数量刻度与峰值旗标的小时图、固定列 Agent 账表及紧凑会话列表。价格页使用厂商分组和自适应多列卡片；设置使用横向字段行。侧栏可折叠，配色通过独立选择菜单设置。日历固定星期栏、吸顶月份、周合计及紧凑选区摘要均由原生控件实现；大 / 紧凑布局切换走 Composition FLIP，遵循系统减少动画偏好。
 
 | 页面 | 原生界面 |
 | --- | --- |
@@ -30,6 +34,8 @@ npm run desktop:run -- --offline
 ```
 
 `desktop:build` 固定使用 Release、self-contained publish 和 NuGet locked restore，输出 `dist/desktop/win-x64/app/`。这是包含运行时的完整目录，不能只复制其中的 EXE。运行入口为 `Toksight.Desktop.exe`；`desktop:run` 启动已有构建，不自动重编译。
+
+重新构建前关闭这个发布目录中的桌面窗口；脚本会在修改产物前检查运行中的实例，避免旧 DLL 与新 XAML 资源混用。
 
 ```powershell
 # 单独准备运行时，或使用预下载的精确官方 ZIP 离线构建
@@ -59,7 +65,7 @@ Toksight.Desktop.exe（WinUI 3 / XAML）
 stdin 首行是 `{ "token": "<64 hex>", "offline": false }`，可加绝对路径 `configDir` / `home`；未配置的字段应省略，不传 `null`。stdout 仅输出一行 `{ "type": "ready", "url": "http://127.0.0.1:<port>" }`；错误 JSON 和诊断走 stderr。宿主持续读取 stderr，并保持 stdin 打开。`{ "type": "shutdown" }` 或 EOF 关闭服务与数据库，超过 5 秒强制结束；宿主另有退出兜底。
 
 - **统计数据库与价格**：默认继续用 `~/.config/toksight/`，遵守 `TOKSIGHT_CONFIG_DIR` 和已有 `XDG_CONFIG_HOME` 优先级。桌面、CLI 和 Web 可以读取同一份已提交快照，不迁走旧数据。
-- **桌面偏好**：语言、配色、时区和日历档位在 `LocalApplicationData/toksight/desktop/preferences.json`，普通安装即 `%LOCALAPPDATA%\toksight\desktop\preferences.json`；MSIX 下最终存储映射受 Windows 包身份影响。
+- **桌面偏好**：语言、配色、时区、日历档位和侧栏折叠状态在 `LocalApplicationData/toksight/desktop/preferences.json`，普通安装即 `%LOCALAPPDATA%\toksight\desktop\preferences.json`；MSIX 下最终存储映射受 Windows 包身份影响。
 - **隔离验收**：`TOKSIGHT_DESKTOP_STATE_DIR` 可覆盖桌面偏好目录，与临时 `TOKSIGHT_CONFIG_DIR` / `TOKSIGHT_DESKTOP_HOME` 一起使用，避免测试改动个人偏好或读取真实来源。
 - **Agent 来源**：沿用所有现有来源环境变量，只读 Agent 文件。`TOKSIGHT_DESKTOP_HOME` 可为桌面宿主注入隔离 home，主要用于 fixture 验证；它不会覆盖显式 Agent 来源环境变量。
 - **GitHub 凭据**：沿用现有 GitHub 备份模块和凭据优先级，不把 token 放入桌面偏好或服务启动命令行。存储机制见[GitHub 备份](github-backup.md)。
@@ -114,12 +120,15 @@ node --test test/desktop-service.test.js test/webserver.test.js
 npm run desktop:build
 npm run desktop:check
 npm run desktop:check -- --fresh
+npm run desktop:check -- --collapsed --compact
 npm run desktop:package -- --no-build
 ```
 
 sidecar 测试使用临时 home 和离线 fixture，覆盖启动、令牌拒绝、不同宿主隔离、已提交快照 / 刷新、错误协议、EOF / 关闭与有限退出时间。
 
 `desktop:check` 使用独立 fixture 和偏好目录启动已有桌面构建，不使用真实 Agent 数据。它以「浅色 / 宽窗口 / 中文」和「深色 / 窄窗口 / 英文」两组配置遍历四页，生成 **8 张原生 PNG**，检查页面错误、柱条非零宽度以及设置控件没有越出视口，完成后退出。`desktop:check -- --fresh` 则使用没有用量、未初始化价格库的新用户状态，额外验证首次导航进入价格引导，并重复上述页面检查。结果和截图在 `dist/desktop/checks/`，供人工检查实际像素内容。
+
+`--collapsed` 和 `--compact` 可组合验证折叠侧栏及紧凑日历的两组渲染。
 
 WinUI 仍需要在实际窗口检查缩放 / 键盘操作、文件选择器及导出图片；自动冒烟不能替代完整交互验收。Web 与 npm 包继续按原检查执行，桌面目录不进入 npm 的 `files` 白名单。
 
