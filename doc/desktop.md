@@ -1,139 +1,108 @@
-# Windows 原生桌面实验版
+# Windows 桌面实验版（Tauri）
 
-`exp` 分支增加 C# / WinUI 3 / XAML 桌面客户端，保留现有 CLI 和 Web。界面没有 WebView2、Electron 或浏览器页面；`frontend/out/` 不参与桌面构建。Node 采集、SQLite、价格与备份逻辑仍直接复用 `src/`，不另写一套统计口径。
+`exp` 分支使用 **Tauri 2 / Rust + 现有 Next 静态前端**。今天、日历、价格和设置直接复用 `frontend/` 的 React、CSS、Geist 字体、Lucide 图标及动画；窗口、文件保存和外部链接由桌面宿主处理。Windows 上页面由 WebView2 渲染。此前的 WinUI / XAML 独立界面已移除，不再维护两套页面。
 
-## 当前范围
-
-窗口提供今天、日历、价格、设置四页，视觉以 `design-spec.md` 的素面工作台为参照：平面分区、橙色强调、灰阶热图、34 / 28px 控件和明暗主题。字体使用与 Web 相同的 Geist / Geist Mono；Lucide 图标以原生 XAML 矢量绘制。按钮、分段切换、账表、图表标注、模型卡片和日历分别实现原生样式与布局，字体渲染和窗口装饰仍有平台差异。
-
-`App.xaml` 集中维护原生字体、主题资源与按钮模板，`Services/NativeIcons.cs` 绘制线性图标和品牌标。字体与图标几何从锁定的 Web 依赖复制到 `Assets/`，许可证随包发布；运行 `npm run web:ci` 后可用 `node scripts/desktop-assets.js` 更新。常规桌面构建直接使用已提交资产，不依赖 Web 构建产物。厂商 Logo 从 `frontend/public/logos/` 链接至发布目录 `Assets/Logos/`，单色 Logo 跟随主题。
-
-概览使用带说明及差值徽标的指标、含数量刻度与峰值旗标的小时图、固定列 Agent 账表及紧凑会话列表。价格页使用厂商分组和自适应多列卡片；设置使用横向字段行。侧栏可折叠，配色通过独立选择菜单设置。日历固定星期栏、吸顶月份、周合计及紧凑选区摘要均由原生控件实现；大 / 紧凑布局切换走 Composition FLIP，遵循系统减少动画偏好。
-
-| 页面 | 原生界面 |
-| --- | --- |
-| 今天 | KPI、时段分布、Token 构成、Agent / 模型和会话、订阅额度、近期趋势 |
-| 日历 | 大 / 紧凑布局、日期和整周选择、选区汇总、时段 / Agent / 模型 / 会话明细 |
-| 价格 | 初始化、本地继续、搜索与厂商过滤、用过的模型、单价明细、更新与重置 |
-| 设置 | 语言、配色、时区、SQLite 备份与合并、GitHub 手动备份与恢复 |
-
-图片导出走原生渲染和 Windows 文件选择器。当前日历 PNG 导出选区详情，不包含 Web 版的可见月份拼接；需要完整 Web 导出布局时继续使用 `toksight web`。纯原生日历的缩放、鼠标与键盘交互需单独验收，不能用 Web 测试代替。
-
-日历先显示最近 12 个月，可加载全部历史；支持按钮和 Ctrl + 滚轮切换大小布局，当前没有双指捏合。价格库尚未初始化时先进入原生价格页完成下载或选择本地继续。
-
-目标为 Windows 10 2004（build 19041）及以上；本轮以 Windows x64 为主要验证环境。工具支持生成 ARM64，ARM64 设备和 Windows 10 尚需单独验证。发布包携带 Node、.NET 和 Windows App SDK 运行时，用户无需安装 Node 或 .NET；开发机需要构建工具。
+Node 采集、SQLite、价格与 GitHub 备份仍复用 `src/`，CLI 和 Web 保留。桌面版不是依赖在线网站的快捷方式：前端静态资源编入应用，Node 运行时与服务源码随包分发，离线也能读取本地数据。
 
 ## 开发与运行
 
-开发环境：Windows、Node >=22.5、.NET 10 SDK，以及 Windows SDK。首次恢复 NuGet 包和准备固定 Node 运行时需要网络。MSIX 打包需要 Windows SDK 的 `MakeAppx.exe`；生成传统安装器额外需要 Inno Setup 6.3+。脚本不自动安装系统构建工具。
+Windows 开发机需要 Node >=22.5、Rust 的 MSVC 工具链、Microsoft C++ Build Tools / Windows SDK，以及 WebView2。安装要求见 [Tauri 官方前提](https://v2.tauri.app/start/prerequisites/)。不再需要 .NET、Windows App SDK 或 Inno Setup。首次恢复 npm / Cargo 依赖、准备固定 Node 运行时与 NSIS 工具需要网络。
+
+```powershell
+npm run web:ci
+npm run desktop:ci
+npm run desktop:dev
+```
+
+开发使用同一套前端。发行构建将 `frontend/out/` 静态文件嵌入 Tauri；API 通过桌面 IPC 调用本地数据服务，不依赖开发用的 4729 端口。
 
 ```powershell
 npm run desktop:build
+npm run desktop:check
 npm run desktop:run
 npm run desktop:run -- --offline
 ```
 
-`desktop:build` 固定使用 Release、self-contained publish 和 NuGet locked restore，输出 `dist/desktop/win-x64/app/`。这是包含运行时的完整目录，不能只复制其中的 EXE。运行入口为 `Toksight.Desktop.exe`；`desktop:run` 启动已有构建，不自动重编译。
+`desktop:build` 生成 Release 应用，输出 `dist/desktop/win-x64/tauri/app/`。入口为 `toksight-desktop.exe`；必须保留整个目录，不能只复制 EXE。`desktop:run` 启动已有构建，不自动重编译。重新构建前应关闭这个发布目录中的实例。
 
-重新构建前关闭这个发布目录中的桌面窗口；脚本会在修改产物前检查运行中的实例，避免旧 DLL 与新 XAML 资源混用。
+桌面工具依赖由 `desktop/package-lock.json` 锁定，Rust 依赖由 `desktop/src-tauri/Cargo.lock` 锁定。根 npm 包仍无运行时依赖。生成目录、Cargo 编译产物、运行时缓存和 `dist/` 不提交 Git。
+
+应用和安装器的版本通过 `tauri.conf.json` 的 `version: "../../package.json"` 读取根包；原 `release:version` 流程仍是发布版本来源。私有桌面 npm 包及 Rust crate 的版本是内部构建元数据。
+
+### 随包 Node
 
 ```powershell
-# 单独准备运行时，或使用预下载的精确官方 ZIP 离线构建
 npm run desktop:runtime
 npm run desktop:build -- --runtime C:\downloads\node-v24.22.2-win-x64.zip
-
-# ARM64：可构建，尚未在 ARM64 设备验收
-npm run desktop:build -- --arch arm64
-npm run desktop:run -- --arch arm64
 ```
 
-`desktop/runtime.json` 锁定 Node **24.22.2**、官方 URL 与 x64 / ARM64 ZIP 的 SHA256；校验值来自 [Node 官方 SHASUMS256.txt](https://nodejs.org/dist/v24.22.2/SHASUMS256.txt)。构建不会追随 `latest` 自动升级。每次准备运行时都校验 ZIP，只提取 `node.exe` 和 `LICENSE` 至 `desktop/runtime/win-<arch>/`。下载缓存位于 `desktop/.cache/`；两者都不提交 Git。`--runtime` 接受匹配锁定版本和架构的官方 ZIP，不接受任意未校验的 `node.exe`。
+`desktop/runtime.json` 锁定 Node **24.22.2**、官方 URL 与 x64 / ARM64 ZIP 的 SHA256；校验值来自 [Node 官方 SHASUMS256.txt](https://nodejs.org/dist/v24.22.2/SHASUMS256.txt)。每次准备运行时都校验 ZIP，只提取 `node.exe` 和许可证至 `desktop/runtime/win-<arch>/`，下载缓存位于 `desktop/.cache/`。`--runtime` 只接受匹配锁定版本和架构的官方 ZIP。
 
-升级运行时需一起修改 `runtime.json` 中版本、URL、文件名和两架构 SHA256，重新验证 sidecar、SQLite 及原生发布包。NuGet 依赖由 `desktop/Toksight.Desktop/packages.lock.json` 锁定，更新依赖后先更新锁再发布。
+用户无需另装 Node、Rust 或 .NET。Windows 运行依赖 WebView2；安装器会处理缺失的 WebView2，便携 ZIP 的使用者需要系统已有该运行时。当前验收以 Windows x64 为主；ARM64 需要相应 Rust target / C++ 工具链并单独进行设备验收，不应由 x64 的成功构建推断兼容性。
 
 ## 数据与服务进程
 
 ```text
-Toksight.Desktop.exe（WinUI 3 / XAML）
-  -> backend/node.exe backend/desktop/service.mjs
-       -> 127.0.0.1:随机端口，只提供 JSON API
-       -> 原 src/ 采集、定价、SQLite 与备份逻辑
+toksight-desktop.exe
+  ├─ WebView2：内嵌 frontend/out/，同一套 Web UI
+  └─ Rust IPC：限定的 API、保存文件、打开外部链接
+       └─ backend/node.exe backend/desktop/service.mjs
+            └─ 127.0.0.1:随机端口 + 会话令牌 → 原 src/ 数据核心
 ```
 
-应用私有的 `backend/` 含 Node、`NODE-LICENSE`、`desktop/service.mjs`、`src/` 和根 `package.json`，保持源码相对路径。窗口创建随机 32 字节令牌，通过 stdin 首行发送；所有 HTTP 请求带 `X-Toksight-Desktop-Token`。服务在解析路由前用固定长度 `timingSafeEqual` 验证，原有 Host / Origin 防护继续执行。
+`backend/` 包含 Node、`NODE-LICENSE`、`desktop/service.mjs`、`src/` 和根 `package.json`，保持原模块相对路径。Rust 宿主创建随机 32 字节令牌，通过 stdin 首行传给子进程。它转发允许的 API 路径、方法和正文，并附加 `X-Toksight-Desktop-Token`；令牌和私有端口不交给页面。前端不能把桥接命令当作任意网络代理或任意文件路径写入器。
 
-stdin 首行是 `{ "token": "<64 hex>", "offline": false }`，可加绝对路径 `configDir` / `home`；未配置的字段应省略，不传 `null`。stdout 仅输出一行 `{ "type": "ready", "url": "http://127.0.0.1:<port>" }`；错误 JSON 和诊断走 stderr。宿主持续读取 stderr，并保持 stdin 打开。`{ "type": "shutdown" }` 或 EOF 关闭服务与数据库，超过 5 秒强制结束；宿主另有退出兜底。
+服务在解析路由前以固定长度 `timingSafeEqual` 验证令牌，原有 Host / Origin 防护继续执行。stdin 首行是 `{ "token": "<64 hex>", "offline": false }`，可加绝对路径 `configDir` / `home`；未配置的字段省略，不传 `null`。stdout 只输出一行 `{ "type": "ready", "url": "http://127.0.0.1:<port>" }`，诊断写 stderr。宿主保持 stdin 打开；`{ "type": "shutdown" }` 或 EOF 关闭服务与数据库，服务有 5 秒退出上限。关闭应用同时结束它拥有的服务。
 
-- **统计数据库与价格**：默认继续用 `~/.config/toksight/`，遵守 `TOKSIGHT_CONFIG_DIR` 和已有 `XDG_CONFIG_HOME` 优先级。桌面、CLI 和 Web 可以读取同一份已提交快照，不迁走旧数据。
-- **桌面偏好**：语言、配色、时区、日历档位和侧栏折叠状态在 `LocalApplicationData/toksight/desktop/preferences.json`，普通安装即 `%LOCALAPPDATA%\toksight\desktop\preferences.json`；MSIX 下最终存储映射受 Windows 包身份影响。
-- **隔离验收**：`TOKSIGHT_DESKTOP_STATE_DIR` 可覆盖桌面偏好目录，与临时 `TOKSIGHT_CONFIG_DIR` / `TOKSIGHT_DESKTOP_HOME` 一起使用，避免测试改动个人偏好或读取真实来源。
-- **Agent 来源**：沿用所有现有来源环境变量，只读 Agent 文件。`TOKSIGHT_DESKTOP_HOME` 可为桌面宿主注入隔离 home，主要用于 fixture 验证；它不会覆盖显式 Agent 来源环境变量。
-- **GitHub 凭据**：沿用现有 GitHub 备份模块和凭据优先级，不把 token 放入桌面偏好或服务启动命令行。存储机制见[GitHub 备份](github-backup.md)。
+- **统计数据库与价格**：默认仍用 `~/.config/toksight/`，遵守 `TOKSIGHT_CONFIG_DIR` 和已有 `XDG_CONFIG_HOME` 优先级。桌面、CLI 和 Web 共用已提交快照。
+- **界面偏好**：沿用前端 localStorage，保存在桌面专用 WebView2 用户数据目录；浏览器 Web 偏好与桌面偏好相互独立。不会读取旧 WinUI `preferences.json`。
+- **隔离验收**：`TOKSIGHT_DESKTOP_STATE_DIR` 覆盖 WebView2 状态目录，配合临时 `TOKSIGHT_CONFIG_DIR` / `TOKSIGHT_DESKTOP_HOME` 使用。完整隔离还必须清理继承的 Agent 来源与凭据环境变量。
+- **Agent 来源**：保持现有来源优先级，只读 Agent 文件。`TOKSIGHT_DESKTOP_HOME` 可注入测试 home，不覆盖显式来源环境变量。
+- **GitHub 凭据**：沿用[GitHub 备份](github-backup.md)模块的优先级，不把 token 放进桌面偏好或子进程命令行。
 
-关闭窗口结束其拥有的 sidecar。桌面版不监听固定 4729，也不打开浏览器。`--offline` 禁用价格下载和 Kimi 额度联网刷新，含义遵循已有 API。
+PNG 与 SQLite 导出使用系统保存对话框；取消保存不会报告导出成功。图片内容继续由同一前端导出逻辑生成。外部 HTTP(S) 链接交给系统浏览器，应用窗口保留在本地页面。
 
-## 两种分发产物
+桌面桥接对单次导入、响应和保存限制为 256 MiB，二进制以 base64 经 IPC 传输，内存占用会高于原文件大小。超过此限制的完整数据库导出应使用 CLI `toksight export-db <文件>`。前端中止请求会停止等待并忽略过期结果，不会撤销已提交的刷新、导入或备份操作。
+
+`--offline` 沿用现有 API 含义，禁用价格下载和 Kimi 额度联网刷新；它不是针对显式 GitHub 备份操作的全局网络沙盒。
+
+## 分发与 Microsoft Store
 
 ```powershell
 npm run desktop:package
-# 已完成 publish 时复用当前产物
+# 复用已构建的应用
 npm run desktop:package -- --no-build
+# 使用含 WebView2 离线安装程序的分发配置
+npm run desktop:package -- --no-build --store
 ```
 
-结果位于 `dist/desktop/win-x64/`：
+结果位于 `dist/desktop/win-x64/tauri/`：
 
-| 产物 | 用途与更新 |
+| 产物 | 使用方式 |
 | --- | --- |
-| `toksight-<version>-win-x64.zip` | 解压完整目录直接启动，数据仍在用户目录；目前手动替换完整发布目录更新 |
-| `toksight-<version>-win-x64.msix` | 未签名 MSIX，供后续签名测试或准备 Store 提交；不是双击即可安装的最终发布包 |
-| `toksight-<version>-win-x64-setup.exe` | 检测到 Inno Setup 6.3+ 才生成；当前用户安装，不要求管理员权限；目前通过新安装包手动更新 |
-| `msix/AppxManifest.xml`、`package-info.json` | 可检查的包身份、权限、架构和产物记录 |
+| `toksight-<version>-win-x64.zip` | 解压整个目录，运行 `toksight-desktop.exe`；手动替换整个程序目录更新 |
+| `toksight-<version>-win-x64-setup.exe` | NSIS 安装器，负责安装、快捷方式和卸载入口；目前手动安装新版本更新 |
+| `package-info.json` | 本次打包的版本、架构与产物信息 |
 
-MSIX 默认身份是实验身份。Store 提交前从 Partner Center 取得自己的 Package Identity / Publisher，显式传入：
+当前打包流程不再生成 MSIX。默认 NSIS 配置在需要时下载 WebView2；`--store` 合并离线 WebView2 安装配置，包体更大，可用于后续 Microsoft Store 的 EXE / MSI 应用渠道准备。WebView2 分发选项见 [Tauri Windows Installer](https://v2.tauri.app/distribute/windows-installer/)。
 
-```powershell
-npm run desktop:package -- --no-build `
-  --identity YourPartnerCenter.PackageName `
-  --publisher "CN=YOUR-PUBLISHER-ID" `
-  --publisher-name "Your Publisher Name"
-```
+Store 渠道和官网下载使用同一个应用界面与数据核心。Store 是安装发现和分发入口，不会把应用转换成另一套原生控件。Tauri 的这条 Store 路线是 Partner Center 中的 **EXE or MSI app**，不是 MSIX / UWP；Store 提交还需要离线安装、代码签名、更新方案和静默安装参数，NSIS 使用大写 `/S`。详见 [Tauri Microsoft Store 指南](https://v2.tauri.app/distribute/microsoft-store/)。
 
-`--makeappx C:\path\MakeAppx.exe` 可以覆盖 SDK 自动发现。MSIX 声明 `runFullTrust`，容纳原生 Win32 应用与随包 Node 子进程。它没有被转换成 UWP 沙盒应用，也不会因为 Store 渠道自动变成另一套 UI。当前脚本**不签名、不上传 Store、不发布 GitHub Release**。签名、真实包安装、更新 / 卸载、双渠道切换和 Store 审核仍需后续发布验证；成功执行 MakeAppx 只证明打包格式通过工具检查。
+**`--store` 成功不等于可以直接上架。** 本仓库脚本不签名、不上传 Store、不发布 Release，也未实现自动更新服务。正式分发前仍须验证安装、覆盖更新、卸载、WebView2 缺失时的安装以及 Store 要求。
 
-若本机没有 Inno，ZIP 和 MSIX 仍会生成。安装好 Inno 后可再次执行 `desktop:package -- --no-build`，或直接编译模板：
-
-```powershell
-& 'C:\Program Files (x86)\Inno Setup 6\ISCC.exe' `
-  "/DSourceDir=$((Resolve-Path dist/desktop/win-x64/app).Path)" `
-  "/DOutputDir=$((Resolve-Path dist/desktop/win-x64).Path)" `
-  /DAppVersion=1.3.0 /DAppArch=x64 /DOutputBaseFilename=toksight-1.3.0-win-x64-setup `
-  desktop/installer.iss
-```
-
-安装器只管理程序目录，不删除统计库和桌面偏好。Store / MSIX 安装的更新由对应分发方案处理；官网安装器目前没有自更新服务。
-
-## 验证
+## 验证与 CI
 
 ```powershell
 npm test
-node --test test/desktop-service.test.js test/webserver.test.js
+npm run web:build
+npm run check:package
 npm run desktop:build
 npm run desktop:check
-npm run desktop:check -- --fresh
-npm run desktop:check -- --collapsed --compact
 npm run desktop:package -- --no-build
 ```
 
-sidecar 测试使用临时 home 和离线 fixture，覆盖启动、令牌拒绝、不同宿主隔离、已提交快照 / 刷新、错误协议、EOF / 关闭与有限退出时间。
+sidecar 测试使用临时 home 和离线 fixture，覆盖启动鉴权、不同宿主隔离、快照刷新、错误协议、EOF 与退出时限。Rust 测试检查 IPC 路由与输入边界。前端桥接检查覆盖 Web / 桌面请求和二进制传输。
 
-`desktop:check` 使用独立 fixture 和偏好目录启动已有桌面构建，不使用真实 Agent 数据。它以「浅色 / 宽窗口 / 中文」和「深色 / 窄窗口 / 英文」两组配置遍历四页，生成 **8 张原生 PNG**，检查页面错误、柱条非零宽度以及设置控件没有越出视口，完成后退出。`desktop:check -- --fresh` 则使用没有用量、未初始化价格库的新用户状态，额外验证首次导航进入价格引导，并重复上述页面检查。结果和截图在 `dist/desktop/checks/`，供人工检查实际像素内容。
+`desktop:check` 使用隔离数据及 WebView2 状态启动实际应用，通过开发工具连接检查四页、明暗主题和桌面 API 桥接；`desktop:check -- --fresh` 检查首次价格初始化引导。结果保存于 `dist/desktop/checks/`。自动冒烟不代替文件选择器、键盘 / 鼠标手感以及安装 / 卸载验收。Web 与 npm 包仍走原检查，桌面目录不进入 npm 的 `files` 白名单。
 
-`--collapsed` 和 `--compact` 可组合验证折叠侧栏及紧凑日历的两组渲染。
-
-WinUI 仍需要在实际窗口检查缩放 / 键盘操作、文件选择器及导出图片；自动冒烟不能替代完整交互验收。Web 与 npm 包继续按原检查执行，桌面目录不进入 npm 的 `files` 白名单。
-
-## Windows CI
-
-[`.github/workflows/desktop.yml`](../.github/workflows/desktop.yml) 在 PR 修改 `desktop/**`、`scripts/desktop-*.js` 或自身时运行，也支持 `workflow_dispatch` 手动触发。Windows runner 恢复锁定 NuGet 包，验证离线 sidecar，构建 x64 自包含应用，生成 ZIP / 未签名 MSIX 并上传工件；存在 Inno 时可附带安装器。它不提交 Store，不签名，也不创建正式 Release。
-
-托管 runner 的后台会话没有可依赖的交互桌面，因此 CI 不运行 `desktop:check`。两组原生截图及新用户流程在本机交互会话验收。ARM64 暂不纳入此工作流。
+[Windows 桌面 CI](../.github/workflows/desktop.yml) 恢复锁定的前端、桌面工具和 Rust 依赖，构建 x64 应用并上传 ZIP / 未签名 NSIS 安装器。它不签名，不创建正式 Release，也不提交 Store。需要交互桌面的检查在本机执行；ARM64 设备验收另行进行。

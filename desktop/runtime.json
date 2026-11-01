@@ -11,11 +11,5 @@
       "file": "node-v24.22.2-win-arm64.zip",
       "sha256": "f47968c213105077f64c6510f007632c0ca2574802a0b5067c327c49abe1c468"
     }
-  },
-  "package": {
-    "identity": "Toksight.Desktop.Experimental",
-    "publisher": "CN=Toksight Experimental",
-    "publisherDisplayName": "toksight",
-    "minimumWindowsVersion": "10.0.19041.0"
   }
 }

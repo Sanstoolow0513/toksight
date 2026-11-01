@@ -30,6 +30,8 @@
     "web:dev:ui": "npm run dev --prefix frontend --",
     "web:build": "node scripts/web-build.js",
     "desktop:runtime": "node scripts/desktop-runtime.js",
+    "desktop:ci": "npm ci --prefix desktop",
+    "desktop:dev": "node scripts/desktop-dev.js",
     "desktop:build": "node scripts/desktop-build.js",
     "desktop:run": "node scripts/desktop-run.js",
     "desktop:check": "node scripts/desktop-smoke.js",

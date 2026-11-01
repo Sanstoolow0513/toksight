@@ -1,3 +1,4 @@
+import { apiFetch } from './desktop.js';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 // GET /api/quota is local-only (Codex logs + the last Kimi result kept in
@@ -14,7 +15,7 @@ export function useQuota(revision) {
     controller.current = request;
     if (method === 'POST') setBusy(true);
     try {
-      const response = await fetch(method === 'POST' ? '/api/quota/refresh' : '/api/quota', { method, cache: 'no-store', signal: request.signal });
+      const response = await apiFetch(method === 'POST' ? '/api/quota/refresh' : '/api/quota', { method, cache: 'no-store', signal: request.signal });
       const body = await response.json();
       if (!response.ok) throw new Error(body.error || `HTTP ${response.status}`);
       if (id === sequence.current) { setPayload(body); setError(null); }

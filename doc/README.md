@@ -11,7 +11,7 @@
 | 首次建库、公开价格下载、定时更新、观察历史与提供商绑定 | [本机价格库](local-pricing.md) | `src/pricing.js`、`src/firstparty.js`、`src/pricehistory.js`、`src/localpricedb.js` |
 | Codex / Kimi Code 订阅额度窗口、Kimi 联网查询边界 | [订阅额度](quota.md) | `src/quota.js`、`src/codexquota.js`、`src/kimiquota.js` |
 | HTTP 路由与安全边界、报告页、单日展开 | [Web 报告](web-report.md) | `src/webserver.js`、`frontend/` |
-| WinUI 3 原生实验版、随包 Node、构建与双渠道打包 | [Windows 桌面](desktop.md) | `desktop/`、`scripts/desktop-*.js` |
+| Tauri 桌面、共享 Web UI、随包 Node、安装器与 Store 准备 | [Windows 桌面](desktop.md) | `desktop/`、`scripts/desktop-*.js` |
 | 手动备份到私有 GitHub 仓库、合并恢复、令牌存放与错误 | [GitHub 备份](github-backup.md) | `src/ghsync.js`、`frontend/components/GitHubBackup.jsx` |
 | 本地验证、打包和发布入口 | [开发与发布](development-release.md) | `package.json`、`scripts/`、`.github/workflows/` |
 | 发布 PR、版本号、npm 和 GitHub Release、失败恢复 | [发布指南](release.md) | `scripts/release-*.js`、`.github/workflows/release.yml` |

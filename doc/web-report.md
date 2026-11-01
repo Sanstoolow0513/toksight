@@ -24,7 +24,7 @@
 
 默认回环绑定时，所有已定义 API 路由都拒绝非 localhost 的 Host 头，防止 DNS rebinding；写路由还拒绝跨站 Origin / Fetch 请求。Next 开发代理允许本机不同端口。显式 `--host 0.0.0.0` 意味着主动对局域网开放，不适用回环 Host 限制。新增 API 必须纳入相同检查；不提供修改 Agent 配置的写路由。`/api/sync/*` 另外只接受本机回环地址的请求（不论绑定地址）。
 
-`exp` 的原生桌面宿主使用同一服务，额外传入可选 `desktopToken`：所有路径先检查 `X-Toksight-Desktop-Token`，再执行现有 Host / Origin 和路由检查。令牌通过父子进程 stdin 传递，服务仅绑定随机回环端口，不托管网页。普通 CLI Web 不启用这个额外鉴权层。生命周期与构建见 [Windows 桌面](desktop.md)。
+`exp` 的 Tauri 桌面宿主使用同一服务，额外传入可选 `desktopToken`：所有路径先检查 `X-Toksight-Desktop-Token`，再执行现有 Host / Origin 和路由检查。令牌通过父子进程 stdin 传递，服务仅绑定随机回环端口，不托管网页。桌面页面由 Tauri 内嵌，`frontend/lib/desktop.js` 通过 Rust IPC 转发允许的 API，页面不接触令牌。普通 CLI Web 保持同源 fetch，不启用这个额外鉴权层。生命周期与构建见 [Windows 桌面](desktop.md)。
 
 ## 页面与数据流
 

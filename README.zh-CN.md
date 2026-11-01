@@ -31,27 +31,29 @@ npx toksight
 需要 Node.js >= 22.5。内置 `node:sqlite` 用于读取 ZCode 与 OpenCode 数据库，并保存
 toksight 自己的本地用量数据库；无需安装运行时依赖。
 
-### Windows 原生桌面实验版
+### Windows 桌面实验版
 
-`exp` 分支另有 **C# / WinUI 3 / XAML 原生桌面版**，包含今天、日历、价格和设置四页。
-桌面版复用 Web 的 Geist 字体、Lucide 图标与配色，使用原生分段控件、紧凑数据表、模型卡片和日历缩放动画。
-界面不使用 WebView，随包 Node 进程复用现有本地数据引擎，CLI 与 Web 继续保留。
+`exp` 分支另有 **Tauri 2 桌面版**，直接嵌入现有 Web 界面，保留今天、日历、价格、设置四页的
+字体、样式和动画。Rust 宿主提供 Windows 窗口、原生保存对话框和本地数据访问，随包 Node
+进程复用现有数据引擎。Windows 使用 WebView2 渲染页面；CLI 与 Web 继续保留。
 
 ```powershell
-# 开发构建需要 Windows、Node、.NET 10 SDK 和 Windows SDK
+# 开发构建需要 Windows、Node、Rust MSVC、C++ Build Tools 和 WebView2
+npm run web:ci
+npm run desktop:ci
 npm run desktop:build
 npm run desktop:check
 npm run desktop:run -- --offline
 npm run desktop:package -- --no-build
 ```
 
-目标系统为 Windows 10 2004 及以上，首版以 x64 原型为主，ARM64 尚未实机验证。
-桌面发布目录自带 Node、.NET 和 Windows App SDK 运行时，用户无需另装 Node 或 .NET。
-打包生成 ZIP 与**未签名 MSIX**；检测到 Inno Setup 6.3+ 时另生成安装器 EXE。
-当前尚未完成签名或 Microsoft Store 发布。原生日历图片导出目前包含选区详情，
-与 Web 版的可见月份拼接导出不同。
+首版以 Windows x64 为主要验收环境，ARM64 尚需实机验证。
+桌面发布目录自带 Node，用户无需另装 Node、Rust 或 .NET。
+打包生成便携 ZIP 与**未签名 NSIS 安装器 EXE**，安装器会处理缺失的 WebView2。
+`desktop:package -- --store` 为 Store 的 EXE/MSI 渠道准备离线 WebView2 安装配置；
+签名、更新分发和 Store 提交仍属于后续发布工作，当前并非已上架应用。
 
-统计数据继续使用 `~/.config/toksight`（支持 `TOKSIGHT_CONFIG_DIR`），桌面偏好单独保存。
+统计数据继续使用 `~/.config/toksight`（支持 `TOKSIGHT_CONFIG_DIR`），桌面偏好保存在独立 WebView2 配置目录。
 构建前提、运行时校验、安装和渠道差异见 [Windows 桌面开发与分发](doc/desktop.md)。
 
 ## 使用

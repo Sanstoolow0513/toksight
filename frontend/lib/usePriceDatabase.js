@@ -1,3 +1,4 @@
+import { apiFetch } from './desktop.js';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 export function usePriceDatabase() {
@@ -8,7 +9,7 @@ export function usePriceDatabase() {
     const request = new AbortController(), id = ++sequence.current;
     controller.current = request;
     try {
-      const response = await fetch('/api/prices/status', { cache: 'no-store', signal: request.signal });
+      const response = await apiFetch('/api/prices/status', { cache: 'no-store', signal: request.signal });
       const body = await response.json();
       if (!response.ok) throw new Error(body.error || `HTTP ${response.status}`);
       if (id === sequence.current) { setStatus(body); setError(null); }
@@ -25,7 +26,7 @@ export function usePriceDatabase() {
   const mutate = useCallback(async (url, options) => {
     setBusy(true); setError(null);
     try {
-      const response = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(options) });
+      const response = await apiFetch(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(options) });
       const body = await response.json();
       if (!response.ok) throw new Error(body.error || `HTTP ${response.status}`);
       controller.current?.abort(); ++sequence.current;

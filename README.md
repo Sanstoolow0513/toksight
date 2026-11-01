@@ -32,31 +32,33 @@ npx toksight
 Requires Node.js >= 22.5. The built-in `node:sqlite` reads ZCode and OpenCode databases and
 stores toksight's own local usage database; no runtime package is installed.
 
-### Experimental native Windows app
+### Experimental Windows desktop app
 
-The `exp` branch also contains a **C# / WinUI 3 / XAML desktop app** with Today, Calendar,
-Prices, and Settings. It shares the Web design's Geist fonts, Lucide icons, and palette,
-with native segmented controls, compact data tables, model cards, and calendar zoom animations.
-Its interface is native, with no WebView; it reuses the same local data engine through
-a bundled Node process. CLI and Web remain available.
+The `exp` branch also contains a **Tauri 2 desktop app**. It embeds the existing Web
+interface, preserving the Today, Calendar, Prices, and Settings pages, fonts, styling,
+and animations. A Rust host provides the Windows window, native save dialogs, and
+local data access through the bundled Node engine. Windows uses WebView2 to render
+the interface. CLI and Web remain available.
 
 ```powershell
-# Developer build: Windows, Node, .NET 10 SDK and Windows SDK required
+# Developer build: Windows, Node, Rust MSVC, C++ Build Tools and WebView2
+npm run web:ci
+npm run desktop:ci
 npm run desktop:build
 npm run desktop:check
 npm run desktop:run -- --offline
 npm run desktop:package -- --no-build
 ```
 
-The target is Windows 10 2004+; x64 is the initial prototype target and ARM64 is unverified.
-Published desktop folders bundle Node, .NET and Windows App SDK runtimes, so end users do
-not need to install Node or .NET. Packaging produces a ZIP and an **unsigned MSIX**; an
-installer EXE is additionally built when Inno Setup 6.3+ is installed. This is not yet a
-signed or Microsoft Store release. Native calendar image export currently contains the
-selected-range details, rather than the Web report's visible-month composition.
+Windows x64 is the initial validation target; ARM64 still needs device testing.
+Desktop packages bundle Node, so end users do not need Node, Rust, or .NET.
+Packaging produces a portable ZIP and an **unsigned NSIS setup EXE**; the installer
+handles missing WebView2. `desktop:package -- --store` prepares the offline WebView2
+installer configuration for the Store EXE/MSI route. Signing, update delivery, and
+Store submission remain release work; this is not a published Microsoft Store app.
 
 Usage data continues to use `~/.config/toksight` (`TOKSIGHT_CONFIG_DIR` honored); desktop
-preferences are separate. See [Windows desktop development and distribution](doc/desktop.md)
+preferences live in a separate WebView2 profile. See [Windows desktop development and distribution](doc/desktop.md)
 for build requirements, runtime verification, installation and channel differences.
 
 ## Usage

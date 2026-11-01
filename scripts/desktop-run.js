@@ -7,7 +7,7 @@ try {
   if (opts.help) console.log('Usage: npm run desktop:run -- [--arch x64|arm64] [--offline]');
   else {
     requireWindows();
-    const executable = path.join(output(opts.arch), 'app', 'Toksight.Desktop.exe');
+    const executable = path.join(output(opts.arch), 'tauri', 'app', 'toksight-desktop.exe');
     if (!(await exists(executable))) throw new Error('Desktop build missing. Run npm run desktop:build first.');
     const child = spawn(executable, opts.offline ? ['--offline'] : [], {
       cwd: path.dirname(executable), detached: true, stdio: 'ignore', windowsHide: false,

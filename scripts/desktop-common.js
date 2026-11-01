@@ -9,7 +9,9 @@ import { fileURLToPath } from 'node:url';
 
 export const root = fileURLToPath(new URL('../', import.meta.url));
 export const desktop = path.join(root, 'desktop');
-export const project = path.join(desktop, 'Toksight.Desktop', 'Toksight.Desktop.csproj');
+export const project = path.join(desktop, 'src-tauri');
+export const tauriCli = path.join(desktop, 'node_modules', '@tauri-apps', 'cli', 'tauri.js');
+export const target = (arch) => `${arch === 'arm64' ? 'aarch64' : 'x86_64'}-pc-windows-msvc`;
 export const runtime = JSON.parse(await readFile(path.join(desktop, 'runtime.json'), 'utf8'));
 export const pkg = JSON.parse(await readFile(path.join(root, 'package.json'), 'utf8'));
 
@@ -19,7 +21,7 @@ export function options(argv = process.argv.slice(2), extra = []) {
   for (let i = 0; i < argv.length; i++) {
     const name = argv[i].replace(/^--/, '');
     if (!argv[i].startsWith('--')) throw new Error(`Unexpected argument: ${argv[i]}`);
-    if (['help', 'offline', 'no-build'].includes(name)) result[name] = true;
+    if (['help', 'offline', 'no-build', 'store'].includes(name)) result[name] = true;
     else if (values.has(name) && argv[i + 1] && !argv[i + 1].startsWith('--')) result[name] = argv[++i];
     else throw new Error(`Unknown or incomplete option: --${name}`);
   }
@@ -28,7 +30,7 @@ export function options(argv = process.argv.slice(2), extra = []) {
 }
 
 export function requireWindows() {
-  if (process.platform !== 'win32') throw new Error('WinUI desktop builds require Windows, .NET 10 SDK and the Windows SDK.');
+  if (process.platform !== 'win32') throw new Error('This desktop build script requires Windows, Rust MSVC and the C++ build tools.');
 }
 
 export function output(arch) { return path.join(root, 'dist', 'desktop', `win-${arch}`); }

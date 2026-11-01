@@ -1,6 +1,6 @@
 # toksight frontend
 
-本地用量工作台，采用“素面工作台”设计语言（见 [视觉规范](../design-spec.md)）。使用 Next App Router、React、Geist、Lucide 和原生 CSS（`@layer`），静态导出后由 toksight CLI 提供页面与同源 API。
+本地用量工作台，采用“素面工作台”设计语言（见 [视觉规范](../design-spec.md)）。使用 Next App Router、React、Geist、Lucide 和原生 CSS（`@layer`），静态导出后由 toksight CLI 提供页面与同源 API；`exp` 的 Tauri 桌面应用嵌入相同静态资源，页面与动画共用本目录。
 
 在仓库根目录运行：
 
@@ -22,6 +22,7 @@ npm run check:package
 
 - `components/Workspace.jsx`：顶部工具栏（含 `PageActions` 页面操作）、侧栏与四个页面。
 - `lib/useWorkspace.js`：筛选、时区、刷新、价格状态和导入 / 导出流程。
+- `lib/desktop.js`：Web / 桌面传输边界。`apiFetch` 在浏览器使用同源 fetch，在 Tauri 使用 Rust IPC；`saveFile` 在桌面使用系统保存对话框，取消返回 false；外部链接交给系统浏览器。二进制传输使用 base64，页面不接触本地服务令牌。中止请求可停止前端等待，但不撤销已经提交的服务端操作。
 - `components/ActivityChart.jsx`、`TokenBreakdown.jsx`：本地小时用量与 Token 构成。
 - `components/CalendarView.jsx`：日历、日期详情与趋势。
 - `lib/period.js`、`report.js`：沿用已有测试覆盖的日期与聚合算法。
@@ -29,4 +30,4 @@ npm run check:package
 - `components/ui/`：共享原语 Button / IconButton、Segmented、Panel、Stat、Meter、Badge、Field、Tooltip + `useTip`；页面组件只组合原语。
 - 字体：只用 `geist` 包的 Geist Sans / Mono（`next/font` 本地打包，无远程字体请求），中文回退为无衬线栈；Mono 仅用于模型 ID 与路径。
 
-详情见 [Web 报告](../doc/web-report.md)、[架构](../doc/architecture.md)、[视觉规范](../design-spec.md)。
+桌面开发使用 `npm run desktop:ci`、`npm run desktop:dev`，发行构建使用 `npm run desktop:build`。详情见 [Windows 桌面](../doc/desktop.md)、[Web 报告](../doc/web-report.md)、[架构](../doc/architecture.md)、[视觉规范](../design-spec.md)。

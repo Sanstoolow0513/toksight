@@ -1,10 +1,11 @@
 'use client';
+import { apiFetch } from './desktop.js';
 import { useCallback, useEffect, useState } from 'react';
 
 // GitHub backup settings and actions (/api/sync/*). Status is local-only and
 // loads when Settings opens; the token never comes back from the server.
 async function request(url, init) {
-  const res = await fetch(url, { cache: 'no-store', ...init });
+  const res = await apiFetch(url, { cache: 'no-store', ...init });
   const body = await res.json().catch(() => ({}));
   if (!res.ok) throw Object.assign(new Error(body.error || `HTTP ${res.status}`), { code: body.code, retryAt: body.retryAt });
   return body;
