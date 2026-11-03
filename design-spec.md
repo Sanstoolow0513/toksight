@@ -139,6 +139,7 @@ toksight 是每天打开查看的本地数据工具。界面首先要保证信�
 | `--dur-3` | 360ms | 日历缩放 FLIP、时段柱升起、计量条 |
 | `--ease` | `cubic-bezier(.2, .7, .1, 1)` | 全站统一缓动 |
 
+- 页面内的局部滚动区（`.cal-scroller`、`.dcard-body`、`.price-scroll`、`.sidebar`、`.toast-body ul`）统一 `scrollbar-width: thin; scrollbar-color: var(--line-strong) transparent`，避免 Windows / WebView2 显示带箭头的粗原生滚动条；文档级滚动条保持系统默认。
 - `prefers-reduced-motion: reduce` 时（`utilities.css`），所有动画和过渡关闭，`scroll-behavior: auto`。日历缩放改为直接切换，程序触发的滚动改为瞬时。
 - 导出图片期间（`.is-exporting`）也关闭全部动画和过渡。
 - 动画只用 CSS 和 Web Animations API（`el.animate`），不引入动画库。
@@ -236,7 +237,7 @@ toksight 是每天打开查看的本地数据工具。界面首先要保证信�
    - 右侧 `.cal-tools`（`gap --sp-1`，不进入导出），依次为：`ZoomOut` 缩小 → 档位 → `ZoomIn` 放大 → 竖线 → `CalendarDays` 回到今天。三个按钮都是 md IconButton。已经到头的一侧禁用。
    - 档位 `.zoom-level`：文字“大 / 紧凑”（`--fs-sm --ink-2`，最小宽 40px，居中，`aria-live="polite"`），下面两个 4×4 圆点，间距 3px，未选 `--line-strong`，当前 `--signal`。
 2. **星期栏** `.dowbar`（高 30px，与网格同模板，`--fs-xs --ink-3`）：“一 … 日”加“周”；“周”列为 `--ink-2 --fw-medium`。紧凑档隐藏。
-3. **滚动列表** `.cal-scroller`：`overflow-y: auto; overscroll-behavior: contain; padding 0 --pad-x --sp-4`。月份块从首条记录所在月一直排到今天所在月，月块间距 `--sp-2`。打开时滚到列表末尾（当前月）；如果最后一个选中日不在本月，就滚到该日。
+3. **滚动列表** `.cal-scroller`：`overflow-y: auto; overscroll-behavior: contain; padding 0 --pad-x --sp-4`，细滚动条（见下）。月份块从首条记录所在月一直排到今天所在月，月块间距 `--sp-2`。打开时滚到列表末尾（当前月）；如果最后一个选中日不在本月，就滚到该日。
 4. **底部** `.cal-foot`（最小高 36px，顶边 `--line`，`--fs-xs --ink-3`）：左侧是操作提示 `calHint`（Mac 上 `{mod}` 为 ⌘，其他平台为 Ctrl，不进入导出），右侧是热度图例“少 ▢▢▢▢▢ 多”（五个 14px `--r-xs` 方块，对应 `--heat-0…4`）。
 
 ### 5.3 月份块
@@ -342,7 +343,7 @@ toksight 是每天打开查看的本地数据工具。界面首先要保证信�
 
 ### 6.1 结构
 
-- 内容区 `.prices-content`：`padding --sp-6 --sp-6 0`，`gap --sp-4`，固定高度。上面是**不随内容滚动的头部面板**，下面是**分区滚动区**（`.price-scroll`：`overflow-y: auto`，分区间距 `--sp-6`，`padding-bottom --sp-6`）。
+- 内容区 `.prices-content`：`padding --sp-6 --sp-6 0`，`gap --sp-4`，固定高度。上面是**不随内容滚动的头部面板**，下面是**分区滚动区**（`.price-scroll`：`overflow-y: auto`，细滚动条，分区间距 `--sp-6`，`padding-bottom --sp-6`）。
 - ≤760px：整页滚动，分区头吸附在顶栏和横向导航下方。
 
 ### 6.2 头部面板 `.price-head.plate`（`padding --sp-3 --pad-x`，两行，行距 `--sp-3`）

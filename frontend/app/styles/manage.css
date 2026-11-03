@@ -37,7 +37,7 @@
   .chip[aria-pressed='true'] { background: var(--ink); color: var(--bg); box-shadow: none; }
   .chip[aria-pressed='true'] .chip-count { color: var(--bg); opacity: .7; }
 
-  .price-scroll { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: var(--sp-6); padding-bottom: var(--sp-6); scrollbar-width: thin; }
+  .price-scroll { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: var(--sp-6); padding-bottom: var(--sp-6); scrollbar-width: thin; scrollbar-color: var(--line-strong) transparent; }
   .price-section { display: flex; flex-direction: column; gap: 10px; }
   .price-section-head { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; gap: 10px; padding: var(--sp-1) 0 6px; background: var(--bg); }
   .price-section-head h3 { font: var(--fw-strong) var(--fs-lg) var(--font-sans); }

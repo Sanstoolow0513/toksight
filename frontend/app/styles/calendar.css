@@ -20,7 +20,7 @@
   .dowbar { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)) minmax(0, 1fr); gap: var(--cal-gap); height: 30px; align-items: center; padding: 0 var(--pad-x); font-size: var(--fs-xs); color: var(--ink-3); }
   .dowbar span { padding-left: 6px; }
   .dowbar .wkh { margin-left: var(--cal-gap); padding-left: 7px; color: var(--ink-2); font-weight: var(--fw-medium); }
-  .cal-scroller { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 0 var(--pad-x) var(--sp-4); touch-action: pan-y; }
+  .cal-scroller { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 0 var(--pad-x) var(--sp-4); touch-action: pan-y; scrollbar-width: thin; scrollbar-color: var(--line-strong) transparent; }
   .cal-scroller.is-dragging { cursor: cell; user-select: none; }
   .months { display: grid; row-gap: var(--sp-2); }
   .mhead { position: sticky; top: 0; z-index: 3; display: flex; align-items: baseline; justify-content: space-between; gap: var(--sp-2); padding: 10px 0 8px; background: var(--surface); }
@@ -114,7 +114,7 @@
   .hbars i.is-tiny { height: 2px; background: var(--empty); }
   .haxis { display: flex; justify-content: space-between; margin-top: var(--sp-1); font-size: var(--fs-xs); color: var(--ink-3); }
   .dcard.split { flex: 1 1 0; }
-  .dcard-body { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; margin: var(--sp-1) calc(-1 * var(--pad-x)) 0; padding: 0 var(--pad-x); }
+  .dcard-body { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; margin: var(--sp-1) calc(-1 * var(--pad-x)) 0; padding: 0 var(--pad-x); scrollbar-width: thin; scrollbar-color: var(--line-strong) transparent; }
   /* Keyboard-scrollable region: the ring stays inside the card edge. */
   .dcard-body:focus-visible { outline-offset: var(--focus-offset-inset); border-radius: var(--r-sm); }
   .dcard-body .session-list { padding: 0; }
