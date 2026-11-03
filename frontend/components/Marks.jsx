@@ -47,14 +47,23 @@ export function CacheRing({ rate }) {
   );
 }
 
+// A `*` whose explanation opens in the host's in-app data tooltip: the host
+// (see CalendarDetail) tracks `data-hint` on hover and keyboard focus. The
+// mark is focusable and carries the same text as its accessible name.
+export function HintMark({ hint, text }) {
+  return <sup className="partial-mark is-hint" tabIndex={0} role="img" aria-label={text} data-hint={hint}>*</sup>;
+}
+
 // Unpriced rows say so instead of showing $0; a partly priced cost is
-// marked with an asterisk that the card legend explains.
-export function CostValue({ row, tx }) {
+// marked with an asterisk that the card legend explains. With `hint`, the
+// mark uses HintMark instead of the native title.
+export function CostValue({ row, tx, hint = false }) {
   if (row.pricing === 'none') return <span className="cell-value is-muted is-unpriced">{tx('rowUnpriced')}</span>;
   return (
     <span className="cell-value">
       {fmtCost(row.costUsd)}
-      {row.pricing === 'partial' ? <sup className="partial-mark" title={tx('rowPartial')}>*</sup> : null}
+      {row.pricing === 'partial' ? hint ? <HintMark hint="partial" text={tx('rowPartial')} />
+        : <sup className="partial-mark" title={tx('rowPartial')}>*</sup> : null}
     </span>
   );
 }

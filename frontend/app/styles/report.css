@@ -101,6 +101,7 @@
   .cell-share { display: inline; margin-left: var(--sp-2); font-size: var(--fs-xs); color: var(--ink-3); }
   .cell-muted, .is-muted { color: var(--ink-3); }
   .partial-mark { color: var(--signal-ink); }
+  .partial-mark.is-hint { cursor: help; border-radius: var(--r-xs); }
   .parts-bar { display: flex; gap: 1px; height: 6px; width: 100%; border-radius: 2px; overflow: hidden; }
   .parts-bar > i { width: auto; height: 100%; min-width: 1px; border-radius: 0; }
   .cache-cell { display: inline-flex; align-items: center; gap: var(--sp-2); white-space: nowrap; }

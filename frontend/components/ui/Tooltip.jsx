@@ -8,19 +8,26 @@ const OFFSET = 14;
 
 // Rendered into <body>, outside the exported report, and flipped to stay
 // inside the viewport.
-export default function Tooltip({ x, y, children }) {
+export default function Tooltip({ x, y, className, children }) {
   const ref = useRef(null);
   const [pos, setPos] = useState({ left: x + OFFSET, top: y + OFFSET });
   useLayoutEffect(() => {
     const el = ref.current;
     if (!el) return;
+    // Measure at the viewport origin: near the right edge a fixed box would
+    // otherwise shrink-wrap to the space left and report a squeezed width.
+    el.style.left = '0px'; el.style.top = '0px';
     const { width, height } = el.getBoundingClientRect();
     const left = x + OFFSET + width > window.innerWidth - 8 ? x - OFFSET - width : x + OFFSET;
     const top = y + OFFSET + height > window.innerHeight - 8 ? y - OFFSET - height : y + OFFSET;
-    setPos({ left: Math.max(8, left), top: Math.max(8, top) });
+    const next = { left: Math.max(8, left), top: Math.max(8, top) };
+    // Restore inline position directly too: React skips the style update
+    // when the computed position equals the current state.
+    el.style.left = `${next.left}px`; el.style.top = `${next.top}px`;
+    setPos(next);
   }, [x, y]);
   return createPortal(
-    <div ref={ref} className="tooltip" role="tooltip" style={pos}>
+    <div ref={ref} className={cx('tooltip', className)} role="tooltip" style={pos}>
       {children}
     </div>,
     document.body,

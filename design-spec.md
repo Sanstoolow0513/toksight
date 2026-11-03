@@ -113,6 +113,7 @@ toksight 是每天打开查看的本地数据工具。界面首先要保证信�
 | `--cal-gap` | 6px | 大档格间距，也是周单元的左外边距 |
 | `--cal-gap-compact` | 3px | 紧凑档格间距 |
 | `--hourly-h` | 52px | 详情栏时段条高 |
+| `--hint-tip-w` | 260px | 详情栏 `*` 说明提示的最大宽度（可换行） |
 
 **价格尺寸令牌**
 
@@ -309,8 +310,9 @@ toksight 是每天打开查看的本地数据工具。界面首先要保证信�
   - 单日：标题 `--fs-xl --fw-strong`，例如“10月28日 周三”。旁边 `--fs-xs --ink-3` 写“今天 · 时区”（不是今天时只写时区）。右侧是前一天 / 后一天（sm IconButton，`dayPrev` / `dayNext`，范围到列表首日和今天）。
   - 多选：标题“已选 N 天”；选区正好是一整周时改为“2026 年 W42”（`calWeekHeading`）。旁边写“10月12日 – 10月18日 · 活跃 N 天”，不连续时在结束日期后加“ · 不连续”。右侧文字按钮“清除选择”，只保留最后一天。
   - 标题 `aria-live="polite"`。
-- 第 2 行：五项数字 `.dstats`（`repeat(5, 1fr)` 等宽列，全部左对齐），依次为 Tokens、参考费用、缓存命中、请求、中位 TPS。数值 `--fs-xl --fw-strong --track-tight`，标签在下（`--fs-xs --ink-3`）。部分未定价时费用后加 `*`。`.dhead` 是 inline-size 容器：宽度 ≤420px 时改为 `repeat(3, 1fr)`（行距 `--sp-2`），≤240px 时 `repeat(2, 1fr)`。
+- 第 2 行：五项数字 `.dstats`（`repeat(5, 1fr)` 等宽列，全部左对齐），依次为 Tokens、参考费用、缓存命中、请求、中位 TPS（英文费用标签用短名 `kpiCostShort`“Est. cost”）。数值 `--fs-xl --fw-strong --track-tight`，标签在下（`--fs-xs --ink-3`）。部分未定价时费用后加 `*`。`.dhead` 是 inline-size 容器：宽度 ≤420px 时改为 `repeat(3, 1fr)`（行距 `--sp-2`），≤240px 时 `repeat(2, 1fr)`。
   - 中位 TPS 是选区内逐请求输出速度的中位数（`tps.overall.median`，不用平均数）；无耗时数据显示“—”，不显示 0。悬停提示 `tpsHint`。选区含任何推算耗时（Claude Code / Codex，含混合）时数值右上角加与部分未定价相同的 `*`（`.partial-mark`），提示 `tpsInferred`“按相邻消息时间推算，含思考和排队时间”。
+  - 详情栏里的 `*`（中位 TPS、参考费用、拆分行的费用与中位 TPS）都是 `HintMark`：可 Tab 聚焦（`role="img"`，`aria-label` 为说明文字），说明用与日历相同的反色数据提示 `.tooltip.is-hint` 显示（最大宽 `--hint-tip-w` 260px，可换行）。悬停时跟随指针，键盘聚焦时锚定到 `*`；靠近视口右 / 下边缘时翻到左 / 上并夹在视口内；滚动、滚轮、缩放窗口、Esc 和失焦时隐藏。其他页面（今天的 Agent 表）的费用 `*` 仍用原生 `title`。
 - 第 3 行 `.dsub`（`--fs-xs --ink-3`，单行省略，与上一行间距收紧 `--sp-1`）：
   - 单日：“输出 {output} · 每百万 tokens {rate} · {n} 个会话”
   - 多选：“活跃日均 {tokens} · {cost} · {n} 个会话”

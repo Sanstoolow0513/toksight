@@ -141,6 +141,8 @@
   .tip-note, .tip-muted { margin-top: var(--sp-2); font-size: var(--fs-xs); opacity: .85; overflow-wrap: anywhere; }
   .tip-note.is-mono { font-family: var(--font-mono); }
   .tooltip .swatch { box-shadow: 0 0 0 1px currentColor; }
+  /* Short explanations for a `*` mark: narrower, wrapping text. */
+  .tooltip.is-hint { max-width: min(var(--hint-tip-w), calc(100vw - 20px)); line-height: 1.45; overflow-wrap: anywhere; }
   /* Control tooltip: raised label right-aligned under its button. */
   .btn-tip {
     position: fixed; z-index: 110; pointer-events: none; white-space: nowrap;

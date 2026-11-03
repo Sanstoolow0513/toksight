@@ -132,6 +132,7 @@
     --cal-gap-compact: 3px;
     --r-xs: 3px;
     --hourly-h: 52px;
+    --hint-tip-w: 260px;
 
     /* Prices */
     --price-card-min: 330px;
