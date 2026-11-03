@@ -1,0 +1,1 @@
+{"type": "model_io", "sessionId": "zs", "startedAt": "2026-10-01T10:00:00.000Z", "completedAt": "2026-10-01T10:00:02.500Z", "model": {"modelId": "GLM-5.3"}, "response": {"usage": {"inputTokens": 100, "outputTokens": 250, "cacheReadTokens": 0, "cacheWriteTokens": 0}}}

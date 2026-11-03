@@ -9,6 +9,7 @@ import { decodePriceRecord } from './pricecatalog.js';
 import { validContextTiers } from './contextpricing.js';
 import { historyPriceKey, priceSignature, validOfficialPrice } from './pricehistory.js';
 import { PRICE_SOURCES, priceEnabled } from './priceselection.js';
+import { validDurationFields } from './tps.js';
 
 export const MAX_DATABASE_BYTES = 256 * 1024 * 1024;
 const HEADER = Buffer.from('SQLite format 3\0');
@@ -29,9 +30,10 @@ function price(value) {
 }
 function record(row) {
   const entry = JSON.parse(row.data_json);
-  const allowedFields = [...fields, 'providerId', 'pricingProvider', 'providerEndpoint', 'cacheWrite1hTokens'];
+  const allowedFields = [...fields, 'providerId', 'pricingProvider', 'providerEndpoint', 'cacheWrite1hTokens', 'durationMs', 'durationSource'];
   for (const key of ['providerId', 'pricingProvider', 'providerEndpoint']) if (Object.hasOwn(entry, key)) check(nullableText(entry[key]), 'invalid provider');
   if (Object.hasOwn(entry, 'cacheWrite1hTokens')) check(Number.isSafeInteger(entry.cacheWrite1hTokens) && entry.cacheWrite1hTokens >= 0 && entry.cacheWrite1hTokens <= entry.cacheWriteTokens, 'invalid cache duration token count');
+  check(object(entry) && validDurationFields(entry), 'invalid request duration');
   check(object(entry) && fields.every((field) => Object.hasOwn(entry, field)) &&
     Object.keys(entry).every((field) => allowedFields.includes(field)), 'invalid usage record');
   check(CLIENTS.has(entry.client), 'invalid agent');

@@ -2,6 +2,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { walkFiles, readJsonl, pathExists } from '../fsutils.js';
 import { openSqliteReadOnly } from './sqlite.js';
+import { durationFields } from '../tps.js';
 
 export const id = 'zcode';
 export const label = 'ZCode';
@@ -19,6 +20,8 @@ export function sourceRoots({ env = process.env, home = os.homedir() } = {}) {
 // input_tokens counts the whole prompt with cache reads included (rollout
 // totalTokens = input + output + cacheWrite), so cache reads are subtracted
 // to emit fresh input like every other client.
+// Both sources record request start and completion, so durations are
+// measured (durationSource 'measured').
 export async function collect({ env, home, roots } = {}) {
   const scanRoots = roots ?? sourceRoots({ env, home });
   const base = scanRoots[0];
@@ -83,6 +86,7 @@ async function collectFromDb(base, warnings) {
         costUsd: null,
         directory: r.session_directory ?? null,
         title: r.session_title ?? null,
+        ...durationFields(r.started_at, r.completed_at, 'measured'),
       });
     }
     return entries;
@@ -128,6 +132,7 @@ async function collectFromRollout(base, warnings) {
         costUsd: null,
         directory: null,
         title: null,
+        ...durationFields(Date.parse(o.startedAt), Date.parse(o.completedAt), 'measured'),
       });
     });
   }

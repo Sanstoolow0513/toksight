@@ -1,5 +1,7 @@
 'use client';
 
+import { saveFile } from './desktop.js';
+
 // Capture the visible Today or Calendar report, including day details.
 // Navigation and actions stay outside this node; inline controls are filtered.
 // `.is-exporting` paints an opaque page background under the panels.
@@ -31,10 +33,5 @@ export async function exportReportImage(node, filename) {
     node.classList.remove('is-exporting');
     for (const child of hidden) child.classList.remove('no-export');
   }
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = filename;
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
+  return saveFile(filename, url);
 }

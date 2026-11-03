@@ -1,4 +1,5 @@
 'use client';
+import { apiFetch } from './desktop.js';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { periodBounds } from './period.js';
@@ -29,7 +30,7 @@ function useRange({ since, until, days = null, agent = '', timezone }, tag, revi
       if (days) query.set('days', days);
       if (agent) query.set('client', agent);
       if (timezone) query.set('timezone', timezone);
-      const res = await fetch(`/api/data?${query}`, { cache: 'no-store', signal: controller.signal });
+      const res = await apiFetch(`/api/data?${query}`, { cache: 'no-store', signal: controller.signal });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body.error || `HTTP ${res.status}`);
       if (!controller.signal.aborted && current === sequence.current) setState({ data: body, tag: requested, error: null, loading: false });

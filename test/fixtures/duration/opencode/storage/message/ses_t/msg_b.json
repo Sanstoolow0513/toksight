@@ -1,0 +1,1 @@
+{"id": "msg_b", "sessionID": "ses_t", "role": "assistant", "modelID": "glm-4.6", "time": {"created": 1790000005000, "completed": 1790000005000}, "tokens": {"input": 10, "output": 20, "cache": {"read": 0, "write": 0}}}

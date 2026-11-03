@@ -47,7 +47,7 @@ toksight 是每天打开查看的本地数据工具。界面首先要保证信�
 | `--fs-sm` | 14px | 表格、按钮、导航、分段控件、chip、详情卡标题 |
 | `--fs-base` | 15px | 正文、面板标题、月标题、大档日格 Tokens、价格数值 |
 | `--fs-lg` | 16px | 价格分区标题 |
-| `--fs-xl` | 18px | 详情栏标题与四项数字、对话框标题、“只看用过”视图的价格数值 |
+| `--fs-xl` | 18px | 详情栏标题与五项数字、对话框标题、“只看用过”视图的价格数值 |
 | `--fs-2xl` | 22px | Token 构成合计、窄屏指标 |
 | `--fs-3xl` | 26px | 指标（`.readout-value`） |
 | `--fs-4xl` | 30px | 概览 KPI（`.readout--lg`） |
@@ -113,6 +113,7 @@ toksight 是每天打开查看的本地数据工具。界面首先要保证信�
 | `--cal-gap` | 6px | 大档格间距，也是周单元的左外边距 |
 | `--cal-gap-compact` | 3px | 紧凑档格间距 |
 | `--hourly-h` | 52px | 详情栏时段条高 |
+| `--hint-tip-w` | 260px | 详情栏 `*` 说明提示的最大宽度（可换行） |
 
 **价格尺寸令牌**
 
@@ -138,6 +139,7 @@ toksight 是每天打开查看的本地数据工具。界面首先要保证信�
 | `--dur-3` | 360ms | 日历缩放 FLIP、时段柱升起、计量条 |
 | `--ease` | `cubic-bezier(.2, .7, .1, 1)` | 全站统一缓动 |
 
+- 文档级滚动（`html`）与页面内的局部滚动区（`.cal-scroller`、`.dcard-body`、`.price-scroll`、`.sidebar`、`.toast-body ul`）统一 `scrollbar-width: thin; scrollbar-color: var(--line-strong) transparent`，避免 Windows / WebView2 显示带箭头的粗原生滚动条，切换页面时滚动条粗细也保持一致。
 - `prefers-reduced-motion: reduce` 时（`utilities.css`），所有动画和过渡关闭，`scroll-behavior: auto`。日历缩放改为直接切换，程序触发的滚动改为瞬时。
 - 导出图片期间（`.is-exporting`）也关闭全部动画和过渡。
 - 动画只用 CSS 和 Web Animations API（`el.animate`），不引入动画库。
@@ -226,7 +228,7 @@ toksight 是每天打开查看的本地数据工具。界面首先要保证信�
 
 - 内容区 `padding --sp-6`，两栏 grid：`minmax(var(--cal-col-min), var(--cal-col)) minmax(0, 1fr)`，`gap --gutter`。两栏都占满视口剩余高度，页面本身不滚动，只有日历列表和拆分卡内部滚动。
 - ≤1200px：上下堆叠。日历栏高 70vh 在上，详情栏在下，拆分卡不再内部滚动。
-- ≤760px：内容区 `padding --sp-3`。隐藏日历头说明和底部提示；大档日格高 64px，只显示日期和 `--fs-xs` 的 Tokens，隐藏费用；紧凑档改为每行 2 个月；详情四项数字改为 2 列。
+- ≤760px：内容区 `padding --sp-3`。隐藏日历头说明和底部提示；大档日格高 64px，只显示日期和 `--fs-xs` 的 Tokens，隐藏费用；紧凑档改为每行 2 个月；详情数字的列数由 `.dhead` 容器宽度决定（见 §5.8）。
 
 ### 5.2 日历栏（`.calcol.plate`）
 
@@ -235,7 +237,7 @@ toksight 是每天打开查看的本地数据工具。界面首先要保证信�
    - 右侧 `.cal-tools`（`gap --sp-1`，不进入导出），依次为：`ZoomOut` 缩小 → 档位 → `ZoomIn` 放大 → 竖线 → `CalendarDays` 回到今天。三个按钮都是 md IconButton。已经到头的一侧禁用。
    - 档位 `.zoom-level`：文字“大 / 紧凑”（`--fs-sm --ink-2`，最小宽 40px，居中，`aria-live="polite"`），下面两个 4×4 圆点，间距 3px，未选 `--line-strong`，当前 `--signal`。
 2. **星期栏** `.dowbar`（高 30px，与网格同模板，`--fs-xs --ink-3`）：“一 … 日”加“周”；“周”列为 `--ink-2 --fw-medium`。紧凑档隐藏。
-3. **滚动列表** `.cal-scroller`：`overflow-y: auto; overscroll-behavior: contain; padding 0 --pad-x --sp-4`。月份块从首条记录所在月一直排到今天所在月，月块间距 `--sp-2`。打开时滚到列表末尾（当前月）；如果最后一个选中日不在本月，就滚到该日。
+3. **滚动列表** `.cal-scroller`：`overflow-y: auto; overscroll-behavior: contain; padding 0 --pad-x --sp-4`，细滚动条（见下）。月份块从首条记录所在月一直排到今天所在月，月块间距 `--sp-2`。打开时滚到列表末尾（当前月）；如果最后一个选中日不在本月，就滚到该日。
 4. **底部** `.cal-foot`（最小高 36px，顶边 `--line`，`--fs-xs --ink-3`）：左侧是操作提示 `calHint`（Mac 上 `{mod}` 为 ⌘，其他平台为 Ctrl，不进入导出），右侧是热度图例“少 ▢▢▢▢▢ 多”（五个 14px `--r-xs` 方块，对应 `--heat-0…4`）。
 
 ### 5.3 月份块
@@ -309,7 +311,9 @@ toksight 是每天打开查看的本地数据工具。界面首先要保证信�
   - 单日：标题 `--fs-xl --fw-strong`，例如“10月28日 周三”。旁边 `--fs-xs --ink-3` 写“今天 · 时区”（不是今天时只写时区）。右侧是前一天 / 后一天（sm IconButton，`dayPrev` / `dayNext`，范围到列表首日和今天）。
   - 多选：标题“已选 N 天”；选区正好是一整周时改为“2026 年 W42”（`calWeekHeading`）。旁边写“10月12日 – 10月18日 · 活跃 N 天”，不连续时在结束日期后加“ · 不连续”。右侧文字按钮“清除选择”，只保留最后一天。
   - 标题 `aria-live="polite"`。
-- 第 2 行：四项数字 `.dstats`（`repeat(4, auto)`，`space-between`），依次为 Tokens、参考费用、缓存命中、请求。数值 `--fs-xl --fw-strong --track-tight`，标签在下（`--fs-xs --ink-3`）。部分未定价时费用后加 `*`。
+- 第 2 行：五项数字 `.dstats`（`repeat(5, 1fr)` 等宽列，全部左对齐），依次为 Tokens、参考费用、缓存命中、请求、中位 TPS（英文费用标签用短名 `kpiCostShort`“Est. cost”）。数值 `--fs-xl --fw-strong --track-tight`，标签在下（`--fs-xs --ink-3`）。部分未定价时费用后加 `*`。`.dhead` 是 inline-size 容器：宽度 ≤420px 时改为 `repeat(3, 1fr)`（行距 `--sp-2`），≤240px 时 `repeat(2, 1fr)`。
+  - 中位 TPS 是选区内逐请求输出速度的中位数（`tps.overall.median`，不用平均数）；无耗时数据显示“—”，不显示 0。悬停提示 `tpsHint`。选区含任何推算耗时（Claude Code / Codex，含混合）时数值右上角加与部分未定价相同的 `*`（`.partial-mark`），提示 `tpsInferred`“按相邻消息时间推算，含思考和排队时间”。
+  - 详情栏里的 `*`（中位 TPS、参考费用、拆分行的费用与中位 TPS）都是 `HintMark`：可 Tab 聚焦（`role="img"`，`aria-label` 为说明文字），说明用与日历相同的反色数据提示 `.tooltip.is-hint` 显示（最大宽 `--hint-tip-w` 260px，可换行）。悬停时跟随指针，键盘聚焦时锚定到 `*`；靠近视口右 / 下边缘时翻到左 / 上并夹在视口内；滚动、滚轮、缩放窗口、Esc 和失焦时隐藏。其他页面（今天的 Agent 表）的费用 `*` 仍用原生 `title`。
 - 第 3 行 `.dsub`（`--fs-xs --ink-3`，单行省略，与上一行间距收紧 `--sp-1`）：
   - 单日：“输出 {output} · 每百万 tokens {rate} · {n} 个会话”
   - 多选：“活跃日均 {tokens} · {cost} · {n} 个会话”
@@ -326,7 +330,7 @@ toksight 是每天打开查看的本地数据工具。界面首先要保证信�
 - 每行 `.srow`（`padding 8px 0 7px`，`gap 5px`，底边 `--line`）分三层：
   1. 主行 `--fs-sm`：名称（Agent 前有 8px 色块；模型名用 Geist Mono，超长省略）、Tokens（`--fw-medium`）、费用（`CostValue`，含“部分未定价”表现）、占比（1 位小数，`--ink-3`）。
   2. 占比条：高 6px，`--r-pill`，底色 `--empty`；Agent 用 `--agent`，模型用 `--chart-ink`。
-  3. 辅助行 `--fs-xs --ink-3`：Agent 为“缓存读 {pct} · {n} 次请求”，模型为“缓存读 {pct} · 输出 {output} · 每百万 {rate}”。
+  3. 辅助行 `--fs-xs --ink-3`：Agent 为“缓存读 {pct} · {n} 次请求”，模型为“缓存读 {pct} · 输出 {output} · 每百万 {rate} · 中位 TPS {tps}”（`tps.models[模型名]`，无数据为“—”；该模型中位数用到推算耗时时加 `*`，提示同上）。
 - 按 Tokens 从大到小排列。同名模型跨 Agent 合并（`mergedModelRows`），悬停名称时列出“使用的 Agent：…”。
 
 ### 5.9 导出
@@ -339,7 +343,7 @@ toksight 是每天打开查看的本地数据工具。界面首先要保证信�
 
 ### 6.1 结构
 
-- 内容区 `.prices-content`：`padding --sp-6 --sp-6 0`，`gap --sp-4`，固定高度。上面是**不随内容滚动的头部面板**，下面是**分区滚动区**（`.price-scroll`：`overflow-y: auto`，分区间距 `--sp-6`，`padding-bottom --sp-6`）。
+- 内容区 `.prices-content`：`padding --sp-6 --sp-6 0`，`gap --sp-4`，固定高度。上面是**不随内容滚动的头部面板**，下面是**分区滚动区**（`.price-scroll`：`overflow-y: auto`，细滚动条，分区间距 `--sp-6`，`padding-bottom --sp-6`）。
 - ≤760px：整页滚动，分区头吸附在顶栏和横向导航下方。
 
 ### 6.2 头部面板 `.price-head.plate`（`padding --sp-3 --pad-x`，两行，行距 `--sp-3`）

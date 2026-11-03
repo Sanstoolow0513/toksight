@@ -5,17 +5,28 @@
 
 import { useMemo, useState } from 'react';
 import { ArrowUpRight, ChartColumn, ChartPie, ChevronLeft, ChevronRight, RefreshCw, TriangleAlert } from 'lucide-react';
-import { Button, IconButton, cx } from '@/components/ui';
-import { CostValue, agentStyle } from '@/components/Marks';
+import { Button, IconButton, Tooltip, cx, useTip } from '@/components/ui';
+import { CostValue, HintMark, agentStyle } from '@/components/Marks';
 import { SessionRow } from '@/components/DayDetail';
 import { coded } from '@/components/Coded';
 import { agentRows, cacheHitRate, costPerMillion, hourlyBars, mergedModelRows, pricing, sessionRows, sumDays } from '@/lib/report';
 import { isoWeek, shiftDay, weekKeys } from '@/lib/period';
-import { fmtCost, fmtInt, fmtPct, fmtTokens, fmtTokensShort } from '@/lib/format';
+import { fmtCost, fmtInt, fmtPct, fmtTokens, fmtTokensShort, fmtTps } from '@/lib/format';
 import { dayLabel, weekdayLabel } from '@/lib/i18n';
 
 const icon = { size: 15, strokeWidth: 2, 'aria-hidden': true };
 const hourText = (hour) => `${String(hour).padStart(2, '0')}:00`;
+
+// Median per-request TPS. Medians that use any inferred (adjacent-message)
+// timing carry the same top-right `*` as a partly priced cost; both marks
+// explain themselves in the pane's data tooltip (HINTS below).
+const HINTS = { tps: 'tpsInferred', partial: 'rowPartial' };
+function TpsValueMark({ tps, tx }) {
+  return tps?.median != null && tps.inferred ? <HintMark hint="tps" text={tx('tpsInferred')} /> : null;
+}
+function TpsValue({ tps, tx }) {
+  return <>{fmtTps(tps?.median)}<TpsValueMark tps={tps} tx={tx} /></>;
+}
 
 function Header({ selected, days, today, start, timezone, onSelect, locale, tx }) {
   const single = selected.length === 1;
@@ -49,9 +60,10 @@ function Stats({ data, selected, days, tx }) {
   const unpriced = totals.requests > 0 && !totals.pricedRequests;
   const items = [
     [tx('kpiTokens'), fmtTokens(totals.totalTokens)],
-    [tx('kpiCost'), unpriced ? tx('rowUnpriced') : <>{fmtCost(totals.costUsd)}{pricing(totals) === 'partial' ? <sup className="partial-mark" title={tx('rowPartial')}>*</sup> : null}</>],
+    [tx('kpiCostShort'), unpriced ? tx('rowUnpriced') : <>{fmtCost(totals.costUsd)}{pricing(totals) === 'partial' ? <HintMark hint="partial" text={tx('rowPartial')} /> : null}</>],
     [tx('kpiCache'), fmtPct(cacheHitRate(totals))],
     [tx('kpiRequests'), fmtInt(totals.requests)],
+    [tx('kpiTps'), <TpsValue tps={data.tps?.overall} tx={tx} />, tx('tpsHint')],
   ];
   let sub;
   if (selected.length === 1) {
@@ -62,7 +74,7 @@ function Stats({ data, selected, days, tx }) {
     sub = tx('calRangeSub', { tokens: fmtTokens(totals.totalTokens / active), cost: fmtCost((totals.costUsd || 0) / active), n: fmtInt(totals.sessions) });
   }
   return <>
-    <dl className="dstats">{items.map(([label, value]) => <div key={label}><dd>{value}</dd><dt>{label}</dt></div>)}</dl>
+    <dl className="dstats">{items.map(([label, value, hint]) => <div key={label}><dd>{value}</dd><dt title={hint}>{label}</dt></div>)}</dl>
     <p className="dsub" title={sub}>{sub}</p>
   </>;
 }
@@ -90,7 +102,7 @@ function SplitRow({ name, nameClass, style, title, row, share, fill, sub, tx }) 
     <div className="srow-main">
       <span className={cx('sname', nameClass)} title={title}>{fill === 'agent' ? <i className="swatch agent-dot" aria-hidden="true" /> : null}<span>{name}</span></span>
       <span className="snum">{fmtTokensShort(row.totalTokens)}</span>
-      <CostValue row={{ ...row, pricing: pricing(row) }} tx={tx} />
+      <CostValue row={{ ...row, pricing: pricing(row) }} tx={tx} hint />
       <span className="sshare">{fmtPct(share)}</span>
     </div>
     <span className={cx('sbar', fill === 'agent' && 'is-agent')} aria-hidden="true"><i style={{ width: `${Math.max(0, Math.min(1, share)) * 100}%` }} /></span>
@@ -102,6 +114,7 @@ function Split({ data, agentLabel, tx }) {
   const total = data.totals?.totalTokens || 0;
   const agents = useMemo(() => agentRows(data.clients), [data.clients]);
   const models = useMemo(() => mergedModelRows(data.models), [data.models]);
+  const tps = data.tps?.models ?? {};
   const share = (row) => total > 0 ? row.totalTokens / total : 0;
   const head = <div className="shead" aria-hidden="true"><span /><span>Tokens</span><span>{tx('splitCost')}</span><span>{tx('splitShare')}</span></div>;
   return <>
@@ -116,9 +129,12 @@ function Split({ data, agentLabel, tx }) {
       {head}
       <ul className="slist">{models.map((row) => {
         const rate = pricing(row) === 'none' ? null : costPerMillion(row);
+        const speed = tps[row.model];
+        const tpsText = tx('splitModelTps', { tps: fmtTps(speed?.median) });
         return <SplitRow key={row.model} name={row.model} nameClass="is-mono" row={row} share={share(row)} tx={tx}
           title={`${row.model}\n${tx('splitModelAgents', { agents: row.clients.map(agentLabel).join(', ') })}`}
-          sub={tx('splitModelSub', { pct: fmtPct(row.cacheHitRate), output: fmtTokens(row.outputTokens), rate: rate == null ? '—' : fmtCost(rate) })} />;
+          sub={<>{tx('splitModelSub', { pct: fmtPct(row.cacheHitRate), output: fmtTokens(row.outputTokens), rate: rate == null ? '—' : fmtCost(rate) })}
+            {' · '}<span title={tx('tpsHint')}>{tpsText}</span><TpsValueMark tps={speed} tx={tx} /></>} />;
       })}</ul>
     </div>
   </>;
@@ -131,7 +147,18 @@ export default function CalendarDetail({ report, selected, days, today, start, t
   const empty = data && !data.totals?.requests;
   const sessions = useMemo(() => data ? sessionRows(data.topSessions, 50) : [], [data]);
   const single = selected.length === 1;
-  return <section className={cx('dcol', stale && 'is-loading')} aria-busy={stale || !data}>
+  // `*` marks explain themselves in the same inverted data tooltip as the
+  // calendar: pointer position on hover, anchored to the mark on keyboard
+  // focus; scrolling hides it (useTip).
+  const { tip, hide, atElement, track } = useTip();
+  const hints = track('hint');
+  const onFocus = (event) => {
+    const el = event.target.closest?.('[data-hint]');
+    if (el && event.target.matches(':focus-visible')) atElement(el.dataset.hint, el);
+  };
+  return <section className={cx('dcol', stale && 'is-loading')} aria-busy={stale || !data}
+    onMouseMove={hints.onMouseMove} onMouseLeave={hints.onMouseLeave} onFocus={onFocus} onBlur={hide}
+    onKeyDown={(event) => { if (event.key === 'Escape') hide(); }}>
     <div className="dhead plate">
       <Header selected={selected} days={days} today={today} start={start} timezone={timezone} onSelect={onSelect} locale={locale} tx={tx} />
       {report.error ? <div className="notice is-error" role="alert"><TriangleAlert {...icon} />
@@ -154,5 +181,6 @@ export default function CalendarDetail({ report, selected, days, today, start, t
           : <Split data={data} agentLabel={agentLabel} tx={tx} />}
       </div>
     </section> : null}
+    {tip && HINTS[tip.key] ? <Tooltip x={tip.x} y={tip.y} className="is-hint">{tx(HINTS[tip.key])}</Tooltip> : null}
   </section>;
 }

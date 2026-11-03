@@ -1,0 +1,8 @@
+{"type": "user", "uuid": "u1", "parentUuid": null, "sessionId": "s1", "timestamp": "2026-10-01T10:00:00.000Z", "message": {"role": "user", "content": "hi"}}
+{"type": "assistant", "uuid": "a1", "parentUuid": "u1", "sessionId": "s1", "timestamp": "2026-10-01T10:00:02.000Z", "message": {"id": "m1", "model": "claude-sonnet-4-5", "usage": {"input_tokens": 10, "output_tokens": 50}}}
+{"type": "assistant", "uuid": "a2", "parentUuid": "a1", "sessionId": "s1", "timestamp": "2026-10-01T10:00:04.000Z", "message": {"id": "m1", "model": "claude-sonnet-4-5", "usage": {"input_tokens": 10, "output_tokens": 200}}}
+{"type": "user", "uuid": "u2", "parentUuid": "a2", "sessionId": "s1", "timestamp": "2026-10-01T10:00:05.000Z", "message": {"role": "user", "content": [{"type": "tool_result"}]}}
+{"type": "assistant", "uuid": "a3", "parentUuid": "u2", "sessionId": "s1", "timestamp": "2026-10-01T10:00:07.500Z", "message": {"id": "m2", "model": "claude-sonnet-4-5", "usage": {"input_tokens": 10, "output_tokens": 100}}}
+{"type": "system", "uuid": "x1", "parentUuid": "a3", "sessionId": "s1", "timestamp": "2026-10-01T10:00:08.000Z"}
+{"type": "assistant", "uuid": "a4", "parentUuid": "x1", "sessionId": "s1", "timestamp": "2026-10-01T10:00:09.000Z", "message": {"id": "m3", "model": "claude-sonnet-4-5", "usage": {"input_tokens": 10, "output_tokens": 30}}}
+{"type": "assistant", "uuid": "a5", "parentUuid": "missing", "sessionId": "s1", "timestamp": "2026-10-01T10:00:10.000Z", "message": {"id": "m4", "model": "claude-sonnet-4-5", "usage": {"input_tokens": 10, "output_tokens": 30}}}

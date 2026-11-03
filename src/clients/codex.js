@@ -1,6 +1,7 @@
 import os from 'node:os';
 import path from 'node:path';
 import { walkFilesMany, readJsonl } from '../fsutils.js';
+import { durationFields } from '../tps.js';
 
 export const id = 'codex';
 export const label = 'Codex CLI';
@@ -15,6 +16,25 @@ export function sourceRoots({ env = process.env, home = os.homedir() } = {}) {
 // `last_token_usage` (the latest request). We prefer `last_token_usage` and
 // fall back to diffing cumulative totals. `cached_input_tokens` is a subset of
 // `input_tokens`, so fresh input = input - cached.
+//
+// Request duration is inferred (durationSource 'inferred'): a request starts
+// at the latest input item (user/developer message, tool output, previous
+// usage marker) before its first output item (reasoning, assistant message,
+// tool call) and ends at the first usage marker after it — the
+// `token_usage_record` newer Codex writes on completion, else `token_count`.
+// Outputs that an input interrupts before any usage marker (aborted turns,
+// replayed history) are discarded instead of stretching the next request.
+const OUTPUT_ITEMS = new Set(['reasoning', 'function_call', 'custom_tool_call', 'local_shell_call', 'web_search_call', 'agent_message', 'agent_reasoning']);
+const INPUT_ITEMS = new Set(['function_call_output', 'custom_tool_call_output', 'local_shell_call_output', 'user_message', 'task_started', 'turn_aborted']);
+function itemKind(o, payload) {
+  const type = payload?.type;
+  if (type === 'message') return payload.role === 'assistant' ? 'output' : payload.role === 'user' || payload.role === 'developer' ? 'input' : null;
+  if (o.type === 'response_item' || o.type === 'event_msg') {
+    if (OUTPUT_ITEMS.has(type)) return 'output';
+    if (INPUT_ITEMS.has(type)) return 'input';
+  }
+  return null;
+}
 export async function collect({ env, home, roots } = {}) {
   const scanRoots = roots ?? sourceRoots({ env, home });
   const entries = [];
@@ -29,11 +49,29 @@ export async function collect({ env, home, roots } = {}) {
     let model = null;
     let providerId = null;
     let prevTotal = null;
+    let lastInputAt = NaN, requestStart = NaN, usageAt = NaN, outputs = false;
 
     await readJsonl(file, (o) => {
       if (!o) return;
       const payload = o.payload && typeof o.payload === 'object' ? o.payload : null;
       const type = payload?.type || o.type;
+      const lineTs = o.timestamp ? Date.parse(o.timestamp) : NaN;
+      const kind = itemKind(o, payload);
+      if (kind === 'input') {
+        if (outputs && !Number.isFinite(usageAt)) { outputs = false; requestStart = NaN; }
+        if (Number.isFinite(lineTs)) lastInputAt = lineTs;
+      } else if (kind === 'output' && Number.isFinite(usageAt) && lastInputAt > usageAt) {
+        // A new response began before the previous cycle's token_count:
+        // pairing is ambiguous, so the next token_count gets no duration.
+        requestStart = NaN; usageAt = NaN;
+      } else if (kind === 'output' && !outputs) {
+        outputs = true;
+        requestStart = lastInputAt;
+      }
+      if (o.type === 'token_usage_record' && outputs) {
+        if (Number.isFinite(usageAt)) requestStart = NaN; // two completions, one token_count
+        else usageAt = lineTs;
+      }
 
       if (type === 'session_meta') {
         sessionId = payload?.id || sessionId;
@@ -49,6 +87,11 @@ export async function collect({ env, home, roots } = {}) {
 
       const info = payload?.info || o.info;
       if (!info) return;
+      // A usage marker closes the request cycle whether or not it yields a row.
+      const end = Number.isFinite(usageAt) ? usageAt : lineTs;
+      const timing = outputs ? durationFields(requestStart, end, 'inferred') : {};
+      outputs = false; requestStart = NaN; usageAt = NaN;
+      if (Number.isFinite(lineTs)) lastInputAt = lineTs;
 
       const toCounts = (u) => ({
         input: u.input_tokens ?? 0,
@@ -93,6 +136,7 @@ export async function collect({ env, home, roots } = {}) {
         costUsd: null,
         directory,
         title: null,
+        ...timing,
       });
     });
   }

@@ -4,6 +4,8 @@
 
 `toksight` 是 ESM Node.js CLI，要求 Node >=22.5，根包没有运行时依赖。它读取本机 Agent 会话数据；刷新和导入更新自己的 SQLite，价格抓取更新自己的缓存文件，不修改 Agent 数据。`frontend/` 用 Next.js 构建静态页面，由 CLI 的 `node:http` 服务托管；没有 TUI。`scripts/` 是源码仓库开发工具，不随 npm 包发布。用户命令和选项见双语 README。
 
+`exp` 分支另有 `desktop/src-tauri/` 的 Tauri 2 / Rust 宿主，内嵌 `frontend/out/` 并通过 WebView2 运行同一套四页界面。前端桥接调用 Rust，Rust 再以会话令牌访问随包 Node `desktop/service.mjs` 的随机回环端口，复用现有 `src/` 核心；页面不接触服务令牌。数据默认与 CLI / Web 共用，细节见[Windows 桌面](desktop.md)。
+
 ## 两条读写路径
 
 ```text
@@ -20,6 +22,7 @@ toksight quota / GET /api/quota -> Codex rollout rate_limits（本地）+ 内存
 POST /api/quota/refresh、quota（无 --offline）-> 另外请求 Kimi Code /usages
 
 frontend/ 源码 -> Next 静态导出 frontend/out/ -> src/webserver.js 提供页面与同源 API
+Tauri 内嵌 Web UI -> Rust IPC -> 随包 Node 的 desktop/service.mjs -> 受令牌保护的同一快照 API
 ```
 
 普通 CLI 报告走 `collectAll`，Web 的 GET 只筛选已提交的快照。首次运行 `web` 若没有快照会采集一次；刷新失败保留旧快照。价格目录的更新与采集分开执行，报告可用已存价格重新定价，不必重扫 Agent 文件。
@@ -48,5 +51,8 @@ frontend/ 源码 -> Next 静态导出 frontend/out/ -> src/webserver.js 提供�
 | `src/quota.js`、`src/quotamodel.js`、`src/codexquota.js`、`src/kimiquota.js` | 订阅额度：通用模型、Codex 本地日志、Kimi Code 显式联网查询（见[订阅额度](quota.md)） |
 | `src/webserver.js` | 静态资源与本机 HTTP API |
 | `frontend/app/`、`frontend/components/`、`frontend/lib/` | 新版工作台、图表与设置组件；`useWorkspace.js` 管页面状态，日期与聚合计算独立可测 |
+| `desktop/src-tauri/` | Tauri 原生窗口、Rust IPC、系统保存与外部链接、WebView2 状态及 sidecar 生命周期 |
+| `frontend/lib/desktop.js` | 共享 UI 的 API 传输、二进制保存与外部链接桥接，浏览器行为保持原样 |
+| `desktop/service.mjs`、`desktop/runtime.json`、`scripts/desktop-*.js` | 桌面服务协议、固定运行时与校验、构建及 ZIP / NSIS 安装器打包 |
 
 采集口径见[采集器](collectors.md)，稳定输出见[数据契约](data-contract.md)，持久化见[存储与定价](storage-pricing.md)。

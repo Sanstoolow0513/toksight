@@ -18,7 +18,7 @@ Inspired by [tokscale](https://github.com/junhoyeo/tokscale) (and in the same sp
 | ZCode | `~/.zcode/cli/db/db.sqlite`; if absent or unreadable, fallback `~/.zcode/cli/rollout/*.jsonl` | `ZCODE_HOME` |
 | Claude Code | `~/.claude/projects/**/*.jsonl` | `CLAUDE_CONFIG_DIR` |
 | Codex CLI | `~/.codex/sessions/**/*.jsonl` | `CODEX_HOME` |
-| OpenCode | `~/.local/share/opencode/opencode.db`; if absent or unreadable, fallback `~/.local/share/opencode/storage/message/**/*.json` | `OPENCODE_PATH` |
+| OpenCode | `~/.local/share/opencode/opencode.db` (current `session_message` and older `message` tables); if absent or unreadable, fallback `~/.local/share/opencode/storage/message/**/*.json` | `OPENCODE_PATH` |
 | Kimi Code | `~/.kimi-code/sessions/**/agents/*/wire.jsonl` | `KIMI_CODE_HOME` |
 
 ## Install
@@ -31,6 +31,35 @@ npx toksight
 
 Requires Node.js >= 22.5. The built-in `node:sqlite` reads ZCode and OpenCode databases and
 stores toksight's own local usage database; no runtime package is installed.
+
+### Experimental Windows desktop app
+
+The `exp` branch also contains a **Tauri 2 desktop app**. It embeds the existing Web
+interface, preserving the Today, Calendar, Prices, and Settings pages, fonts, styling,
+and animations. A Rust host provides the Windows window, native save dialogs, and
+local data access through the bundled Node engine. Windows uses WebView2 to render
+the interface. CLI and Web remain available.
+
+```powershell
+# Developer build: Windows, Node, Rust MSVC, C++ Build Tools and WebView2
+npm run web:ci
+npm run desktop:ci
+npm run desktop:build
+npm run desktop:check
+npm run desktop:run -- --offline
+npm run desktop:package -- --no-build
+```
+
+Windows x64 is the initial validation target; ARM64 still needs device testing.
+Desktop packages bundle Node, so end users do not need Node, Rust, or .NET.
+Packaging produces a portable ZIP and an **unsigned NSIS setup EXE**; the installer
+handles missing WebView2. `desktop:package -- --store` prepares the offline WebView2
+installer configuration for the Store EXE/MSI route. Signing, update delivery, and
+Store submission remain release work; this is not a published Microsoft Store app.
+
+Usage data continues to use `~/.config/toksight` (`TOKSIGHT_CONFIG_DIR` honored); desktop
+preferences live in a separate WebView2 profile. See [Windows desktop development and distribution](doc/desktop.md)
+for build requirements, runtime verification, installation and channel differences.
 
 ## Usage
 
@@ -343,7 +372,10 @@ horizontal navigation keeps all four views within reach. See `design-spec.md` fo
   (back to today) work from the keyboard, and the focus ring stays visible outside a selected day's frame.
   The detail pane beside it shows the selection's totals, the hourly
   strip for a single day, and the usage split by agent and by model (the same model used from several agents is
-  one row); **View sessions** swaps the split for the sessions list. The split's scroll area takes Tab focus and
+  one row). Totals include **Median TPS**, the median per-request output speed (output tokens ÷ request time,
+  which includes thinking and queueing, so it is not streaming speed); each model row adds its median TPS.
+  OpenCode, ZCode and Kimi Code log request start and end; Claude Code and Codex times are estimated from the
+  previous message and marked `*`. Requests without timing are left out, and no timing shows `—`; **View sessions** swaps the split for the sessions list. The split's scroll area takes Tab focus and
   scrolls with the arrow and Page keys. Below 1200px the calendar (70% of the
   viewport height) stacks above the details.
 - **Settings** contains appearance, language, the reporting time zone, database import/export, and optional GitHub backup.

@@ -5,6 +5,8 @@
 
 import { summarize, cacheHitRate, localDate, localMonth, bySession } from './aggregate.js';
 import { dateParts, dayKeyToTs, eachDay, startOfDay, stepDay, weekday } from './dates.js';
+import { reportModelName } from './pricecatalog.js';
+import { tpsSummary } from './tps.js';
 
 function roundUsd(v) {
   return Math.round(v * 1e6) / 1e6;
@@ -278,9 +280,39 @@ function allDayRows(entries, timezone) {
     .map(([date, b]) => bucketRow(b, date));
 }
 
+// Per-request output speed medians (see tps.js). Web-only: the CLI `--json`
+// payload is unchanged. `models` is keyed by the report's display model name
+// merged across agents — the same key the web usage split merges rows by —
+// and `hourly` follows the same clock-hour buckets as `hourly`.
+export function buildTps(entries, { priceFor = null, timezone } = {}) {
+  const groups = (keyOf) => {
+    const map = new Map();
+    for (const e of entries) {
+      const key = keyOf(e);
+      if (key == null) continue;
+      if (!map.has(key)) map.set(key, []);
+      map.get(key).push(e);
+    }
+    return map;
+  };
+  const names = new Map();
+  const modelName = (e) => {
+    const key = `${e.client}\0${e.model}`;
+    if (!names.has(key)) names.set(key, reportModelName(e.model, e.client, priceFor?.(e.model, e.client)));
+    return names.get(key);
+  };
+  const hours = groups((e) => (Number.isFinite(e.timestamp) ? dateParts(e.timestamp, timezone).hour : null));
+  return {
+    overall: tpsSummary(entries),
+    clients: Object.fromEntries([...groups((e) => e.client)].map(([id, list]) => [id, tpsSummary(list)])),
+    models: Object.fromEntries([...groups(modelName)].map(([name, list]) => [name, tpsSummary(list)])),
+    hourly: Array.from({ length: 24 }, (_, hour) => ({ hour, ...tpsSummary(hours.get(hour) ?? []) })),
+  };
+}
+
 // Everything the dashboard needs beyond the `--json` payload. `top` mirrors the
 // CLI --top limit for the sessions table.
-export function buildWebExtras(entries, { top = 20, weeks = 53, now = Date.now(), timezone } = {}) {
+export function buildWebExtras(entries, { top = 20, weeks = 53, now = Date.now(), timezone, priceFor = null } = {}) {
   const { topSessions, longestSession } = buildSessionRows(entries, { top });
   const todayStart = startOfDay(now, timezone);
   const activeDays = allDayRows(entries, timezone).filter((d) => d.tokens > 0);
@@ -313,5 +345,6 @@ export function buildWebExtras(entries, { top = 20, weeks = 53, now = Date.now()
     peakDay,
     topSessions,
     longestSession,
+    tps: buildTps(entries, { priceFor, timezone }),
   };
 }

@@ -17,7 +17,7 @@ toksight 读取各 AI 编程智能体已经写在本地磁盘的会话文件，�
 | ZCode | `~/.zcode/cli/db/db.sqlite`，数据库不存在或不可读时回退 `~/.zcode/cli/rollout/*.jsonl` | `ZCODE_HOME` |
 | Claude Code | `~/.claude/projects/**/*.jsonl` | `CLAUDE_CONFIG_DIR` |
 | Codex CLI | `~/.codex/sessions/**/*.jsonl` | `CODEX_HOME` |
-| OpenCode | `~/.local/share/opencode/opencode.db`，数据库不存在或不可读时回退 `~/.local/share/opencode/storage/message/**/*.json` | `OPENCODE_PATH` |
+| OpenCode | `~/.local/share/opencode/opencode.db`（新版 `session_message` 与旧版 `message` 表），数据库不存在或不可读时回退 `~/.local/share/opencode/storage/message/**/*.json` | `OPENCODE_PATH` |
 | Kimi Code | `~/.kimi-code/sessions/**/agents/*/wire.jsonl` | `KIMI_CODE_HOME` |
 
 ## 安装
@@ -30,6 +30,31 @@ npx toksight
 
 需要 Node.js >= 22.5。内置 `node:sqlite` 用于读取 ZCode 与 OpenCode 数据库，并保存
 toksight 自己的本地用量数据库；无需安装运行时依赖。
+
+### Windows 桌面实验版
+
+`exp` 分支另有 **Tauri 2 桌面版**，直接嵌入现有 Web 界面，保留今天、日历、价格、设置四页的
+字体、样式和动画。Rust 宿主提供 Windows 窗口、原生保存对话框和本地数据访问，随包 Node
+进程复用现有数据引擎。Windows 使用 WebView2 渲染页面；CLI 与 Web 继续保留。
+
+```powershell
+# 开发构建需要 Windows、Node、Rust MSVC、C++ Build Tools 和 WebView2
+npm run web:ci
+npm run desktop:ci
+npm run desktop:build
+npm run desktop:check
+npm run desktop:run -- --offline
+npm run desktop:package -- --no-build
+```
+
+首版以 Windows x64 为主要验收环境，ARM64 尚需实机验证。
+桌面发布目录自带 Node，用户无需另装 Node、Rust 或 .NET。
+打包生成便携 ZIP 与**未签名 NSIS 安装器 EXE**，安装器会处理缺失的 WebView2。
+`desktop:package -- --store` 为 Store 的 EXE/MSI 渠道准备离线 WebView2 安装配置；
+签名、更新分发和 Store 提交仍属于后续发布工作，当前并非已上架应用。
+
+统计数据继续使用 `~/.config/toksight`（支持 `TOKSIGHT_CONFIG_DIR`），桌面偏好保存在独立 WebView2 配置目录。
+构建前提、运行时校验、安装和渠道差异见 [Windows 桌面开发与分发](doc/desktop.md)。
 
 ## 使用
 
@@ -283,7 +308,9 @@ Web 使用 `POST /api/prices/reset`，返回 `completed: false` 的引导状态�
   和紧凑（每行三个月，只显示颜色）——可用缩放按钮、Ctrl/⌘ + 滚轮、双指捏合或 `+` / `-` 切换，带过渡动画（减少动态效果时直接切换），
   级别会被记住。单击选一天，拖动或 Shift+单击选区间，Ctrl/⌘+单击增减日期，单击周数选整周（加 Ctrl/⌘ 追加）；
   键盘支持方向键、Home/End、PageUp/PageDown、Enter 和 Esc（回到今天），选中日的焦点环显示在选中框外侧。右侧详情栏显示选区合计、单日的时段分布，
-  以及按 Agent 和按模型的用量拆分（同一模型在多个 Agent 中使用时合并为一行）；**查看当日会话**把拆分切换为会话列表。
+  以及按 Agent 和按模型的用量拆分（同一模型在多个 Agent 中使用时合并为一行）。合计中的 **中位 TPS** 是每次请求输出速度的中位数
+  （输出 tokens ÷ 请求耗时，含思考和排队时间，不是流式显示速度），每个模型行也附上中位 TPS。OpenCode、ZCode 和 Kimi Code
+  记录了请求起止时间；Claude Code 和 Codex 按上一条消息的时间推算，并以 `*` 标注。没有耗时的请求不参与计算，无数据时显示 `—`；**查看当日会话**把拆分切换为会话列表。
   拆分的滚动区可以用 Tab 聚焦，再用方向键和 PageUp/PageDown 滚动。
   宽度小于 1200px 时，日历（视口高度的 70%）在上，详情在下。
 - **设置**：调整外观、语言和统计时区，导入 / 导出完整数据库，以及可选的 GitHub 备份。

@@ -1,3 +1,4 @@
+import { apiFetch } from './desktop.js';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 // Mounted only in the price view. History loads on demand for one catalog ID.
@@ -11,7 +12,7 @@ export function usePriceCatalog(key = null, revision = 0) {
     setState((s) => ({ ...s, loading: true, error: null }));
     try {
       const query = key == null ? '' : '?' + new URLSearchParams({ key });
-      const response = await fetch('/api/prices' + query, { cache: 'no-store', signal: request.signal });
+      const response = await apiFetch('/api/prices' + query, { cache: 'no-store', signal: request.signal });
       const body = await response.json();
       if (!response.ok) throw new Error(body.error || `HTTP ${response.status}`);
       if (!request.signal.aborted && id === sequence.current) setState({ data: body, loading: false, error: null });

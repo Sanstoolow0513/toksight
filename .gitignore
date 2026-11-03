@@ -11,3 +11,10 @@ frontend/out/
 usage-events-*.csv
 .codex/
 .grok/
+desktop/runtime/
+desktop/.cache/
+desktop/**/bin/
+desktop/**/obj/
+desktop/staging/
+desktop/src-tauri/target/
+desktop/src-tauri/gen/

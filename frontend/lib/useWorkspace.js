@@ -1,4 +1,5 @@
 'use client';
+import { apiFetch, installDesktopLinks, isDesktop, saveFile, syncDesktopTheme } from './desktop.js';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useToasts } from '@/components/Toasts';
 import { useRangeReport, useReport, useSelectionReport } from '@/lib/useReport';
@@ -42,6 +43,9 @@ export function useWorkspace() {
   const toasts = useToasts();
   const { push: pushToast } = toasts;
   const tx = useCallback((key, vars) => t(locale, key, vars), [locale]);
+  useEffect(() => installDesktopLinks((error) => {
+    pushToast({ key: 'external-link', tone: 'error', message: ['externalLinkFailed', { error: error.message }] });
+  }), [pushToast]);
   const reportView = view === 'today' || view === 'calendar';
   const ready = Boolean(prices.status?.completed) && Boolean(today);
 
@@ -98,6 +102,7 @@ export function useWorkspace() {
   }, []);
   useEffect(() => {
     if (!theme) return;
+    void syncDesktopTheme(theme).catch((error) => console.warn('Could not update the window theme:', error.message));
     const apply = () => { document.documentElement.dataset.theme = prefs.resolveTheme(theme); };
     apply();
     if (theme !== 'system') return;
@@ -142,7 +147,7 @@ export function useWorkspace() {
   const onRefresh = async () => {
     setRefreshing(true);
     try {
-      const res = await fetch('/api/refresh', { method: 'POST', cache: 'no-store' });
+      const res = await apiFetch('/api/refresh', { method: 'POST', cache: 'no-store' });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body.error || `HTTP ${res.status}`);
       setNow(Date.now());
@@ -157,7 +162,7 @@ export function useWorkspace() {
   const onUpdatePrices = async () => {
     setPriceUpdating(true);
     try {
-      const res = await fetch('/api/prices/update', { method: 'POST', cache: 'no-store' });
+      const res = await apiFetch('/api/prices/update', { method: 'POST', cache: 'no-store' });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body.error || `HTTP ${res.status}`);
       const warnings = body.warnings ?? [];
@@ -201,7 +206,7 @@ export function useWorkspace() {
     setDatabaseBusy('import');
     setDatabaseError(null);
     try {
-      const res = await fetch('/api/import/db', { method: 'POST', headers: { 'content-type': 'application/vnd.sqlite3' }, body: databaseFile, cache: 'no-store' });
+      const res = await apiFetch('/api/import/db', { method: 'POST', headers: { 'content-type': 'application/vnd.sqlite3' }, body: databaseFile, cache: 'no-store' });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body.code === 'BAD_DATABASE' ? tx('databaseInvalid') : body.code === 'DATABASE_TOO_LARGE' ? tx('databaseTooLarge') : body.error || `HTTP ${res.status}`);
       pushToast({ key: 'database', tone: 'success', message: ['databaseImportSuccess', {
@@ -218,20 +223,13 @@ export function useWorkspace() {
   const onExportDatabase = async () => {
     setDatabaseBusy('export');
     try {
-      const res = await fetch('/api/export/db', { cache: 'no-store' });
+      const res = await apiFetch('/api/export/db', { cache: 'no-store' });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
         throw new Error(body.error || `HTTP ${res.status}`);
       }
-      const url = URL.createObjectURL(await res.blob());
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `toksight-backup-${dayKey(new Date(), timezone)}-${Date.now()}.sqlite`;
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      setTimeout(() => URL.revokeObjectURL(url), 60000);
-      pushToast({ key: 'database', tone: 'success', message: ['databaseExportSuccess'] });
+      const saved = await saveFile(`toksight-backup-${dayKey(new Date(), timezone)}-${Date.now()}.sqlite`, await res.blob());
+      if (saved) pushToast({ key: 'database', tone: 'success', message: [isDesktop() ? 'databaseExportSaved' : 'databaseExportSuccess'] });
     } catch (err) {
       pushToast({ key: 'database', tone: 'error', message: ['databaseExportFailed', { error: String(err?.message || err) }] });
     } finally { setDatabaseBusy(null); }

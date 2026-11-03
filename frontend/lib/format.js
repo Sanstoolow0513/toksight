@@ -47,6 +47,13 @@ export function fmtInt(n) {
   return Math.round(Number(n) || 0).toLocaleString('en-US');
 }
 
+// Output tokens per second: one decimal below 10, whole numbers above.
+// Missing timing is "—", never 0.
+export function fmtTps(v) {
+  if (v == null || !Number.isFinite(v)) return '—';
+  return v < 10 ? v.toFixed(1) : Math.round(v).toLocaleString('en-US');
+}
+
 export function fmtPct(p, digits = 1) {
   if (p == null || !Number.isFinite(p)) return '—';
   return `${(p * 100).toFixed(digits)}%`;

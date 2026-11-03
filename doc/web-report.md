@@ -24,6 +24,8 @@
 
 默认回环绑定时，所有已定义 API 路由都拒绝非 localhost 的 Host 头，防止 DNS rebinding；写路由还拒绝跨站 Origin / Fetch 请求。Next 开发代理允许本机不同端口。显式 `--host 0.0.0.0` 意味着主动对局域网开放，不适用回环 Host 限制。新增 API 必须纳入相同检查；不提供修改 Agent 配置的写路由。`/api/sync/*` 另外只接受本机回环地址的请求（不论绑定地址）。
 
+`exp` 的 Tauri 桌面宿主使用同一服务，额外传入可选 `desktopToken`：所有路径先检查 `X-Toksight-Desktop-Token`，再执行现有 Host / Origin 和路由检查。令牌通过父子进程 stdin 传递，服务仅绑定随机回环端口，不托管网页。桌面页面由 Tauri 内嵌，`frontend/lib/desktop.js` 通过 Rust IPC 转发允许的 API，页面不接触令牌。普通 CLI Web 保持同源 fetch，不启用这个额外鉴权层。生命周期与构建见 [Windows 桌面](desktop.md)。
+
 ## 页面与数据流
 
 首次未完成引导时，主内容区显示 `PriceSetup`，可立即下载价格或本地继续，状态保存在数据库。
@@ -59,7 +61,7 @@ Tokens 与费用在昨日有非零基数时展示相对变化，文案明确比�
 `Calendar`（日历栏）一次请求全部历史（`since=<首个记录日>&until=<今天>`，首日来自 `scopeRange.firstAt`），按月渲染记忆化的 `MonthBlock`（`role="grid"`，周一开始，月标题吸顶）；第 8 列为 ISO 周单元（`isoWeek` / `weekLabelParts`，跨月的周在两个月块里都显示整周合计，未来日不计）。热度为 `heatLevel(value, heatMax(全部历史))`，滚动时色阶不变。
 缩放两级（大 / 紧凑），由按钮、Ctrl/⌘ + 滚轮（累计 40）、双指捏合（1.25 / 0.8）或 `+` / `-` 切换，用 `el.animate` 做 FLIP（360ms，锚点日保持原位，动画中忽略新请求，减少动态效果时直接切换），级别存入 prefs。
 选择规则：单击单选、拖动（指针捕获，距边缘 48px 自动滚动）、Shift 区间、Ctrl/⌘ 增减（至少保留一天）、单击周数选整周（Ctrl/⌘ 追加）、Esc 回到今天；未来日不可选。键盘使用 roving tabindex：方向键 ±1 / ±7 天（大档在行尾右移到周单元，周单元上下移动到相邻周行）、Shift+方向键扩展区间、Home / End、PageUp / PageDown、Enter / 空格、Ctrl+空格。悬停或键盘聚焦显示日 / 周提示，拖动时隐藏。
-`CalendarDetail`（详情栏）通过 `useSelectionReport` 请求选区：连续区间用 `since` / `until`，不连续时追加 `days=`。头部、四项数字与说明行；单日显示时段条；“用量拆分”按 Agent（`agentRows`）与按模型（`mergedModelRows`，同模型跨 Agent 合并、提示列出 Agent），可切换为会话列表（复用 `SessionRow`）。拆分 / 会话的滚动区 `.dcard-body` 是 `tabIndex=0` 的 `role="region"`（`aria-label` 为 `splitRegion` / `sessionsRegion`），可用键盘聚焦滚动，焦点环画在区域内侧。日格与周单元的焦点环偏移 `--focus-offset-sel`（3px）；选中日获得焦点时选中框改由外圈 `box-shadow` 绘制，焦点环始终在选中框之外。
+`CalendarDetail`（详情栏）通过 `useSelectionReport` 请求选区：连续区间用 `since` / `until`，不连续时追加 `days=`。头部、五项数字（含 `tps.overall` 的中位 TPS）与说明行；单日显示时段条；“用量拆分”按 Agent（`agentRows`）与按模型（`mergedModelRows`，同模型跨 Agent 合并、提示列出 Agent；辅助行按同一模型名读取 `tps.models` 的中位 TPS），可切换为会话列表（复用 `SessionRow`）。拆分 / 会话的滚动区 `.dcard-body` 是 `tabIndex=0` 的 `role="region"`（`aria-label` 为 `splitRegion` / `sessionsRegion`），可用键盘聚焦滚动，焦点环画在区域内侧。日格与周单元的焦点环偏移 `--focus-offset-sel`（3px）；选中日获得焦点时选中框改由外圈 `box-shadow` 绘制，焦点环始终在选中框之外。
 
 `AgentTable` 的 Agent 与模型行都提供明细按钮，点击或键盘激活后在行下展开完整统计和模型匹配单价；点击明细不会展开或折叠 Agent。窄表隐藏次要列后仍能查看全部字段，悬停提示保留。
 
