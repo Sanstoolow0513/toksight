@@ -12,7 +12,7 @@
 | --- | --- | --- |
 | Claude Code | `~/.claude/projects/**/*.jsonl` | 同一 message ID 可能有递增的 streaming 用量快照；按 token 总数保留最大一条 |
 | Codex | `~/.codex/sessions/**/*.jsonl` | 优先用 `last_token_usage`，否则对累计 `total_token_usage` 做差；`cached_input_tokens` 从总输入中扣出 |
-| Kimi Code | `~/.kimi-code/sessions/**/agents/*/wire.jsonl` | 每条 `usage.record` 都是真实请求，`turn` 与 `session` scope 都计入；`state.json` 给会话元数据 |
+| Kimi Code | `~/.kimi-code/sessions/**/agents/*/wire.jsonl` | 每条 `usage.record` 都是真实请求，`turn` 与 `session` scope 都计入；`state.json` 给会话元数据；providerId 取配对的同模型 `llm.request`（按模型配对，不比 `kind` 与 `usageScope`）：旧日志 `model` 等于用量模型时用其 `provider`，新日志用量模型是 `modelAlias`（`<provider>/<model>` 配置键）时取其命名空间，因为此时 `provider` 只是协议名（如 `openai`） |
 | OpenCode | `<base>/opencode.db`：新版 `session_message`（`type = 'assistant'`，联结 `session_v2`），旧版 `message`（联结 `session`） | 两种表都读，同一 message id 只计一次（新表优先）；DB 存在且可读时只用 DB；缺失或打不开才退到 `storage/message/*.json`，绝不合算两处。DB 中 `cost: 0` 是占位，只有非零自报费用可信；旧 JSON 的数值费用照录 |
 | ZCode | `~/.zcode/cli/db/db.sqlite` 的 `model_usage`，联结 `session` | DB 优先，缺失或打不开才退到 `cli/rollout/*.jsonl`；两种来源的 `input_tokens` 都包含 cache read，需扣掉后作为新鲜输入 |
 

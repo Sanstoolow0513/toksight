@@ -25,6 +25,22 @@ export function sourceRoots({ env = process.env, home = os.homedir() } = {}) {
 // that request completes. A usage record pairs with the latest earlier
 // request for the same model in the same wire log; earlier unmatched
 // requests are failed attempts that were retried and are dropped.
+//
+// providerId comes from that same paired request. Requests are matched by
+// model, never by `kind` vs `usageScope` (they use different vocabularies:
+// `loop` requests report `turn` usage). Older logs name the configured
+// provider in `provider` and repeat the usage model in `model`; newer logs put
+// the upstream name in `model`, the configured `<provider>/<model>` key in
+// `modelAlias` (the usage model) and the wire protocol (e.g. `openai`) in
+// `provider`, so there the configured namespace is used instead.
+function requestProvider(request, model) {
+  if (!request || typeof model !== 'string' || !model) return null;
+  if (request.model === model) return typeof request.provider === 'string' && request.provider ? request.provider : null;
+  if (request.modelAlias !== model) return null;
+  const slash = model.indexOf('/');
+  return slash > 0 ? model.slice(0, slash) : null;
+}
+
 export async function collect({ env, home, roots } = {}) {
   const scanRoots = roots ?? sourceRoots({ env, home });
   const entries = [];
@@ -63,14 +79,14 @@ export async function collect({ env, home, roots } = {}) {
       (state && typeof state.cwd === 'string' && state.cwd) ||
       path.basename(path.dirname(sessionDir));
     const title = (state && typeof state.title === 'string' && state.title) || null;
-    const requests = new Map();
     const agentId = path.basename(path.dirname(file));
-
+    const agentOf = (o) => o.agentId ?? agentId;
     let sent = [];
+    const latest = new Map();
     await readJsonl(file, (o) => {
       if (o?.type === 'llm.request') {
-        requests.set(`${o.agentId ?? agentId}\0${o.kind ?? ''}`, { model:o.model, provider:o.provider });
-        if (typeof o.time === 'number' && Number.isFinite(o.time)) sent.push({ time: o.time, models: [o.model, o.modelAlias] });
+        latest.set(agentOf(o), o);
+        if (typeof o.time === 'number' && Number.isFinite(o.time)) sent.push({ time: o.time, agent: agentOf(o), models: [o.model, o.modelAlias], request: o });
         return;
       }
       if (!o || o.type !== 'usage.record') return;
@@ -82,13 +98,22 @@ export async function collect({ env, home, roots } = {}) {
       const cacheWrite = usage.inputCacheCreation ?? 0;
       if (!input && !output && !cacheRead && !cacheWrite) return;
       const time = typeof o.time === 'number' ? o.time : o.time ? Date.parse(o.time) : NaN;
-      const request = requests.get(`${o.agentId ?? agentId}\0${o.usageScope ?? ''}`);
-      const providerId = request?.model === o.model && typeof request.provider === 'string' ? request.provider : null;
       let timing = {};
+      let request = null;
       if (Number.isFinite(time)) {
-        const at = sent.findLastIndex((r) => r.time <= time && r.models.includes(o.model));
-        if (at >= 0) { timing = durationFields(sent[at].time, time, 'measured'); sent = sent.filter((r, i) => i > at || !r.models.includes(o.model)); }
+        const at = sent.findLastIndex((r) => r.time <= time && r.agent === agentOf(o) && r.models.includes(o.model));
+        if (at >= 0) {
+          request = sent[at].request;
+          timing = durationFields(sent[at].time, time, 'measured');
+          sent = sent.filter((r, i) => i > at || r.agent !== agentOf(o) || !r.models.includes(o.model));
+        }
       }
+      if (!request) {
+        // Untimed lines, or a second record for an already paired request.
+        const last = latest.get(agentOf(o));
+        if (last && [last.model, last.modelAlias].includes(o.model)) request = last;
+      }
+      const providerId = requestProvider(request, o.model);
 
       entries.push({
         client: id,
