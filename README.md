@@ -18,7 +18,7 @@ Inspired by [tokscale](https://github.com/junhoyeo/tokscale) (and in the same sp
 | ZCode | `~/.zcode/cli/db/db.sqlite`; if absent or unreadable, fallback `~/.zcode/cli/rollout/*.jsonl` | `ZCODE_HOME` |
 | Claude Code | `~/.claude/projects/**/*.jsonl` | `CLAUDE_CONFIG_DIR` |
 | Codex CLI | `~/.codex/sessions/**/*.jsonl` | `CODEX_HOME` |
-| OpenCode | `~/.local/share/opencode/opencode.db`; if absent or unreadable, fallback `~/.local/share/opencode/storage/message/**/*.json` | `OPENCODE_PATH` |
+| OpenCode | `~/.local/share/opencode/opencode.db` (current `session_message` and older `message` tables); if absent or unreadable, fallback `~/.local/share/opencode/storage/message/**/*.json` | `OPENCODE_PATH` |
 | Kimi Code | `~/.kimi-code/sessions/**/agents/*/wire.jsonl` | `KIMI_CODE_HOME` |
 
 ## Install
