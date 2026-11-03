@@ -2,6 +2,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { walkFiles, readJson, pathExists } from '../fsutils.js';
 import { openSqliteReadOnly } from './sqlite.js';
+import { durationFields } from '../tps.js';
 
 export const id = 'opencode';
 export const label = 'OpenCode';
@@ -20,6 +21,8 @@ export function sourceRoots({ env = process.env, home = os.homedir() } = {}) {
 // absent or cannot be read (e.g. Node without node:sqlite), never both, so
 // messages are never double counted. SQLite-era rows hardcode `cost: 0` as a placeholder,
 // so only non-zero self-reported costs are honored there.
+// Assistant messages record `time.created` and `time.completed`, so request
+// durations are measured (durationSource 'measured').
 export async function collect({ env, home, roots } = {}) {
   const scanRoots = roots ?? sourceRoots({ env, home });
   const base = scanRoots[0];
@@ -92,6 +95,7 @@ async function collectFromDb(base, warnings) {
         costUsd: typeof o.cost === 'number' && o.cost > 0 ? o.cost : null,
         directory: r.session_directory ?? o.path?.cwd ?? null,
         title: r.session_title ?? null,
+        ...durationFields(o.time?.created, o.time?.completed, 'measured'),
       });
     }
     return entries;
@@ -142,6 +146,7 @@ async function collectFromJson(root, warnings) {
       costUsd: typeof o.cost === 'number' ? o.cost : null,
       directory: null,
       title: null,
+      ...durationFields(o.time?.created, o.time?.completed, 'measured'),
     });
   }
   return entries;

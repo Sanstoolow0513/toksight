@@ -16,6 +16,18 @@
 | OpenCode | `<base>/opencode.db` 的 `message`，联结 `session` | DB 存在且可读时只用 DB；缺失或打不开才退到 `storage/message/*.json`，绝不合算两处。DB 中 `cost: 0` 是占位，只有非零自报费用可信；旧 JSON 的数值费用照录 |
 | ZCode | `~/.zcode/cli/db/db.sqlite` 的 `model_usage`，联结 `session` | DB 优先，缺失或打不开才退到 `cli/rollout/*.jsonl`；两种来源的 `input_tokens` 都包含 cache read，需扣掉后作为新鲜输入 |
 
+## 请求耗时
+
+解析器用 `src/tps.js` 的 `durationFields` 写入可选 `durationMs` / `durationSource`；≤ 0 或无法解析的耗时不写。
+
+| 客户端 | 来源 | 方式 |
+| --- | --- | --- |
+| OpenCode | `time.created` → `time.completed` | measured |
+| ZCode | DB `started_at` → `completed_at`；rollout `startedAt` → `completedAt` | measured |
+| Kimi Code | 同一 wire.jsonl 中最近一条同模型 `llm.request.time` → `usage.record.time`；更早未配对的请求视为重试并丢弃 | measured |
+| Claude Code | 首条 assistant 行经 `parentUuid` 指向的 `user` 行（提示或 tool_result）→ 该 message id 的最后一行；父行缺失或不是 user 时不写 | inferred |
+| Codex | 第一个输出项（reasoning / assistant message / 工具调用）之前最近的输入项（user / developer 消息、工具输出、上一用量标记）→ 首个用量标记（新版 `token_usage_record`，否则 `token_count`）；输出被新输入打断而无用量标记（中止、回放历史）或配对不明确时不写 | inferred |
+
 OpenCode 和 ZCode 的“数据库存在但表不可查询”会给 warning；当前代码在这种情况下返回空结果，不再读取旧格式。调整回退条件时应同时核对这些解析器测试。
 
 ## 容错与过滤

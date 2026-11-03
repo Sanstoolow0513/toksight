@@ -47,7 +47,7 @@ toksight 是每天打开查看的本地数据工具。界面首先要保证信�
 | `--fs-sm` | 14px | 表格、按钮、导航、分段控件、chip、详情卡标题 |
 | `--fs-base` | 15px | 正文、面板标题、月标题、大档日格 Tokens、价格数值 |
 | `--fs-lg` | 16px | 价格分区标题 |
-| `--fs-xl` | 18px | 详情栏标题与四项数字、对话框标题、“只看用过”视图的价格数值 |
+| `--fs-xl` | 18px | 详情栏标题与五项数字、对话框标题、“只看用过”视图的价格数值 |
 | `--fs-2xl` | 22px | Token 构成合计、窄屏指标 |
 | `--fs-3xl` | 26px | 指标（`.readout-value`） |
 | `--fs-4xl` | 30px | 概览 KPI（`.readout--lg`） |
@@ -226,7 +226,7 @@ toksight 是每天打开查看的本地数据工具。界面首先要保证信�
 
 - 内容区 `padding --sp-6`，两栏 grid：`minmax(var(--cal-col-min), var(--cal-col)) minmax(0, 1fr)`，`gap --gutter`。两栏都占满视口剩余高度，页面本身不滚动，只有日历列表和拆分卡内部滚动。
 - ≤1200px：上下堆叠。日历栏高 70vh 在上，详情栏在下，拆分卡不再内部滚动。
-- ≤760px：内容区 `padding --sp-3`。隐藏日历头说明和底部提示；大档日格高 64px，只显示日期和 `--fs-xs` 的 Tokens，隐藏费用；紧凑档改为每行 2 个月；详情四项数字改为 2 列。
+- ≤760px：内容区 `padding --sp-3`。隐藏日历头说明和底部提示；大档日格高 64px，只显示日期和 `--fs-xs` 的 Tokens，隐藏费用；紧凑档改为每行 2 个月；详情数字的列数由 `.dhead` 容器宽度决定（见 §5.8）。
 
 ### 5.2 日历栏（`.calcol.plate`）
 
@@ -309,7 +309,8 @@ toksight 是每天打开查看的本地数据工具。界面首先要保证信�
   - 单日：标题 `--fs-xl --fw-strong`，例如“10月28日 周三”。旁边 `--fs-xs --ink-3` 写“今天 · 时区”（不是今天时只写时区）。右侧是前一天 / 后一天（sm IconButton，`dayPrev` / `dayNext`，范围到列表首日和今天）。
   - 多选：标题“已选 N 天”；选区正好是一整周时改为“2026 年 W42”（`calWeekHeading`）。旁边写“10月12日 – 10月18日 · 活跃 N 天”，不连续时在结束日期后加“ · 不连续”。右侧文字按钮“清除选择”，只保留最后一天。
   - 标题 `aria-live="polite"`。
-- 第 2 行：四项数字 `.dstats`（`repeat(4, auto)`，`space-between`），依次为 Tokens、参考费用、缓存命中、请求。数值 `--fs-xl --fw-strong --track-tight`，标签在下（`--fs-xs --ink-3`）。部分未定价时费用后加 `*`。
+- 第 2 行：五项数字 `.dstats`（`repeat(5, auto)`，`space-between`），依次为 Tokens、参考费用、缓存命中、请求、TPS。数值 `--fs-xl --fw-strong --track-tight`，标签在下（`--fs-xs --ink-3`）。部分未定价时费用后加 `*`。`.dhead` 是 inline-size 容器：宽度 ≤420px 时改为 3 列（行距 `--sp-2`），≤240px 时 2 列。
+  - TPS 是选区内逐请求输出速度的中位数（`tps.overall.median`，不用平均数）；无耗时数据显示“—”，不显示 0。悬停提示 `tpsHint`。选区含任何推算耗时（Claude Code / Codex，含混合）时数值右上角加与部分未定价相同的 `*`（`.partial-mark`），提示 `tpsInferred`“按相邻消息时间推算，含思考和排队时间”。
 - 第 3 行 `.dsub`（`--fs-xs --ink-3`，单行省略，与上一行间距收紧 `--sp-1`）：
   - 单日：“输出 {output} · 每百万 tokens {rate} · {n} 个会话”
   - 多选：“活跃日均 {tokens} · {cost} · {n} 个会话”
@@ -326,7 +327,7 @@ toksight 是每天打开查看的本地数据工具。界面首先要保证信�
 - 每行 `.srow`（`padding 8px 0 7px`，`gap 5px`，底边 `--line`）分三层：
   1. 主行 `--fs-sm`：名称（Agent 前有 8px 色块；模型名用 Geist Mono，超长省略）、Tokens（`--fw-medium`）、费用（`CostValue`，含“部分未定价”表现）、占比（1 位小数，`--ink-3`）。
   2. 占比条：高 6px，`--r-pill`，底色 `--empty`；Agent 用 `--agent`，模型用 `--chart-ink`。
-  3. 辅助行 `--fs-xs --ink-3`：Agent 为“缓存读 {pct} · {n} 次请求”，模型为“缓存读 {pct} · 输出 {output} · 每百万 {rate}”。
+  3. 辅助行 `--fs-xs --ink-3`：Agent 为“缓存读 {pct} · {n} 次请求”，模型为“缓存读 {pct} · 输出 {output} · 每百万 {rate} · 中位 TPS {tps}”（`tps.models[模型名]`，无数据为“—”；该模型中位数用到推算耗时时加 `*`，提示同上）。
 - 按 Tokens 从大到小排列。同名模型跨 Agent 合并（`mergedModelRows`），悬停名称时列出“使用的 Agent：…”。
 
 ### 5.9 导出

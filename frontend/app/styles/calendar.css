@@ -86,15 +86,18 @@
   /* Detail pane */
   .dcol { display: flex; flex-direction: column; gap: var(--sp-3); min-width: 0; min-height: 0; }
   .dcol.is-loading { opacity: .6; transition: opacity var(--dur-2) var(--ease); }
-  .dhead { display: grid; gap: 10px; padding: var(--sp-3) var(--pad-x); }
+  .dhead { display: grid; gap: 10px; padding: var(--sp-3) var(--pad-x); container-type: inline-size; }
   .dhead-row { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; }
   .dtitle { font-size: var(--fs-xl); font-weight: var(--fw-strong); line-height: 1.3; white-space: nowrap; }
   .dmeta { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-xs); color: var(--ink-3); }
   .dnav { display: flex; align-items: center; gap: var(--sp-1); flex-shrink: 0; }
-  .dstats { display: grid; grid-template-columns: repeat(4, auto); justify-content: space-between; gap: var(--sp-4); }
+  .dstats { display: grid; grid-template-columns: repeat(5, auto); justify-content: space-between; gap: var(--sp-4); }
   .dstats div { display: flex; flex-direction: column; }
   .dstats dd { font-size: var(--fs-xl); font-weight: var(--fw-strong); letter-spacing: var(--track-tight); line-height: 1.3; white-space: nowrap; }
   .dstats dt { font-size: var(--fs-xs); color: var(--ink-3); }
+  /* Five stats need ~420px; narrower detail panes wrap to 3 + 2, then 2 below 240px. */
+  @container (max-width: 420px) { .dstats { grid-template-columns: repeat(3, auto); row-gap: var(--sp-2); } }
+  @container (max-width: 240px) { .dstats { grid-template-columns: repeat(2, auto); } }
   /* Sits closer to the stats it explains: 10px row gap less --sp-1 (design: 130px head). */
   .dsub { margin-top: calc(-1 * var(--sp-1)); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-xs); color: var(--ink-3); }
   .dempty { font-size: var(--fs-sm); color: var(--ink-2); }
@@ -169,7 +172,6 @@
     .day .c, .wk .c { display: none; }
     .calcol[data-zoom='large'] .day, .calcol[data-zoom='large'] .wk { height: 64px; }
     .day .t, .wk .t { bottom: 6px; }
-    .dstats { grid-template-columns: repeat(2, auto); }
     .calcol[data-zoom='compact'] .months { grid-template-columns: repeat(2, auto); }
     .trend-charts { grid-template-columns: 1fr; }
   }

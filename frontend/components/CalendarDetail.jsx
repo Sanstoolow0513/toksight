@@ -11,11 +11,20 @@ import { SessionRow } from '@/components/DayDetail';
 import { coded } from '@/components/Coded';
 import { agentRows, cacheHitRate, costPerMillion, hourlyBars, mergedModelRows, pricing, sessionRows, sumDays } from '@/lib/report';
 import { isoWeek, shiftDay, weekKeys } from '@/lib/period';
-import { fmtCost, fmtInt, fmtPct, fmtTokens, fmtTokensShort } from '@/lib/format';
+import { fmtCost, fmtInt, fmtPct, fmtTokens, fmtTokensShort, fmtTps } from '@/lib/format';
 import { dayLabel, weekdayLabel } from '@/lib/i18n';
 
 const icon = { size: 15, strokeWidth: 2, 'aria-hidden': true };
 const hourText = (hour) => `${String(hour).padStart(2, '0')}:00`;
+
+// Median per-request TPS. Medians that use any inferred (adjacent-message)
+// timing carry the same top-right `*` as a partly priced cost.
+function TpsValueMark({ tps, tx }) {
+  return tps?.median != null && tps.inferred ? <sup className="partial-mark" title={tx('tpsInferred')}>*</sup> : null;
+}
+function TpsValue({ tps, tx }) {
+  return <>{fmtTps(tps?.median)}<TpsValueMark tps={tps} tx={tx} /></>;
+}
 
 function Header({ selected, days, today, start, timezone, onSelect, locale, tx }) {
   const single = selected.length === 1;
@@ -52,6 +61,7 @@ function Stats({ data, selected, days, tx }) {
     [tx('kpiCost'), unpriced ? tx('rowUnpriced') : <>{fmtCost(totals.costUsd)}{pricing(totals) === 'partial' ? <sup className="partial-mark" title={tx('rowPartial')}>*</sup> : null}</>],
     [tx('kpiCache'), fmtPct(cacheHitRate(totals))],
     [tx('kpiRequests'), fmtInt(totals.requests)],
+    [tx('kpiTps'), <TpsValue tps={data.tps?.overall} tx={tx} />, tx('tpsHint')],
   ];
   let sub;
   if (selected.length === 1) {
@@ -62,7 +72,7 @@ function Stats({ data, selected, days, tx }) {
     sub = tx('calRangeSub', { tokens: fmtTokens(totals.totalTokens / active), cost: fmtCost((totals.costUsd || 0) / active), n: fmtInt(totals.sessions) });
   }
   return <>
-    <dl className="dstats">{items.map(([label, value]) => <div key={label}><dd>{value}</dd><dt>{label}</dt></div>)}</dl>
+    <dl className="dstats">{items.map(([label, value, hint]) => <div key={label} title={hint}><dd>{value}</dd><dt>{label}</dt></div>)}</dl>
     <p className="dsub" title={sub}>{sub}</p>
   </>;
 }
@@ -85,7 +95,7 @@ function Hourly({ data, tx }) {
   </section>;
 }
 
-function SplitRow({ name, nameClass, style, title, row, share, fill, sub, tx }) {
+function SplitRow({ name, nameClass, style, title, row, share, fill, sub, subTitle, tx }) {
   return <li className="srow" style={style}>
     <div className="srow-main">
       <span className={cx('sname', nameClass)} title={title}>{fill === 'agent' ? <i className="swatch agent-dot" aria-hidden="true" /> : null}<span>{name}</span></span>
@@ -94,7 +104,7 @@ function SplitRow({ name, nameClass, style, title, row, share, fill, sub, tx }) 
       <span className="sshare">{fmtPct(share)}</span>
     </div>
     <span className={cx('sbar', fill === 'agent' && 'is-agent')} aria-hidden="true"><i style={{ width: `${Math.max(0, Math.min(1, share)) * 100}%` }} /></span>
-    <div className="ssub">{sub}</div>
+    <div className="ssub" title={subTitle}>{sub}</div>
   </li>;
 }
 
@@ -102,6 +112,7 @@ function Split({ data, agentLabel, tx }) {
   const total = data.totals?.totalTokens || 0;
   const agents = useMemo(() => agentRows(data.clients), [data.clients]);
   const models = useMemo(() => mergedModelRows(data.models), [data.models]);
+  const tps = data.tps?.models ?? {};
   const share = (row) => total > 0 ? row.totalTokens / total : 0;
   const head = <div className="shead" aria-hidden="true"><span /><span>Tokens</span><span>{tx('splitCost')}</span><span>{tx('splitShare')}</span></div>;
   return <>
@@ -116,9 +127,14 @@ function Split({ data, agentLabel, tx }) {
       {head}
       <ul className="slist">{models.map((row) => {
         const rate = pricing(row) === 'none' ? null : costPerMillion(row);
+        const speed = tps[row.model];
+        const tpsText = tx('splitModelTps', { tps: fmtTps(speed?.median) });
+        const inferred = speed?.median != null && speed.inferred;
         return <SplitRow key={row.model} name={row.model} nameClass="is-mono" row={row} share={share(row)} tx={tx}
           title={`${row.model}\n${tx('splitModelAgents', { agents: row.clients.map(agentLabel).join(', ') })}`}
-          sub={tx('splitModelSub', { pct: fmtPct(row.cacheHitRate), output: fmtTokens(row.outputTokens), rate: rate == null ? '—' : fmtCost(rate) })} />;
+          sub={<>{tx('splitModelSub', { pct: fmtPct(row.cacheHitRate), output: fmtTokens(row.outputTokens), rate: rate == null ? '—' : fmtCost(rate) })}
+            {' · '}<span title={tx('tpsHint')}>{tpsText}</span><TpsValueMark tps={speed} tx={tx} /></>}
+          subTitle={`${tpsText}${inferred ? '*' : ''}\n${tx(inferred ? 'tpsInferred' : 'tpsHint')}`} />;
       })}</ul>
     </div>
   </>;

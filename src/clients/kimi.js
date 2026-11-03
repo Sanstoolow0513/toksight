@@ -1,6 +1,7 @@
 import os from 'node:os';
 import path from 'node:path';
 import { walkFilesMany, readJsonl, readJson } from '../fsutils.js';
+import { durationFields } from '../tps.js';
 
 export const id = 'kimi';
 export const label = 'Kimi Code';
@@ -18,6 +19,12 @@ export function sourceRoots({ env = process.env, home = os.homedir() } = {}) {
 // Kimi fields: inputOther (fresh input), output, inputCacheRead,
 // inputCacheCreation. Session metadata (id, cwd, title) lives in the
 // session's state.json; agents within a session share it.
+//
+// Request duration is measured (durationSource 'measured'): Kimi logs an
+// `llm.request` line when it sends each request and the `usage.record` when
+// that request completes. A usage record pairs with the latest earlier
+// request for the same model in the same wire log; earlier unmatched
+// requests are failed attempts that were retried and are dropped.
 export async function collect({ env, home, roots } = {}) {
   const scanRoots = roots ?? sourceRoots({ env, home });
   const entries = [];
@@ -59,9 +66,11 @@ export async function collect({ env, home, roots } = {}) {
     const requests = new Map();
     const agentId = path.basename(path.dirname(file));
 
+    let sent = [];
     await readJsonl(file, (o) => {
       if (o?.type === 'llm.request') {
         requests.set(`${o.agentId ?? agentId}\0${o.kind ?? ''}`, { model:o.model, provider:o.provider });
+        if (typeof o.time === 'number' && Number.isFinite(o.time)) sent.push({ time: o.time, models: [o.model, o.modelAlias] });
         return;
       }
       if (!o || o.type !== 'usage.record') return;
@@ -75,6 +84,11 @@ export async function collect({ env, home, roots } = {}) {
       const time = typeof o.time === 'number' ? o.time : o.time ? Date.parse(o.time) : NaN;
       const request = requests.get(`${o.agentId ?? agentId}\0${o.usageScope ?? ''}`);
       const providerId = request?.model === o.model && typeof request.provider === 'string' ? request.provider : null;
+      let timing = {};
+      if (Number.isFinite(time)) {
+        const at = sent.findLastIndex((r) => r.time <= time && r.models.includes(o.model));
+        if (at >= 0) { timing = durationFields(sent[at].time, time, 'measured'); sent = sent.filter((r, i) => i > at || !r.models.includes(o.model)); }
+      }
 
       entries.push({
         client: id,
@@ -90,6 +104,7 @@ export async function collect({ env, home, roots } = {}) {
         costUsd: null,
         directory,
         title,
+        ...timing,
       });
     });
   }

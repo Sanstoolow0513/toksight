@@ -118,7 +118,7 @@ export function createWebDataService(base, { collect = collectAll, env, home, da
     }
     const ctx = { ...raw, opts, entries: filtered.entries, warnings: [...raw.warnings, ...filtered.warnings, ...startupPricingWarnings] };
     const scope = filterEntries(raw.entries, { ...base, clients: opts.clients }).entries;
-    const payload = { ...buildPayload(ctx), ...buildWebExtras(ctx.entries, { top: opts.top, now: time, timezone }) };
+    const payload = { ...buildPayload(ctx), ...buildWebExtras(ctx.entries, { top: opts.top, now: time, timezone, priceFor: ctx.pricing?.priceFor }) };
     let selection = null;
     if (opts.since != null || opts.until != null) {
       const end = opts.until ?? endOfDay(time, timezone);

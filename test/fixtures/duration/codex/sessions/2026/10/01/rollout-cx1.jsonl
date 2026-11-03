@@ -1,0 +1,15 @@
+{"timestamp": "2026-10-01T10:00:00.000Z", "type": "session_meta", "payload": {"id": "cx1", "cwd": "/w"}}
+{"timestamp": "2026-10-01T10:00:00.000Z", "type": "turn_context", "payload": {"model": "gpt-5.2"}}
+{"timestamp": "2026-10-01T10:00:00.000Z", "type": "response_item", "payload": {"type": "message", "role": "user", "content": []}}
+{"timestamp": "2026-10-01T10:00:03.000Z", "type": "response_item", "payload": {"type": "reasoning"}}
+{"timestamp": "2026-10-01T10:00:04.000Z", "type": "response_item", "payload": {"type": "function_call"}}
+{"timestamp": "2026-10-01T10:00:04.100Z", "type": "token_usage_record", "payload": {"usage": {"input_tokens": 100, "cached_input_tokens": 0, "output_tokens": 80, "reasoning_output_tokens": 0, "total_tokens": 180}}}
+{"timestamp": "2026-10-01T10:00:06.000Z", "type": "response_item", "payload": {"type": "function_call_output"}}
+{"timestamp": "2026-10-01T10:00:06.001Z", "type": "event_msg", "payload": {"type": "token_count", "info": {"last_token_usage": {"input_tokens": 100, "cached_input_tokens": 0, "output_tokens": 80, "reasoning_output_tokens": 0, "total_tokens": 180}}}}
+{"timestamp": "2026-10-01T10:00:09.000Z", "type": "response_item", "payload": {"type": "message", "role": "assistant", "content": []}}
+{"timestamp": "2026-10-01T10:00:10.000Z", "type": "event_msg", "payload": {"type": "token_count", "info": {"last_token_usage": {"input_tokens": 100, "cached_input_tokens": 0, "output_tokens": 60, "reasoning_output_tokens": 0, "total_tokens": 160}}}}
+{"timestamp": "2026-10-01T10:00:11.000Z", "type": "response_item", "payload": {"type": "reasoning"}}
+{"timestamp": "2026-10-01T10:00:20.000Z", "type": "event_msg", "payload": {"type": "user_message"}}
+{"timestamp": "2026-10-01T10:00:22.000Z", "type": "response_item", "payload": {"type": "message", "role": "assistant", "content": []}}
+{"timestamp": "2026-10-01T10:00:23.000Z", "type": "event_msg", "payload": {"type": "token_count", "info": {"last_token_usage": {"input_tokens": 100, "cached_input_tokens": 0, "output_tokens": 90, "reasoning_output_tokens": 0, "total_tokens": 190}}}}
+{"timestamp": "2026-10-01T10:00:23.500Z", "type": "event_msg", "payload": {"type": "token_count", "info": {"last_token_usage": {"input_tokens": 100, "cached_input_tokens": 0, "output_tokens": 90, "reasoning_output_tokens": 0, "total_tokens": 190}}}}

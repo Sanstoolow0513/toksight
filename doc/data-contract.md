@@ -20,6 +20,10 @@
 记录可增加 `providerId`、派生的 `pricingProvider` / `providerEndpoint` 和作为 cacheWriteTokens 子集的
 `cacheWrite1hTokens`；旧记录可缺失，备份校验这些字段，不参与身份去重。详情见[本机价格库](local-pricing.md)。
 
+记录还可带请求耗时 `durationMs`（请求开始到结束的毫秒整数，非负安全整数）和 `durationSource`（`measured`：Agent 记录了起止；
+`inferred`：开始时间取相邻上一条消息）。只存于 `data_json`，无新列、无迁移；旧记录与旧备份可缺失，备份校验时只接受
+合法值，且不参与身份去重（`usageimports.js` 的指纹只取固定字段），因此重新导入不会重复计数。TPS 从不存储，见下文 `tps`。
+
 CLI 的 `--since` / `--until` 与按天聚合保持机器本地时区。Web 可传 `timezone`（IANA 名称，省略时仍使用服务端本地时区）；浏览器默认检测自己的时区，手动选择保存在 `toksight-timezone`。所有服务端算法集中在 `src/dates.js`，通过可选时区参数参与日期边界、天/月分组、小时归属、热力图、趋势、连续天数和相邻周期计算，不修改全局 `process.env.TZ` 或原始时间戳。
 
 按所选时区的日历天运算。`Intl.DateTimeFormat` 提供该时区的年月日 / 小时；缓存的日界查找处理午夜缺失或重复，整日范围包含最后一毫秒。每一天仍使用 24 个钟面小时桶，重复小时合并、跳过小时为零，界面不区分夏令 / 冬令子视图。前端 `frontend/lib/period.js` 用所选时区生成真实时间的日期键，月 / 年 / 周与日步进只对民用日期标签运算；UTC 仅充当标签运算的临时日历，不能用真实时间的 UTC 日期替代当地日期。
@@ -38,6 +42,10 @@ LiteLLM 长上下文估价逐请求选档；同一原始 ID 跨多个实际单�
 - 快照/选择：`snapshot`、`view`、`scopeRange`、`selection`。`selection` 的趋势/热力图最多呈现最后 366 天，`totals` 与 `comparison` 仍用完整请求范围。
 - 本机价格：`priceDatabase` 给出引导、自动更新、价格/历史版本数与离线状态；目录来源仅为 litellm，provider 标明原厂计价渠道。
 - 费用说明：`costCoverage` 按 `reported`、`user`、`litellm`、`unknown` 分来源统计请求和金额，并给出未定价与使用缓存价格回退的请求数。
+- 请求速度：`tps` 含 `overall`、`clients`（按 Agent）、`models`（按报告展示的模型名跨 Agent 合并，与网页用量拆分合并口径一致）、
+  `hourly`（24 个钟面小时）。每项为 `{ median, requests, inferredRequests, inferred }`：`median` 是逐请求 TPS
+  （`outputTokens / (durationMs / 1000)`）的中位数，保留 1 位小数，没有可用请求时为 `null`；`inferred` 表示中位数是否用到了
+  推算耗时。输出为 0、耗时 < 50ms 或 > 1 小时、TPS > 2000 的请求不参与（阈值在 `src/tps.js`）。CLI `--json` 不含这些字段。
 - 相邻周期：`comparison` 用等日历天数的前一段作为基准，给出贡献和覆盖情况；没有起始日期时默认比较截至选定终点/今天的七天。前段越过启动范围时返回不可比较状态。
 
 本期、上期的费用覆盖统计使用同一份价格快照；无基准、范围不完整等情况由比较结果显式表达，不能靠空数组推断。
