@@ -139,7 +139,7 @@ toksight 是每天打开查看的本地数据工具。界面首先要保证信�
 | `--dur-3` | 360ms | 日历缩放 FLIP、时段柱升起、计量条 |
 | `--ease` | `cubic-bezier(.2, .7, .1, 1)` | 全站统一缓动 |
 
-- 页面内的局部滚动区（`.cal-scroller`、`.dcard-body`、`.price-scroll`、`.sidebar`、`.toast-body ul`）统一 `scrollbar-width: thin; scrollbar-color: var(--line-strong) transparent`，避免 Windows / WebView2 显示带箭头的粗原生滚动条；文档级滚动条保持系统默认。
+- 文档级滚动（`html`）与页面内的局部滚动区（`.cal-scroller`、`.dcard-body`、`.price-scroll`、`.sidebar`、`.toast-body ul`）统一 `scrollbar-width: thin; scrollbar-color: var(--line-strong) transparent`，避免 Windows / WebView2 显示带箭头的粗原生滚动条，切换页面时滚动条粗细也保持一致。
 - `prefers-reduced-motion: reduce` 时（`utilities.css`），所有动画和过渡关闭，`scroll-behavior: auto`。日历缩放改为直接切换，程序触发的滚动改为瞬时。
 - 导出图片期间（`.is-exporting`）也关闭全部动画和过渡。
 - 动画只用 CSS 和 Web Animations API（`el.animate`），不引入动画库。
