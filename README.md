@@ -372,7 +372,7 @@ horizontal navigation keeps all four views within reach. See `design-spec.md` fo
   (back to today) work from the keyboard, and the focus ring stays visible outside a selected day's frame.
   The detail pane beside it shows the selection's totals, the hourly
   strip for a single day, and the usage split by agent and by model (the same model used from several agents is
-  one row). Totals include **TPS**, the median per-request output speed (output tokens ÷ request time,
+  one row). Totals include **Median TPS**, the median per-request output speed (output tokens ÷ request time,
   which includes thinking and queueing, so it is not streaming speed); each model row adds its median TPS.
   OpenCode, ZCode and Kimi Code log request start and end; Claude Code and Codex times are estimated from the
   previous message and marked `*`. Requests without timing are left out, and no timing shows `—`; **View sessions** swaps the split for the sessions list. The split's scroll area takes Tab focus and

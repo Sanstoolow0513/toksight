@@ -91,13 +91,13 @@
   .dtitle { font-size: var(--fs-xl); font-weight: var(--fw-strong); line-height: 1.3; white-space: nowrap; }
   .dmeta { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-xs); color: var(--ink-3); }
   .dnav { display: flex; align-items: center; gap: var(--sp-1); flex-shrink: 0; }
-  .dstats { display: grid; grid-template-columns: repeat(5, auto); justify-content: space-between; gap: var(--sp-4); }
+  .dstats { display: grid; grid-template-columns: repeat(5, 1fr); gap: var(--sp-4); }
   .dstats div { display: flex; flex-direction: column; }
   .dstats dd { font-size: var(--fs-xl); font-weight: var(--fw-strong); letter-spacing: var(--track-tight); line-height: 1.3; white-space: nowrap; }
   .dstats dt { font-size: var(--fs-xs); color: var(--ink-3); }
   /* Five stats need ~420px; narrower detail panes wrap to 3 + 2, then 2 below 240px. */
-  @container (max-width: 420px) { .dstats { grid-template-columns: repeat(3, auto); row-gap: var(--sp-2); } }
-  @container (max-width: 240px) { .dstats { grid-template-columns: repeat(2, auto); } }
+  @container (max-width: 420px) { .dstats { grid-template-columns: repeat(3, 1fr); row-gap: var(--sp-2); } }
+  @container (max-width: 240px) { .dstats { grid-template-columns: repeat(2, 1fr); } }
   /* Sits closer to the stats it explains: 10px row gap less --sp-1 (design: 130px head). */
   .dsub { margin-top: calc(-1 * var(--sp-1)); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-xs); color: var(--ink-3); }
   .dempty { font-size: var(--fs-sm); color: var(--ink-2); }

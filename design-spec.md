@@ -309,8 +309,8 @@ toksight 是每天打开查看的本地数据工具。界面首先要保证信�
   - 单日：标题 `--fs-xl --fw-strong`，例如“10月28日 周三”。旁边 `--fs-xs --ink-3` 写“今天 · 时区”（不是今天时只写时区）。右侧是前一天 / 后一天（sm IconButton，`dayPrev` / `dayNext`，范围到列表首日和今天）。
   - 多选：标题“已选 N 天”；选区正好是一整周时改为“2026 年 W42”（`calWeekHeading`）。旁边写“10月12日 – 10月18日 · 活跃 N 天”，不连续时在结束日期后加“ · 不连续”。右侧文字按钮“清除选择”，只保留最后一天。
   - 标题 `aria-live="polite"`。
-- 第 2 行：五项数字 `.dstats`（`repeat(5, auto)`，`space-between`），依次为 Tokens、参考费用、缓存命中、请求、TPS。数值 `--fs-xl --fw-strong --track-tight`，标签在下（`--fs-xs --ink-3`）。部分未定价时费用后加 `*`。`.dhead` 是 inline-size 容器：宽度 ≤420px 时改为 3 列（行距 `--sp-2`），≤240px 时 2 列。
-  - TPS 是选区内逐请求输出速度的中位数（`tps.overall.median`，不用平均数）；无耗时数据显示“—”，不显示 0。悬停提示 `tpsHint`。选区含任何推算耗时（Claude Code / Codex，含混合）时数值右上角加与部分未定价相同的 `*`（`.partial-mark`），提示 `tpsInferred`“按相邻消息时间推算，含思考和排队时间”。
+- 第 2 行：五项数字 `.dstats`（`repeat(5, 1fr)` 等宽列，全部左对齐），依次为 Tokens、参考费用、缓存命中、请求、中位 TPS。数值 `--fs-xl --fw-strong --track-tight`，标签在下（`--fs-xs --ink-3`）。部分未定价时费用后加 `*`。`.dhead` 是 inline-size 容器：宽度 ≤420px 时改为 `repeat(3, 1fr)`（行距 `--sp-2`），≤240px 时 `repeat(2, 1fr)`。
+  - 中位 TPS 是选区内逐请求输出速度的中位数（`tps.overall.median`，不用平均数）；无耗时数据显示“—”，不显示 0。悬停提示 `tpsHint`。选区含任何推算耗时（Claude Code / Codex，含混合）时数值右上角加与部分未定价相同的 `*`（`.partial-mark`），提示 `tpsInferred`“按相邻消息时间推算，含思考和排队时间”。
 - 第 3 行 `.dsub`（`--fs-xs --ink-3`，单行省略，与上一行间距收紧 `--sp-1`）：
   - 单日：“输出 {output} · 每百万 tokens {rate} · {n} 个会话”
   - 多选：“活跃日均 {tokens} · {cost} · {n} 个会话”
