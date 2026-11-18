@@ -9,14 +9,13 @@ import { createUsageDatabase } from './database.js';
 import { getPricing, PRICE_REFRESH_MS } from './pricing.js';
 import { PRICE_SOURCES, validPriceSources } from './priceselection.js';
 import { resetPriceDatabase } from './pricereset.js';
-import { collectQuotas, QUOTA_CLIENTS } from './quota.js';
-import { buildPayload, buildQuotaPayload } from './payload.js';
+import { buildPayload } from './payload.js';
 import { createGitHubBackup } from './ghsync.js';
 
 // The database is loaded before serving. Requests reuse its in-memory snapshot;
 // refreshes share a single collection/write and swap only after commit.
 export function createWebDataService(base, { collect = collectAll, env, home, database = createUsageDatabase({ env, home }), now = Date.now, genericPricing = getPricing,
-  setIntervalImpl = setInterval, clearIntervalImpl = clearInterval, quotaFetch, syncFetch, syncApiBase, syncGh } = {}) {
+  setIntervalImpl = setInterval, clearIntervalImpl = clearInterval, syncFetch, syncApiBase, syncGh } = {}) {
   let inflightRefresh = null;
   let inflightPrices = null;
   let initialized = false;
@@ -234,26 +233,6 @@ export function createWebDataService(base, { collect = collectAll, env, home, da
     await snapshot();
     if (inflightRefresh) await inflightRefresh;
     return githubBackup.restore({ importDatabase: (bytes) => { assertOpen(); return database.importDatabase(bytes); } });
-  };
-  // Quota: GET re-reads Codex logs and returns the last Kimi result held in
-  // memory (never persisted); only the explicit refresh calls the Kimi API.
-  let kimiQuota = null, inflightQuota = null;
-  const kimiCache = { get: () => kimiQuota, set: (value) => { kimiQuota = value; } };
-  const quotaClients = () => base.clients ? QUOTA_CLIENTS.filter((id) => base.clients.includes(id)) : QUOTA_CLIENTS;
-  const quotaPayload = async (network) => ({
-    ...buildQuotaPayload(await collectQuotas({ clients: quotaClients(), offline: Boolean(base.offline), network },
-      { env, home, now, fetchImpl: quotaFetch, kimiCache }), now()),
-    offline: Boolean(base.offline),
-  });
-  getData.quota = () => { assertOpen(); return quotaPayload(false); };
-  getData.refreshQuota = () => {
-    assertOpen();
-    if (!inflightQuota) {
-      const run = quotaPayload(true);
-      inflightQuota = run;
-      run.then(() => { if (inflightQuota === run) inflightQuota = null; }, () => { if (inflightQuota === run) inflightQuota = null; });
-    }
-    return inflightQuota;
   };
   getData.close = () => { closed = true; if (timer) clearIntervalImpl(timer); timer = null; database.close(); };
   return getData;
