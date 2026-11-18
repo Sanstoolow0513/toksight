@@ -48,7 +48,7 @@
     --agent-kimi: #3f6db3;
     --agent-zcode: #8c5aa8;
     --agent-other: #8a898e;
-    /* Absence (future days, remaining quota, unpriced): a flat fill, not a pattern. */
+    /* Absence (future days, unpriced): use a flat fill. */
     --empty: var(--surface-3);
     --empty-faint: var(--surface-2);
     /* Elevation: only floating layers */

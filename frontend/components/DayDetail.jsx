@@ -46,12 +46,12 @@ export function SessionRow({ row, index, agentLabel, locale, tx, timezone }) {
 }
 
 // The overview day anatomy: hourly (2fr) beside the token mix (1fr), then the
-// agent table (models nest under their agent), sessions and `quota` last.
-export function DayBody({ data, day, sortBy, onSort, locale, tx, agentLabel, open, onToggle, overview = false, quota = null }) {
+// agent table (models nest under their agent) and sessions.
+export function DayBody({ data, sortBy, onSort, locale, tx, agentLabel, open, onToggle }) {
   const [expanded, setExpanded] = useState(false);
   const sessions = useMemo(() => sessionRows(data.topSessions, SESSION_LIMIT), [data.topSessions]);
   const visible = expanded ? sessions : sessions.slice(0, 5);
-  return <div className={'day-sections' + (overview ? ' is-overview' : '')}>
+  return <div className="day-sections">
     <div className="analysis-grid"><ActivityChart data={data} tx={tx} /><TokenBreakdown data={data} tx={tx} /></div>
     {!data.totals?.requests ? <div className="day-empty plate plate--inset"><h3>{tx('noSessions')}</h3><p>{tx('noSessionsNote')}</p></div> : null}
     {Object.keys(data.clients ?? {}).length ? <Panel className="day-section section-agents" icon={<Layers3 size={16} aria-hidden="true" />} title={tx('cardAgents')}
@@ -63,6 +63,5 @@ export function DayBody({ data, day, sortBy, onSort, locale, tx, agentLabel, ope
       actions={sessions.length > 5 ? <Button variant="text" className="no-export" aria-expanded={expanded} onClick={() => setExpanded(!expanded)}>{tx(expanded ? 'hideSessions' : 'viewSessions')}</Button> : null}>
       <ol className="session-list">{visible.map((row, index) => <SessionRow key={row.client + '/' + row.sessionId} row={row} index={index} agentLabel={agentLabel} locale={locale} tx={tx} timezone={data.timezone} />)}</ol>
     </Panel> : null}
-    {overview ? quota : null}
   </div>;
 }

@@ -1,5 +1,5 @@
 /* Shared primitives: Button, Segmented, Panel, Readout, Table, Tooltip,
-   form fields, Badge, Meter, Swatch, states. Page components only compose
+   form fields, Badge, Swatch, states. Page components only compose
    these; they do not restyle them. */
 @layer primitives {
   /* Label: the one secondary caption style (sentence case, sans). */
@@ -178,14 +178,6 @@
   }
   .badge--signal { color: var(--signal-ink); background: var(--signal-soft); }
   .badge--warn { color: var(--warn); background: var(--warn-soft); }
-
-  /* Meter: a plain track and fill; accent above 80%. */
-  .meter { position: relative; display: block; height: 8px; min-width: 0; border-radius: var(--r-pill); background: var(--empty); overflow: hidden; }
-  .meter > i {
-    display: block; height: 100%; width: calc(var(--value, 0) * 1%); background: var(--ink); border-radius: inherit;
-    transition: width var(--dur-3) var(--ease);
-  }
-  .meter.is-high > i { background: var(--signal); }
 
   /* Swatch: agent colours, token parts and legends. */
   .swatch, .agent-dot { display: inline-block; flex-shrink: 0; width: 8px; height: 8px; border-radius: 2px; background: var(--swatch, var(--agent)); }

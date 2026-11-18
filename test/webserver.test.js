@@ -83,9 +83,15 @@ test('/api/data remains read-only and other /api paths are JSON 404s', async () 
     assert.equal(posted.headers.get('allow'), 'GET, HEAD');
     assert.equal((await posted.json()).code, 'METHOD_NOT_ALLOWED');
 
-    for (const route of ['/api/config', '/api/config/import', '/api/nope']) {
-      const res = await fetch(url + route);
-      assert.equal(res.status, 404, route);
+    for (const [method, route] of [
+      ['GET', '/api/config'],
+      ['GET', '/api/config/import'],
+      ['GET', '/api/nope'],
+      ['GET', '/api/quota'],
+      ['POST', '/api/quota/refresh'],
+    ]) {
+      const res = await fetch(url + route, { method });
+      assert.equal(res.status, 404, `${method} ${route}`);
       assert.match(res.headers.get('content-type'), /application\/json/);
       assert.equal((await res.json()).code, 'NOT_FOUND');
     }

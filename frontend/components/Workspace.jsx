@@ -49,7 +49,7 @@ export default function Workspace() {
   else if (!w.hasData && w.current.error) content = <ErrorState tx={tx} error={w.current.error} onRetry={() => void w.current.reload()} />;
   else if (!w.hasData) content = <Skeleton tx={tx} />;
   else content = <div ref={w.reportRef} className={`report ${view}-report${w.reportBusy ? ' is-loading' : ''}${w.current.error ? ' is-stale' : ''}`} aria-busy={w.reportBusy}>
-    {view === 'today' ? <TodayDashboard data={data} day={w.shown.since} today={today} trend={w.trend} quotaRevision={w.refreshRevision} {...w.shared} open={w.openAgents} onToggle={w.onToggleAgent} onCalendar={() => navigate('calendar')} />
+    {view === 'today' ? <TodayDashboard data={data} day={w.shown.since} today={today} trend={w.trend} {...w.shared} open={w.openAgents} onToggle={w.onToggleAgent} onCalendar={() => navigate('calendar')} />
       : <CalendarView data={data} today={today} start={w.calendarStart} selected={w.selected} anchor={w.anchor} zoom={w.calendarZoom} onZoom={w.onCalendarZoom}
         onSelect={w.onSelect} report={w.selectionReport} agentLabel={w.shared.agentLabel} locale={locale} tx={tx} />}
     <ReportFooter data={data} tx={tx} />

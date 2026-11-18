@@ -28,6 +28,7 @@ test('accepts every known command and rejects unknown ones', () => {
     assert.equal(parse([cmd]).command, cmd);
   }
   assert.throws(() => parse(['bogus']), /unknown command "bogus"/);
+  assert.throws(() => parse(['quota']), /unknown command "quota"/);
   assert.throws(() => parse(['daily', 'monthly']), /unexpected extra arguments: monthly/);
 });
 
