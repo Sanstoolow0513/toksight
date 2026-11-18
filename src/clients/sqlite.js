@@ -1,5 +1,5 @@
 // Shared read-only SQLite opener for client parsers (OpenCode, ZCode).
-// `node:sqlite` is available on the supported Node >= 22.5. Keep the dynamic
+// `node:sqlite` is available in all supported Node versions. Keep the dynamic
 // import so callers can catch open failures and use their legacy file layout.
 
 export async function openSqliteReadOnly(dbPath) {

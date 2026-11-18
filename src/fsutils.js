@@ -2,6 +2,9 @@ import { createReadStream } from 'node:fs';
 import { opendir, readFile } from 'node:fs/promises';
 import { createInterface } from 'node:readline';
 import path from 'node:path';
+import { pipeline } from 'node:stream/promises';
+import { createZstdDecompress } from 'node:zlib';
+import { zstdFrameChunks } from './zstd.js';
 
 // Returns { files, warnings }. A root that simply does not exist (ENOENT) is
 // silent — the user may not have every agent installed. Anything else
@@ -55,10 +58,16 @@ export async function walkFilesMany(roots, opts = {}) {
 
 // Streams a JSONL file line by line; malformed lines yield `null` objects.
 export async function readJsonl(file, handler) {
-  const rl = createInterface({
-    input: createReadStream(file, { encoding: 'utf8' }),
-    crlfDelay: Infinity,
-  });
+  const input = createReadStream(file);
+  if (file.endsWith('.zst')) {
+    await pipeline(input, zstdFrameChunks, createZstdDecompress(), decoded => readJsonLines(decoded, handler));
+  } else {
+    await readJsonLines(input, handler);
+  }
+}
+
+async function readJsonLines(input, handler) {
+  const rl = createInterface({ input, crlfDelay: Infinity });
   for await (const line of rl) {
     const trimmed = line.trim();
     if (!trimmed) continue;

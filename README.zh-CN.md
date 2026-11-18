@@ -16,7 +16,7 @@ toksight 读取各 AI 编程智能体已经写在本地磁盘的会话文件，�
 | --- | --- | --- |
 | ZCode | `~/.zcode/cli/db/db.sqlite`，数据库不存在或不可读时回退 `~/.zcode/cli/rollout/*.jsonl` | `ZCODE_HOME` |
 | Claude Code | `~/.claude/projects/**/*.jsonl` | `CLAUDE_CONFIG_DIR` |
-| Codex CLI | `~/.codex/sessions/**/*.jsonl` | `CODEX_HOME` |
+| Codex CLI | `~/.codex/sessions/` 和 `~/.codex/archived_sessions/` 下的 `.jsonl`、`.jsonl.zst` | `CODEX_HOME` |
 | OpenCode | `~/.local/share/opencode/opencode.db`，数据库不存在或不可读时回退 `~/.local/share/opencode/storage/message/**/*.json` | `OPENCODE_PATH` |
 | Kimi Code | `~/.kimi-code/sessions/**/agents/*/wire.jsonl` | `KIMI_CODE_HOME` |
 
@@ -28,7 +28,7 @@ npm install -g toksight
 npx toksight
 ```
 
-需要 Node.js >= 22.5。内置 `node:sqlite` 用于读取 ZCode 与 OpenCode 数据库，并保存
+原生 Zstandard 解压需要 Node.js 22.x 的 22.15 及以上版本，或 Node.js 23.8 及以上版本。内置 `node:sqlite` 用于读取 ZCode 与 OpenCode 数据库，并保存
 toksight 自己的本地用量数据库；无需安装运行时依赖。
 
 ## 使用
@@ -295,7 +295,7 @@ API 可以这样调用：`GET /api/data?period=custom&since=2026-09-01&until=202
 推荐 `npm run frontend:ci`、`npm run frontend:dev`、`npm run frontend:build`；原 `web:*` 命令仍兼容，均指向新版。
 
 npm 包已包含 `frontend/out/` 中预构建好的静态文件——安装后直接 `toksight web` 即可，无需构建，
-也不运行 Next。从源码预览发布版页面需要 Node >=22.5：
+也不运行 Next。从源码预览发布版页面需要 Node 22.x 的 22.15 及以上版本，或 Node 23.8 及以上版本：
 
 ```bash
 npm run web:ci && npm run web:build && node bin/toksight.js web
