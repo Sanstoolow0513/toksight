@@ -17,7 +17,7 @@ Inspired by [tokscale](https://github.com/junhoyeo/tokscale) (and in the same sp
 | --- | --- | --- |
 | ZCode | `~/.zcode/cli/db/db.sqlite`; if absent or unreadable, fallback `~/.zcode/cli/rollout/*.jsonl` | `ZCODE_HOME` |
 | Claude Code | `~/.claude/projects/**/*.jsonl` | `CLAUDE_CONFIG_DIR` |
-| Codex CLI | `~/.codex/sessions/**/*.jsonl` | `CODEX_HOME` |
+| Codex CLI | Files ending in `.jsonl` or `.jsonl.zst` under `~/.codex/sessions/` and `~/.codex/archived_sessions/` | `CODEX_HOME` |
 | OpenCode | `~/.local/share/opencode/opencode.db`; if absent or unreadable, fallback `~/.local/share/opencode/storage/message/**/*.json` | `OPENCODE_PATH` |
 | Kimi Code | `~/.kimi-code/sessions/**/agents/*/wire.jsonl` | `KIMI_CODE_HOME` |
 
@@ -29,7 +29,7 @@ npm install -g toksight
 npx toksight
 ```
 
-Requires Node.js >= 22.5. The built-in `node:sqlite` reads ZCode and OpenCode databases and
+Requires Node.js 22.15 or later in the 22.x series, or Node.js 23.8 and newer, for native Zstandard decompression. The built-in `node:sqlite` reads ZCode and OpenCode databases and
 stores toksight's own local usage database; no runtime package is installed.
 
 ## Usage
@@ -365,7 +365,7 @@ Use `npm run frontend:ci`, `npm run frontend:dev`, and `npm run frontend:build`;
 
 The npm package ships with the prebuilt static files in `frontend/out/` — installed users just run
 `toksight web`, no build and no Next runtime. To preview the production dashboard from a source
-checkout (requires Node >=22.5):
+checkout (requires Node 22.15+ on 22.x or Node 23.8+):
 
 ```bash
 npm run web:ci && npm run web:build && node bin/toksight.js web

@@ -2,7 +2,7 @@
 
 ## 项目与入口
 
-`toksight` 是 Node >=22.5 的 ESM CLI，读取本机 AI 编码 Agent 用量，统计 token、费用与缓存命中率，并提供本地静态 Web 报告。前端源码与依赖统一在 `frontend/`。根包零运行时依赖；刷新和导入更新 toksight 自己的 SQLite，价格抓取更新自己的缓存，绝不修改 Agent 文件。没有 TUI。
+`toksight` 是 ESM CLI，支持 Node 22.x 的 22.15 及以上版本或 Node 23.8 及以上版本，读取本机 AI 编码 Agent 用量，统计 token、费用与缓存命中率，并提供本地静态 Web 报告。前端源码与依赖统一在 `frontend/`。根包零运行时依赖；刷新和导入更新 toksight 自己的 SQLite，价格抓取更新自己的缓存，绝不修改 Agent 文件。没有 TUI。
 
 开发知识从 [doc/README.md](doc/README.md) 按主题查：
 

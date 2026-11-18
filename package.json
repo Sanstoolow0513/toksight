@@ -5,7 +5,7 @@
   "type": "module",
   "license": "MIT",
   "engines": {
-    "node": ">=22.5"
+    "node": "^22.15.0 || >=23.8.0"
   },
   "bin": {
     "toksight": "bin/toksight.js"

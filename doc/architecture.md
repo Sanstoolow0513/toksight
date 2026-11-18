@@ -2,7 +2,7 @@
 
 ## 边界
 
-`toksight` 是 ESM Node.js CLI，要求 Node >=22.5，根包没有运行时依赖。它读取本机 Agent 会话数据；刷新和导入更新自己的 SQLite，价格抓取更新自己的缓存文件，不修改 Agent 数据。`frontend/` 用 Next.js 构建静态页面，由 CLI 的 `node:http` 服务托管；没有 TUI。`scripts/` 是源码仓库开发工具，不随 npm 包发布。用户命令和选项见双语 README。
+`toksight` 是 ESM Node.js CLI，支持 Node 22.x 的 22.15 及以上版本或 Node 23.8 及以上版本，根包没有运行时依赖。它读取本机 Agent 会话数据；刷新和导入更新自己的 SQLite，价格抓取更新自己的缓存文件，不修改 Agent 数据。`frontend/` 用 Next.js 构建静态页面，由 CLI 的 `node:http` 服务托管；没有 TUI。`scripts/` 是源码仓库开发工具，不随 npm 包发布。用户命令和选项见双语 README。
 
 ## 两条读写路径
 
