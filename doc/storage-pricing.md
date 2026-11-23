@@ -15,6 +15,8 @@ SQLite data_version 发现其他进程提交。普通 CLI 仍由 collectAll 读�
 
 ## 数据库备份
 
+设置页的 GitHub 备份复用同一导出与合并路径，细节见[GitHub 备份](github-backup.md)。
+
 CLI export-db / import-db 对应 Web GET /api/export/db / POST /api/import/db。
 导出用 VACUUM INTO 生成含已提交 WAL 数据的独立 SQLite。导入上限 256 MB；先验证文件头、schema、版本、
 完整性、行字段与身份，再原子合并；错误文件不改变目标库。

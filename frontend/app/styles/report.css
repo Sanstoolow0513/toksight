@@ -1,4 +1,4 @@
-/* Today and day-detail components: metrics row, quota, hourly chart, token
+/* Today and day-detail components: metrics row, hourly chart, token
    mix, agent/model tables and the session list. */
 @layer components {
   .kpis { margin-bottom: var(--gutter); }
@@ -13,25 +13,8 @@
   .kpi-panel .readout dt { flex-direction: row-reverse; justify-content: flex-end; }
   .overview-trend { margin-top: var(--gutter); }
 
-  /* Quota */
-  .quota-clients { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 0 var(--sp-6); padding: var(--sp-2) var(--pad-x) var(--pad-y); }
-  .quota-client { min-width: 0; padding: var(--sp-1) 0; }
-  .quota-client-head { display: flex; justify-content: space-between; align-items: center; gap: var(--sp-3); }
-  .agent-title { display: inline-flex; align-items: center; gap: var(--sp-2); min-width: 0; max-width: 100%; white-space: nowrap; }
-  .agent-title > .agent-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-  .agent-name { font-weight: var(--fw-medium); font-size: var(--fs-sm); }
-  .quota-windows { list-style: none; display: grid; gap: var(--sp-2); margin-top: var(--sp-2); }
-  .quota-window { display: grid; grid-template-columns: 52px minmax(0, 1fr) auto; align-items: center; gap: 2px var(--sp-3); }
-  .quota-window-label { font-size: var(--fs-xs); color: var(--ink-2); }
-  .quota-used { font: var(--fw-medium) var(--fs-sm) var(--font-sans); text-align: right; white-space: nowrap; }
-  .quota-used em { margin-left: var(--sp-2); font-style: normal; font-weight: var(--fw-regular); font-size: var(--fs-xs); color: var(--ink-3); }
-  .quota-reset { grid-column: 2 / -1; font-size: var(--fs-xs); color: var(--ink-3); }
-  .quota-source, .quota-message { margin-top: var(--sp-2); font-size: var(--fs-xs); color: var(--ink-3); overflow-wrap: anywhere; }
-  .quota-message { color: var(--warn); }
-  .quota-error { padding: var(--sp-2) var(--pad-x) 0; }
-
   /* Layout of a day: hourly chart (2fr) beside the token mix (1fr), then
-     agents/models, sessions and (Today) quota. */
+     agents/models and sessions. */
   .day-sections { display: grid; gap: var(--gutter); }
   .analysis-grid { display: grid; grid-template-columns: minmax(0, 2fr) minmax(280px, 1fr); gap: var(--gutter); }
   .day-section { container-type: inline-size; }
@@ -94,6 +77,9 @@
   .agent-chevron { transition: transform var(--dur-2) var(--ease); }
   .agent-toggle[aria-expanded='true'] .agent-chevron { transform: rotate(90deg); color: var(--signal); }
   .agent-label { display: grid; gap: 0; min-width: 0; }
+  .agent-title { display: inline-flex; align-items: center; gap: var(--sp-2); min-width: 0; max-width: 100%; white-space: nowrap; }
+  .agent-title > .agent-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .agent-name { font-weight: var(--fw-medium); font-size: var(--fs-sm); }
   .agent-count { font-size: var(--fs-xs); color: var(--ink-3); }
   .agent-model-summary { display: block; padding-left: 16px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-xs); color: var(--ink-3); }
   .cell-value { font-weight: var(--fw-medium); white-space: nowrap; }
@@ -157,7 +143,6 @@
   @media (max-width: 700px) {
     .readout--lg .readout-value { font-size: var(--fs-3xl); }
     .readout-value.is-text { font-size: var(--fs-lg); }
-    .quota-clients { grid-template-columns: minmax(0, 1fr); }
     .activity-chart { height: 176px; padding-right: var(--pad-x); gap: var(--sp-1); }
     .activity-bars { gap: 2px; }
     .chart-scale { min-width: 40px; }

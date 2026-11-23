@@ -17,8 +17,8 @@ Inspired by [tokscale](https://github.com/junhoyeo/tokscale) (and in the same sp
 | --- | --- | --- |
 | ZCode | `~/.zcode/cli/db/db.sqlite`; if absent or unreadable, fallback `~/.zcode/cli/rollout/*.jsonl` | `ZCODE_HOME` |
 | Claude Code | `~/.claude/projects/**/*.jsonl` | `CLAUDE_CONFIG_DIR` |
-| Codex CLI | `~/.codex/sessions/**/*.jsonl` | `CODEX_HOME` |
-| OpenCode | `~/.local/share/opencode/opencode.db`; if absent or unreadable, fallback `~/.local/share/opencode/storage/message/**/*.json` | `OPENCODE_PATH` |
+| Codex CLI | Files ending in `.jsonl` or `.jsonl.zst` under `~/.codex/sessions/` and `~/.codex/archived_sessions/` | `CODEX_HOME` |
+| OpenCode | `~/.local/share/opencode/opencode.db` (current `session_message` and older `message` tables); if absent or unreadable, fallback `~/.local/share/opencode/storage/message/**/*.json` | `OPENCODE_PATH` |
 | Kimi Code | `~/.kimi-code/sessions/**/agents/*/wire.jsonl` | `KIMI_CODE_HOME` |
 
 ## Install
@@ -29,7 +29,7 @@ npm install -g toksight
 npx toksight
 ```
 
-Requires Node.js >= 22.5. The built-in `node:sqlite` reads ZCode and OpenCode databases and
+Requires Node.js 22.15 or later in the 22.x series, or Node.js 23.8 and newer, for native Zstandard decompression. The built-in `node:sqlite` reads ZCode and OpenCode databases and
 stores toksight's own local usage database; no runtime package is installed.
 
 ## Usage
@@ -42,7 +42,6 @@ toksight models       # grouped by model
 toksight sessions     # top sessions by cost
 toksight web          # local usage & cost report (heatmap, agents, models, image export)
 toksight refresh      # rescan agents and update the local SQLite database
-toksight quota        # subscription quota windows for Codex and Kimi Code
 toksight reset-prices # clear saved prices/history/caches, then reopen Web to rebuild
 toksight export-db backup.sqlite  # export the complete committed usage database
 toksight import-db backup.sqlite  # merge a backup and deduplicate usage
@@ -86,41 +85,13 @@ zcode   GLM-5.3             41   116K    1.99M        0   43.3K  94.5%   $0.870
 --open           open the printed URL in a browser (web only)
 --no-open        leave the browser closed (web only; default)
 --api-only       web: serve only the JSON API, no static dashboard
---offline        skip network pricing fetches; use saved local prices (quota: skip the Kimi request)
+--offline        skip network pricing fetches; use saved local prices
 --no-color       disable ANSI colors
 ```
 
 Value options accept both forms: `--since 2026-08-01` and `--since=2026-08-01`.
 
 CLI day grouping and date filters use your **local** timezone. The web report has its own adjustable time zone in Settings.
-
-### Subscription quota
-
-`toksight quota` shows the current rate-limit windows of your Codex and Kimi Code subscriptions:
-
-```
-Client     Plan                         Window               Used  Resets
-─────────  ───────────────────────────  ──────  ─────────────────  ────────────────────────────
-Codex CLI  self_serve_business_prolite  week                   4%  2026-11-02 00:46 (in 6d 17h)
-Kimi Code  LEVEL_INTERMEDIATE           5h        69.5% (139/200)  2026-10-26 09:33 (in 2h 33m)
-Kimi Code  LEVEL_INTERMEDIATE           week    10.4% (214/2,048)  2026-10-30 07:23 (in 4d)
-Kimi Code  LEVEL_INTERMEDIATE           month                0.6%  2026-11-16 16:00 (in 21d 9h)
-
-Codex CLI: from local session logs, last seen 2026-10-26 06:16 (43m ago)
-```
-
-- **Codex** is read offline from the newest `rate_limits` in `~/.codex/sessions` (`CODEX_HOME`
-  honored). Windows are named by length (`5h`, `week`, otherwise e.g. `2d`); some plans only have
-  a weekly window. A window whose reset time has passed shows as reset instead of a stale percentage.
-- **Kimi Code** has no local quota data, so `toksight quota` calls `GET https://api.kimi.com/coding/v1/usages`
-  with the access token from `~/.kimi-code/credentials/kimi-code.json` (`KIMI_CODE_HOME` honored).
-  The token is only sent to Kimi's API host and never printed or stored. toksight never refreshes it;
-  if it has expired, open Kimi Code to refresh it and retry.
-- `--client codex` / `--client kimi` limits the clients, `--offline` skips the Kimi request, and
-  `--json` prints `{ tool, version, generatedAt, quotas }`.
-
-The web report shows the same data in a **Subscription quota** card on Today. Kimi Code is only
-queried when you click **Refresh Kimi quota** (`POST /api/quota/refresh`); `GET /api/quota` stays local.
 
 ## Pricing
 
@@ -248,6 +219,36 @@ The web endpoints are `GET /api/export/db` (SQLite download) and `POST /api/impo
 bytes, merge statistics as JSON); both retain the local Host check and import requires a permitted
 origin. Transfers work offline and never write agent files.
 
+### GitHub backup (optional)
+
+**GitHub backup** in **Settings** uploads the same full snapshot to `toksight/usage.sqlite` on the
+default branch of your own **private** GitHub repository, and **Restore from GitHub** merges it back.
+Both run only when you click them; there is no automatic or multi-device sync, and no CLI command yet.
+
+- Enter `owner/name` and a token, then **Save**. Use a fine-grained token limited to that repository
+  with **Contents: read and write** (Metadata: read is included). Token precedence:
+  `TOKSIGHT_GITHUB_TOKEN`, `GITHUB_TOKEN`, then the GitHub CLI's token if you are logged in with
+  `gh auth login` (github.com), then the saved token. The panel shows whether `gh` is installed and
+  logged in, with **Check again**; gh is detected locally (no GitHub API call), and its token is
+  never saved by toksight. gh tokens usually reach all your repositories, so a fine-grained token is
+  tighter. A saved token is stored in `<toksight-dir>/github-backup.json` (owner-only permissions
+  where supported). No token is ever sent back to the page.
+- Public repositories are refused, because the snapshot contains session titles and directories.
+  Snapshots over 90 MiB are not uploaded (GitHub's per-file limit is 100 MiB). Snapshots over 1 MiB
+  are committed through the Git Data API, so an interrupted upload leaves the previous backup in
+  place; just retry. An unchanged snapshot is not uploaded again.
+  Large uploads preserve other repository files and stop if GitHub returns incomplete or invalid
+  parent commit or tree information.
+- Restore downloads the backup, checks its integrity and structure, saves the current database to
+  `<toksight-dir>/backups/before-github-restore.sqlite`, then merges like **Import database**
+  (deduplicated, one transaction, rolled back on failure). Local records are never deleted.
+- Invalid tokens, missing permissions, unknown repositories, rate limits, network errors and a
+  missing remote backup show a specific message and change nothing locally. The feature is
+  disabled in `toksight web --offline`.
+- Endpoints: `GET /api/sync/status`, `POST /api/sync/config`, `POST /api/sync/upload`,
+  `POST /api/sync/restore`. They accept requests only from this computer. Details:
+  [doc/github-backup.md](doc/github-backup.md).
+
 **Reset price database** beside **Update prices** in the top bar of the **Prices** page clears saved rates, observed price history,
 the downloaded LiteLLM cache and stored fallback rates, then returns to price setup.
 The confirmation dialog shows what will be cleared and keeps any error visible for retry.
@@ -299,7 +300,7 @@ horizontal navigation keeps all four views within reach. See `design-spec.md` fo
 - **Today** covers all agents. A KPI panel headed by the date and "as of" time shows tokens and reference cost,
   with cache hit rate and requests alongside, followed by hourly
   activity with Tokens / Cost controls, a token-mix bar, expandable agents and models, up to ten sessions
-  (five initially, with an expand control), quota, and the last-30-days trend at the bottom. Token/cost changes compare
+  (five initially, with an expand control), and the last-30-days trend at the bottom. Token/cost changes compare
   with the previous full day when a baseline exists. Single-model agents show the model name directly;
   multi-model agents expand to list their models (there is no separate model ranking). Charts show quantity scales and the hourly peak.
   Session details include title, usage, cost, time span, active time, directory and models.
@@ -316,7 +317,7 @@ horizontal navigation keeps all four views within reach. See `design-spec.md` fo
   one row); **View sessions** swaps the split for the sessions list. The split's scroll area takes Tab focus and
   scrolls with the arrow and Page keys. Below 1200px the calendar (70% of the
   viewport height) stacks above the details.
-- **Settings** contains appearance, language, the reporting time zone, and database import/export.
+- **Settings** contains appearance, language, the reporting time zone, database import/export, and optional GitHub backup.
 
 The time zone defaults to the browser's detected zone and can be set explicitly, for example
 `Asia/Shanghai` when the operating system is set to US time. Today, date boundaries, hourly
@@ -354,7 +355,7 @@ Unknown, duplicate or invalid parameters (including a malformed `days` list)
 return HTTP 400. `POST /api/refresh` updates the database and returns its refresh time and entry
 count and collection warnings. The web API's additive `snapshot` field exposes the refresh time
 and count. `POST /api/prices/update` refreshes LiteLLM prices locally without rescanning
-usage. `GET /api/quota` returns local quota data and `POST /api/quota/refresh` also queries Kimi Code.
+usage.
 Cross-origin write requests are rejected.
 
 ### Dashboard bundle
@@ -364,7 +365,7 @@ Use `npm run frontend:ci`, `npm run frontend:dev`, and `npm run frontend:build`;
 
 The npm package ships with the prebuilt static files in `frontend/out/` — installed users just run
 `toksight web`, no build and no Next runtime. To preview the production dashboard from a source
-checkout (requires Node >=22.5):
+checkout (requires Node 22.15+ on 22.x or Node 23.8+):
 
 ```bash
 npm run web:ci && npm run web:build && node bin/toksight.js web
@@ -389,9 +390,8 @@ toksight is local-first: the CLI and web report only **read** your agents' sessi
 writes toksight's own SQLite database under its config directory; price fetches may update local
 cache files. toksight does not upload usage or write back to agent files. If you change
 `--host`, other clients on that network may read the report/API. External requests download
-the LiteLLM price table; `--offline` disables these requests. `toksight quota` and the web
-**Refresh Kimi quota** button also call the Kimi Code usage API with your local Kimi Code token. Report images are
-rendered in your browser and saved only where you download them.
+the LiteLLM price table. `--offline` disables price downloads. Report images are rendered in your
+browser and saved only where you download them.
 
 ## JSON output
 
@@ -402,9 +402,6 @@ filtered entries, so `--client` / `--since` / `--until` apply to it like every o
 Each `models` row is grouped by agent and display name, with `modelIds` listing the original IDs;
 `pricing.modelRates` keeps per-ID pricing details. Display grouping never changes request costs.
 `toksight refresh --json` instead returns the database path, refresh time, entry count and warnings.
-`toksight quota --json` returns `{ tool, version, generatedAt, quotas }`; each quota has `client`, `plan`,
-`source` (`local`/`api`), `fetchedAt`, `observedAt`, `windows` (`id`, `label`, `windowMinutes`, `usedPercent`,
-optional `used`/`limit`/`remaining`, `resetsAt`, `reset`) and an optional `error` `{ code, message }`.
 
 `warnings` surfaces collection problems (a directory that cannot be read, a SQLite database that
 exists but cannot be opened) and data caveats — notably, entries without a timestamp that were

@@ -16,7 +16,7 @@ toksight 是每天打开查看的本地数据工具。界面首先要保证信�
 2. **平面分区。** 页面是纯色底面 `--bg`，没有网格和纹理。面板（`.plate`）只是更浅一级的表面 `--surface` 加 `--r-2` 圆角：没有外框、角标或投影。面板内部用 1px 发丝线分隔。
 3. **单一强调色。** 橙色 `--signal` 只表达“当前 / 选中 / 峰值 / 焦点”：侧栏选中条、今天标记、多选框、整周选中、峰值柱、输入 token、开关打开、缩放档位点、用过徽标、周号文字（`--signal-ink`）、键盘焦点环。其余元素都用中性灰阶。
 4. **外壳只放必要元素。** 顶栏只放 logo 和一排统一的图标按钮。页面没有大标题、眉标和介绍行，内容紧接顶栏开始。按钮的文字放在提示和可访问名称里。
-5. **状态表达要克制。** 缺失、未来、剩余额度用平涂浅色（`--empty` / `--empty-faint`），不用阴影线。悬停只改背景或加 1px 内框，不位移，也不加硬边阴影。
+5. **状态表达要克制。** 缺失、未来用平涂浅色（`--empty` / `--empty-faint`），不用阴影线。悬停只改背景或加 1px 内框，不位移，也不加硬边阴影。
 6. **紧凑但可读。** 根字号 16px，正文 14–15px，任何文字不小于 13px。统一的面板内边距 `--pad-x 16px` / `--pad-y 12px`、栏距 `--gutter 16px`，控件 28 / 34px，表格行高约 36px。
 7. **不展示无依据的数据。** 增幅以昨日全天为基准，没有基数时不显示。未定价的成本明确标注。价格页只展示单价，不显示任何花费。
 
@@ -212,9 +212,8 @@ toksight 是每天打开查看的本地数据工具。界面首先要保证信�
    - 列：Agent、Tokens（可排序）、费用（可排序）、Token 构成（6px 四色条）、缓存命中（32px 计量）、请求、详情按钮。排序表头选中时显示 `--signal` 箭头和 `aria-sort`。排序偏好持久化（`toksight-agent-sort`）。
    - 模型折叠在所属 Agent 下（`.model-group`，`--surface-2` 底），**不另设模型用量表**。表下方是构成图例和操作提示。
 4. **会话**：默认显示前 5 条，可以展开到前 10 条（`viewSessions` / `hideSessions`），计数徽标为“可见 / 总数”。每行有序号块（底边 2px Agent 色）、名称、Tokens、费用、元信息行和等宽目录 / 模型行。
-5. **订阅额度** `QuotaCard`：计量条 8px，≥80% 用强调色。Kimi 有卡内刷新按钮。
-6. **近 30 天趋势** `TrendCard`（`.overview-trend`）：Tokens 柱和费用描边柱，高 88px。
-7. 底部 `.history-banner`：一句标语 + 文字按钮“查看历史用量 ↗”（跳到日历，不进入导出）。
+5. **近 30 天趋势** `TrendCard`（`.overview-trend`）：Tokens 柱和费用描边柱，高 88px。
+6. 底部 `.history-banner`：一句标语 + 文字按钮“查看历史用量 ↗”（跳到日历，不进入导出）。
 
 当天没有记录时，在构成下方显示嵌入式空状态（`plate--inset`）。
 
@@ -406,6 +405,7 @@ toksight 是每天打开查看的本地数据工具。界面首先要保证信�
   1. **外观**：配色（浅色 / 深色 / 跟随系统，带图标的 `Segmented`）、界面语言（简体中文 / English）。
   2. **统计时区**：`select`（自动 = 系统时区，或任选 IANA 时区），下方显示当前时间预览（`--surface-2` 小块）和说明。
   3. **数据库**：导出 SQLite 备份、导入合并（文件选择 → 导入对话框：说明范围、显示文件名与大小，可以取消，出错后可以重试）。
+  4. **GitHub 备份**（`CloudUpload`）：`.settings-body` 内一行两个 `Field`（私有仓库、密码型访问令牌，`flex 1 1 240px`，窄屏换行）加 secondary 保存按钮，下方 `muted-note` 说明令牌范围与存放位置，已保存令牌时附文字按钮“清除已保存的令牌”；环境变量提供令牌时输入框禁用并注明变量名。字段下方一行 GitHub CLI 状态（`.backup-gh`：`field-label` 标签 + 状态文字“未安装 gh / gh 未登录 · 运行 gh auth login 后重新检测 / 已登录为 {user}”，已登录时前置徽标：提供令牌时为 `signal`“正在使用”，否则 neutral“可用”，末尾文字按钮“重新检测”）；gh 提供令牌时输入框禁用、占位为“令牌来自 GitHub CLI（gh）”，说明行改为 gh 令牌权限较宽的提示。之后两行 `settings-row`：“上次备份”（右侧时间 · 大小，`--fs-sm --ink-2`；说明行为等宽的 `owner/repo · toksight/usage.sqlite`）和“备份与恢复”（`CloudUpload` 上传、`CloudDownload` 恢复两个 secondary 按钮；未配置、仓库输入未保存、离线启动或其他操作进行中时禁用，进行中显示旋转图标与“正在上传… / 正在恢复…”）。失败时在面板底部显示 `.notice`（标题“操作未完成”+ 本地化原因）。恢复先打开确认 `dialog`（同导入对话框：仓库与远端路径、合并说明、本机安全副本路径、取消 / “下载并合并”），恢复中的错误显示在对话框内，可重试。成功结果用 toast。
 - 设置行 `.settings-row`：左侧标题 `--fs-sm --fw-medium` + 说明 `--fs-xs --ink-3`，右侧控件，行之间用 `--line` 分隔。
 - 顶栏只有刷新按钮。
 
@@ -426,7 +426,6 @@ toksight 是每天打开查看的本地数据工具。界面首先要保证信�
 | Badge | `Badge`、`.badge` | 高 22px，`--r-pill`，`--fs-xs --fw-medium`；`neutral`（`--surface-3`）/ `signal`（`--signal-soft` + `--signal-ink`）/ `warn` |
 | Chip | `.chip` | 只在价格页使用的筛选 chip，见 §6.2。用 `aria-pressed` 表示选中 |
 | Switch | `.switch` | `role="switch"` + `aria-checked`，见 §6.2 |
-| Meter | `Meter`、`.meter` | 8px 高，`--r-pill`，`--empty` 轨道，`--ink` 填充，≥80% 改用 `--signal`，`role="meter"` |
 | Swatch | `.swatch`、`.agent-dot` | 8×8px，圆角 2px：Agent 色、Token 构成色、图例 |
 | Notice / Toast | `.notice`、`.toast` | 左侧 3px 语义色条。toast 位于底部居中，`--surface-raised` + `--shadow-pop` |
 
@@ -477,7 +476,7 @@ toksight 是每天打开查看的本地数据工具。界面首先要保证信�
   焦点移出视口时自动滚动（顶部预留 40px，避开吸顶月标题），并在焦点元素旁显示数据提示。
 - **详情栏**：标题 `aria-live="polite"`，选区变化时会读出。加载中 `aria-busy`。拆分卡是带 `aria-label` 的 `section`；其滚动内容区可以用 Tab 聚焦（`tabIndex=0`、`role="region"`，`aria-label` 为 `splitRegion`“用量拆分明细（可滚动）”，会话视图为 `sessionsRegion`），聚焦后用方向键、PageUp / PageDown、Home / End 滚动，并显示内侧焦点环。
 - **价格页**：开关为 `role="switch"`；chips 是 `role="group"` 里的 `aria-pressed` 按钮；分档按钮和明细按钮带 `aria-expanded` / `aria-controls`；“查看全部”虚框卡是 `<button>`；卡片是带 `aria-labelledby` 的 `article`。
-- **图表**：时段柱可以聚焦并带 `aria-label`；堆叠条和时段条用 `role="img"` 加完整文字描述。热图、额度和占比不只靠颜色表达，数值文字始终可见；heat-3/4 上的文字用 `--heat-ink-hi`。
+- **图表**：时段柱可以聚焦并带 `aria-label`；堆叠条和时段条用 `role="img"` 加完整文字描述。热图和占比不只靠颜色表达，数值文字始终可见；heat-3/4 上的文字用 `--heat-ink-hi`。
 - **其他**：分段控件支持方向键 / Home / End；菜单和对话框按 Esc 关闭并归还焦点；尊重 `prefers-reduced-motion`；最小字号 13px。
 - **状态**：首次引导、空数据、加载、网络错误（可重试）、部分未定价、禁用、离线和操作进度都有明确状态。加载或失败时标注所显示数据的日期与时区。数据未就绪时禁止导出。
 

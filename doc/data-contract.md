@@ -42,8 +42,6 @@ LiteLLM 长上下文估价逐请求选档；同一原始 ID 跨多个实际单�
 
 本期、上期的费用覆盖统计使用同一份价格快照；无基准、范围不完整等情况由比较结果显式表达，不能靠空数组推断。
 
-订阅额度由 `toksight quota --json` 与 `GET /api/quota` 独立返回 `{ tool, version, generatedAt, quotas }`，不并入报告载荷；`QuotaSnapshot` 字段见[订阅额度](quota.md)。
-
 价格目录独立由 `GET /api/prices` 返回，不并入报告载荷。`records` 保持 USD/token 的四项基础单价、缓存回退
 布尔值与 contextTiers 元数据，附加来源隔离的 `id`、本机 `observedAt` 和 `revisions`；LiteLLM 给出时还有 `maxInputTokens` / `maxTokens`（正安全整数，未知时省略，不参与价格签名、不产生新修订）。
 `models` 每行（按模型合并）增加 `usedAs`：日志中解析到该模型的原始模型名，排序后的数组，未使用时为 `[]`。

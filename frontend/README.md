@@ -26,7 +26,7 @@ npm run check:package
 - `components/CalendarView.jsx`：日历、日期详情与趋势。
 - `lib/period.js`、`report.js`：沿用已有测试覆盖的日期与聚合算法。
 - `app/globals.css`：声明 `@layer` 顺序并引入 `app/styles/`：`tokens`（明暗色、字号、间距、圆角、线条、动效）、`base`、`primitives`、`shell`、`report`、`calendar`、`manage`、`utilities`。
-- `components/ui/`：共享原语 Button / IconButton、Segmented、Panel、Stat、Meter、Badge、Field、Tooltip + `useTip`；页面组件只组合原语。
+- `components/ui/`：共享原语 Button / IconButton、Segmented、Panel、Stat、Badge、Field、Tooltip + `useTip`；页面组件只组合原语。
 - 字体：只用 `geist` 包的 Geist Sans / Mono（`next/font` 本地打包，无远程字体请求），中文回退为无衬线栈；Mono 仅用于模型 ID 与路径。
 
 详情见 [Web 报告](../doc/web-report.md)、[架构](../doc/architecture.md)、[视觉规范](../design-spec.md)。

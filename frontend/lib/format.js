@@ -85,3 +85,10 @@ export function fmtClockRange(start, end, timeZone) {
   const b = toDate(end) == null ? a : fmtClock(end, timeZone);
   return a === b ? a : `${a}–${b}`;
 }
+
+// File sizes in binary units, matching the import dialog: "840 KB", "12.40 MB".
+export function fmtBytes(n) {
+  if (!Number.isFinite(n) || n < 0) return '—';
+  if (n < 1024 * 1024) return `${Math.max(1, Math.round(n / 1024))} KB`;
+  return `${(n / 1024 / 1024).toFixed(2)} MB`;
+}

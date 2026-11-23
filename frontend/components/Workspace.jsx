@@ -15,6 +15,7 @@ import PriceSetup from './PriceSetup';
 import PriceCatalog from './PriceCatalog';
 import PriceReset from './PriceReset';
 import DatabaseImport from './DatabaseImport';
+import { GitHubRestore } from './GitHubBackup';
 import Toasts from './Toasts';
 
 function Skeleton({ tx }) {
@@ -43,11 +44,12 @@ export default function Workspace() {
     revision={`${w.refreshRevision}:${prices.status.observedAt}`} onSources={(selectedSources) => void w.onSetup({ selectedSources, offline: prices.status.offline })}
     onAutoUpdate={(autoUpdate) => void w.onSetup({ offline: true, autoUpdate })} />;
   else if (view === 'settings') content = <Settings tx={tx} timezone={timezone} timezonePref={w.timezonePref} systemZone={w.systemZone} onTimezone={w.onTimezone} now={w.now}
-    locale={locale} theme={w.theme} onTheme={w.onTheme} onLocale={w.onLocale} loading={busy} databaseBusy={w.databaseBusy} onImportDatabase={w.onSelectDatabase} onExportDatabase={w.onExportDatabase} />;
+    locale={locale} theme={w.theme} onTheme={w.onTheme} onLocale={w.onLocale} loading={busy} databaseBusy={w.databaseBusy} onImportDatabase={w.onSelectDatabase} onExportDatabase={w.onExportDatabase}
+    backup={w.backup} onBackupSave={w.onBackupSave} onBackupUpload={w.onBackupUpload} onBackupRestore={w.onBackupConfirm} />;
   else if (!w.hasData && w.current.error) content = <ErrorState tx={tx} error={w.current.error} onRetry={() => void w.current.reload()} />;
   else if (!w.hasData) content = <Skeleton tx={tx} />;
   else content = <div ref={w.reportRef} className={`report ${view}-report${w.reportBusy ? ' is-loading' : ''}${w.current.error ? ' is-stale' : ''}`} aria-busy={w.reportBusy}>
-    {view === 'today' ? <TodayDashboard data={data} day={w.shown.since} today={today} trend={w.trend} quotaRevision={w.refreshRevision} {...w.shared} open={w.openAgents} onToggle={w.onToggleAgent} onCalendar={() => navigate('calendar')} />
+    {view === 'today' ? <TodayDashboard data={data} day={w.shown.since} today={today} trend={w.trend} {...w.shared} open={w.openAgents} onToggle={w.onToggleAgent} onCalendar={() => navigate('calendar')} />
       : <CalendarView data={data} today={today} start={w.calendarStart} selected={w.selected} anchor={w.anchor} zoom={w.calendarZoom} onZoom={w.onCalendarZoom}
         onSelect={w.onSelect} report={w.selectionReport} agentLabel={w.shared.agentLabel} locale={locale} tx={tx} />}
     <ReportFooter data={data} tx={tx} />
@@ -71,6 +73,8 @@ export default function Workspace() {
     </main>
     {w.priceResetOpen ? <PriceReset tx={tx} busy={busy} resetting={prices.busy} error={w.priceResetError} onReset={w.onResetPrices} onClose={() => w.setPriceResetOpen(false)} /> : null}
     {w.databaseFile ? <DatabaseImport file={w.databaseFile} error={w.databaseError} busy={w.databaseBusy === 'import'} onImport={w.onImportDatabase} onClose={() => w.setDatabaseFile(null)} tx={tx} /> : null}
+    {w.backup.confirming && w.backup.status ? <GitHubRestore status={w.backup.status} busy={w.backup.busy === 'restore'} error={w.backup.error?.action === 'restore' ? w.backup.error : null}
+      onRestore={w.onBackupRestore} onClose={w.onBackupCancel} tx={tx} timezone={timezone} /> : null}
     <Toasts toasts={w.toasts.toasts} onDismiss={w.toasts.dismiss} tx={tx} />
   </div>;
 }
