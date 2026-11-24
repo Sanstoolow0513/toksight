@@ -56,7 +56,7 @@ Use **Update prices** on the dashboard's **Prices** page, or pass `--offline` to
 { "my-model": { "input": 3, "output": 15, "cacheRead": 0.3, "cacheWrite": 3.75 } }
 ```
 
-If you use `XDG_CONFIG_HOME`, the file is under `$XDG_CONFIG_HOME/toksight/`. Set `TOKSIGHT_CONFIG_DIR` to override the directory. [Custom provider configuration](./doc/local-pricing.md)
+If you use `XDG_CONFIG_HOME`, the file is under `$XDG_CONFIG_HOME/toksight/`. Set `TOKSIGHT_CONFIG_DIR` to override the directory. [Custom provider configuration](https://github.com/Sanstoolow0513/toksight/blob/release/doc/local-pricing.md)
 
 ## Web dashboard
 
@@ -81,7 +81,7 @@ toksight export-db backup.sqlite  # Write a new backup file
 toksight import-db backup.sqlite  # Merge the backup into local history
 ```
 
-Backups cover all dates and agents. Import keeps local usage and deduplicates matching records. For manual backup and restore using a private GitHub repository, see [GitHub backup setup](./doc/github-backup.md).
+Backups cover all dates and agents. Import keeps local usage and deduplicates matching records. For manual backup and restore using a private GitHub repository, see [GitHub backup setup](https://github.com/Sanstoolow0513/toksight/blob/release/doc/github-backup.md).
 
 ## Privacy
 
@@ -89,12 +89,12 @@ Agent files are read-only. Reports stay on your machine by default. `--offline` 
 
 ## JSON output
 
-Run `toksight daily --week --json` to get totals, breakdowns by agent, model, day and session, plus pricing coverage and collection warnings. [JSON field reference](./doc/data-contract.md)
+Run `toksight daily --week --json` to get totals, breakdowns by agent, model, day and session, plus pricing coverage and collection warnings. [JSON field reference](https://github.com/Sanstoolow0513/toksight/blob/release/doc/data-contract.md)
 
 ## Development
 
-Target `dev` for development PRs and `release` for releases. Run `npm test` for the offline suite. For dashboard changes, run `npm run web:ci` followed by `npm run web:dev` and open `http://127.0.0.1:3000`. Use `npm run check:package` to verify the installable package. [Project conventions](./AGENTS.md) · [Development and release guide](./doc/development-release.md)
+Target `dev` for development PRs and `release` for releases. Run `npm test` for the offline suite. For dashboard changes, run `npm run web:ci` followed by `npm run web:dev` and open `http://127.0.0.1:3000`. Use `npm run check:package` to verify the installable package. [Project conventions](https://github.com/Sanstoolow0513/toksight/blob/release/AGENTS.md) · [Development and release guide](https://github.com/Sanstoolow0513/toksight/blob/release/doc/development-release.md)
 
 ## License
 
-[MIT](./LICENSE). Independent of the agent vendors. Inspired by [tokscale](https://github.com/junhoyeo/tokscale) and [ccusage](https://github.com/ccusage/ccusage). Provider logos are from [LobeHub Icons](https://github.com/lobehub/lobe-icons) ([license](./frontend/public/logos/LICENSE.txt)).
+[MIT](./LICENSE). Independent of the agent vendors. Inspired by [tokscale](https://github.com/junhoyeo/tokscale) and [ccusage](https://github.com/ccusage/ccusage). Provider logos are from [LobeHub Icons](https://github.com/lobehub/lobe-icons) ([license](https://github.com/Sanstoolow0513/toksight/blob/release/frontend/public/logos/LICENSE.txt)).

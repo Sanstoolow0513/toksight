@@ -67,6 +67,10 @@ async function main() {
     ], { cwd: temp });
 
     const installed = path.join(installDir, 'node_modules', 'toksight');
+    assert.deepEqual((await readdir(installed)).sort(),
+      ['LICENSE', 'README.md', 'README.zh-CN.md', 'bin', 'frontend', 'package.json', 'src'],
+      'Expected only runtime files, user guides and the license in the package root');
+    assert.deepEqual(await readdir(path.join(installed, 'frontend')), ['out']);
     const pkg = JSON.parse(await readFile(path.join(installed, 'package.json'), 'utf8'));
     assert.equal(Object.keys(pkg.dependencies || {}).length, 0, 'CLI must have zero runtime dependencies');
     const installedNames = (await readdir(path.join(installDir, 'node_modules'))).filter((name) => !name.startsWith('.'));

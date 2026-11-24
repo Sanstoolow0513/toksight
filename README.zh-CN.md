@@ -56,7 +56,7 @@ toksight sessions --month --top 5  # 本月参考费用最高的五个会话
 { "my-model": { "input": 3, "output": 15, "cacheRead": 0.3, "cacheWrite": 3.75 } }
 ```
 
-如果设置了 `XDG_CONFIG_HOME`，文件位于 `$XDG_CONFIG_HOME/toksight/` 下。也可用 `TOKSIGHT_CONFIG_DIR` 指定配置目录。[自定义提供商配置](./doc/local-pricing.md)
+如果设置了 `XDG_CONFIG_HOME`，文件位于 `$XDG_CONFIG_HOME/toksight/` 下。也可用 `TOKSIGHT_CONFIG_DIR` 指定配置目录。[自定义提供商配置](https://github.com/Sanstoolow0513/toksight/blob/release/doc/local-pricing.md)
 
 ## 网页报告
 
@@ -81,7 +81,7 @@ toksight export-db backup.sqlite  # 导出到新文件
 toksight import-db backup.sqlite  # 合并到本地历史
 ```
 
-备份包含全部日期和 Agent 的用量。导入时保留本地记录，相同记录只计一次。需要跨设备备份和恢复时，可配置自己的私有 GitHub 仓库。[GitHub 备份配置](./doc/github-backup.md)
+备份包含全部日期和 Agent 的用量。导入时保留本地记录，相同记录只计一次。需要跨设备备份和恢复时，可配置自己的私有 GitHub 仓库。[GitHub 备份配置](https://github.com/Sanstoolow0513/toksight/blob/release/doc/github-backup.md)
 
 ## 隐私
 
@@ -89,12 +89,12 @@ toksight 只读访问 Agent 文件，报告默认保存在本机。`--offline` �
 
 ## JSON 输出
 
-运行 `toksight daily --week --json` 可获取汇总、按 Agent、模型、日期和会话划分的用量，以及定价覆盖情况和采集警告。[JSON 字段说明](./doc/data-contract.md)
+运行 `toksight daily --week --json` 可获取汇总、按 Agent、模型、日期和会话划分的用量，以及定价覆盖情况和采集警告。[JSON 字段说明](https://github.com/Sanstoolow0513/toksight/blob/release/doc/data-contract.md)
 
 ## 开发
 
-开发 PR 提交到 `dev`，发布 PR 提交到 `release`。运行 `npm test` 执行离线测试。开发网页时先运行 `npm run web:ci`，再运行 `npm run web:dev`，打开 `http://127.0.0.1:3000`。使用 `npm run check:package` 验证安装包。[项目规范](./AGENTS.md) · [开发与发布指南](./doc/development-release.md)
+开发 PR 提交到 `dev`，发布 PR 提交到 `release`。运行 `npm test` 执行离线测试。开发网页时先运行 `npm run web:ci`，再运行 `npm run web:dev`，打开 `http://127.0.0.1:3000`。使用 `npm run check:package` 验证安装包。[项目规范](https://github.com/Sanstoolow0513/toksight/blob/release/AGENTS.md) · [开发与发布指南](https://github.com/Sanstoolow0513/toksight/blob/release/doc/development-release.md)
 
 ## 许可
 
-[MIT](./LICENSE)。本项目独立于各 Agent 厂商，灵感来自 [tokscale](https://github.com/junhoyeo/tokscale) 和 [ccusage](https://github.com/ccusage/ccusage)。厂商标志来自 [LobeHub Icons](https://github.com/lobehub/lobe-icons)，详见[附带许可](./frontend/public/logos/LICENSE.txt)。
+[MIT](./LICENSE)。本项目独立于各 Agent 厂商，灵感来自 [tokscale](https://github.com/junhoyeo/tokscale) 和 [ccusage](https://github.com/ccusage/ccusage)。厂商标志来自 [LobeHub Icons](https://github.com/lobehub/lobe-icons)，详见[附带许可](https://github.com/Sanstoolow0513/toksight/blob/release/frontend/public/logos/LICENSE.txt)。

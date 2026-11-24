@@ -13,13 +13,8 @@
   "files": [
     "bin",
     "src",
-    "doc",
     "frontend/out",
-    "AGENTS.md",
-    "design-spec.md",
-    "README.md",
-    "README.zh-CN.md",
-    "LICENSE"
+    "README.zh-CN.md"
   ],
   "scripts": {
     "test": "node --test",
