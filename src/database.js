@@ -222,7 +222,7 @@ export function createUsageDatabase({ file, env, home } = {}) {
       // Imported and legacy models retain a fallback when the destination
       // has no current catalog rate for that model.
       const fallback = prices.get(model);
-      return lookup(model, client, entry) ?? (priceEnabled(fallback, selectedSources) ? storedPriceFor(model, fallback, entry) : null);
+      return lookup(model, client, entry) ?? (priceEnabled(fallback, selectedSources) ? storedPriceFor(model, fallback, entry, client) : null);
     };
     const entries = [];
     const reportedCosts = new WeakSet();

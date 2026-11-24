@@ -20,6 +20,30 @@ test('report formatting preserves billing identities and dated model rates', () 
   assert.equal(lookup('gpt-example-fast'), null);
 });
 
+test('Antigravity Gemini effort variants use the Google base rate when the full ID has no price', () => {
+  const base = rate('gemini/gemini-3.8-flash', 1, 'google');
+  const model = 'gemini-3.8-flash-high';
+  const lookup = createPriceLookup([base]);
+  for (const effort of ['low', 'medium', 'high', 'xhigh']) {
+    assert.equal(lookup(`gemini-3.8-flash-${effort}`, 'antigravity'), base);
+  }
+  const exact = rate(model, 2, 'google');
+  assert.equal(createPriceLookup([base, exact])(model, 'antigravity'), exact);
+  assert.equal(lookup('gemini-3.8-flash-fast', 'antigravity'), null);
+  assert.equal(lookup('other/' + model, 'antigravity'), null);
+  assert.equal(lookup(model, 'antigravity', { providerId: 'proxy' }), null);
+  assert.equal(createPriceLookup([rate('gemini-3.8-flash', 1, 'openai')])(model, 'antigravity'), null);
+  assert.equal(createPriceLookup([rate('gpt-5.2', 1)])('gpt-5.2-high', 'antigravity'), null);
+
+  const override = rate('gemini-3.8-flash', 3, null, 'user');
+  assert.equal(createPriceLookup([base, exact, override])(model, 'antigravity'), override);
+  for (const record of [base, override]) {
+    assert.equal(storedPriceFor(model, record, null, 'antigravity'), record);
+    assert.equal(storedPriceFor(model, record, null, 'gemini'), null);
+    assert.equal(createPriceLookup([record])(model, 'gemini'), null);
+  }
+});
+
 test('first-party provider identity constrains aliases and stored estimates', () => {
   const gemini = rate('gemini/gemini-example', 2, 'google');
   const lookup = createPriceLookup([gemini, rate('gpt-example', 1)]);

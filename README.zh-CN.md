@@ -19,6 +19,12 @@ toksight 读取各 AI 编程智能体已经写在本地磁盘的会话文件，�
 | Codex CLI | `~/.codex/sessions/` 和 `~/.codex/archived_sessions/` 下的 `.jsonl`、`.jsonl.zst` | `CODEX_HOME` |
 | OpenCode | `~/.local/share/opencode/opencode.db`（新版 `session_message` 与旧版 `message` 表），数据库不存在或不可读时回退 `~/.local/share/opencode/storage/message/**/*.json` | `OPENCODE_PATH` |
 | Kimi Code | `~/.kimi-code/sessions/**/agents/*/wire.jsonl` | `KIMI_CODE_HOME` |
+| Gemini CLI | `~/.gemini/tmp/<项目>/chats/` 中的 JSON、JSONL 会话，含子 Agent 会话。macOS 还读取 `~/.cache/.gemini/tmp/<项目>/chats/` | `GEMINI_CLI_HOME`（两处路径的基目录） |
+| Antigravity CLI | `~/.gemini/antigravity-cli/brain/<会话>/.system_generated/logs/` 中的 transcript 及其分片 | `ANTIGRAVITY_CLI_DIR`（供 toksight 读取的 CLI 数据目录） |
+
+使用 `toksight --client gemini,antigravity` 统计两者。Gemini 支持别名 `geminicli`、`gemini-cli`，Antigravity 支持 `agy`、`antigravitycli`、`antigravity-cli`。Antigravity 按 CLI transcript 中记录的步骤统计用量；仅存会话数据库且缺少可读 transcript 时会给出警告。桌面 IDE 会话不在采集范围内。
+
+Gemini CLI 通过 `--session-file` 导入的历史请求只计一次，优先归属原会话。只剩副本时归属最早可见的导入会话，导入后新增的请求归属实际发出请求的会话。
 
 ## 安装
 
@@ -73,7 +79,7 @@ zcode   GLM-5.3             41   116K    1.99M        0   43.3K  94.5%   $0.870
 ### 参数
 
 ```
---client <a,b>   只统计指定客户端（zcode, claude, codex, opencode, kimi）
+--client <a,b>   只统计指定客户端（zcode, claude, codex, opencode, kimi, gemini, antigravity）
 --since <date>   本地日期（YYYY-MM-DD），含当天
 --until <date>   本地日期（YYYY-MM-DD），含当天
 --today --week --month   日期快捷方式
@@ -134,6 +140,10 @@ Codex 会话提供商、OpenCode 消息提供商、能安全关联到用量的 K
 绑定可选 `model`、包含起点的 `since`、不包含终点的 `until`；时间必须带时区。同等具体程度的重叠绑定
 不推断。编辑后刷新用量或更新价格。未知自定义提供商需要绑定或 `pricing.json` 覆盖；不会用今天的
 Agent 配置倒推全部历史。绑定使用原厂 API 参考价，不代表中转商报价。
+
+Antigravity CLI 的 Gemini 模型 ID 可以带思考程度后缀（`low`、`medium`、`high`、`xhigh`）。
+toksight 在每个价格来源中先查完整 ID。例如，`gemini-3.8-flash-high` 没有单独定价时，
+使用 `gemini-3.8-flash` 的单价估算费用。用量明细保留完整 ID。
 
 Kimi Code 的版本化 ID `kimi-code/k3`、`kimi-code/k3-256k` 按官方
 [模型对应关系](https://www.kimi.com/code/docs/kimi-code/models.html)匹配 `moonshot/kimi-k3` 参考价，

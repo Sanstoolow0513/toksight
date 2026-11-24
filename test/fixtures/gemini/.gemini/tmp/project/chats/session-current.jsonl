@@ -1,0 +1,8 @@
+{"sessionId":"current","directories":["C:\\work\\demo"]}
+{"type":"gemini","id":"request","model":"gemini-2.5-pro","timestamp":"2026-08-30T00:00:00Z"}
+{"type":"gemini","id":"request","model":"gemini-2.5-pro","timestamp":"2026-08-30T00:00:00Z","tokens":{"input":15,"output":5}}
+{"$set":{"messages":[{"type":"gemini","id":"request","model":"gemini-2.5-pro","timestamp":"2026-08-30T00:00:00Z","tokens":{"input":18,"cached":2,"output":6}}]}}
+incomplete line
+{"type":"gemini","id":"empty","tokens":{"total":0}}
+{"type":"gemini","id":"invalid","tokens":{"input":"17"}}
+{"$rewindTo":"request"}

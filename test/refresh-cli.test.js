@@ -29,6 +29,8 @@ test('refresh command writes a reusable SQLite snapshot from isolated agent fixt
     ZCODE_HOME: path.join(dir, 'zcode'),
     OPENCODE_PATH: path.join(dir, 'opencode'),
     KIMI_CODE_HOME: path.join(dir, 'kimi'),
+    GEMINI_CLI_HOME: dir,
+    ANTIGRAVITY_CLI_DIR: path.join(dir, 'antigravity'),
     TOKSIGHT_CONFIG_DIR: path.join(dir, 'config'),
   };
   const { stdout } = await run(process.execPath, [cli, 'refresh', '--offline', '--json'], { env });

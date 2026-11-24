@@ -20,6 +20,12 @@ Inspired by [tokscale](https://github.com/junhoyeo/tokscale) (and in the same sp
 | Codex CLI | Files ending in `.jsonl` or `.jsonl.zst` under `~/.codex/sessions/` and `~/.codex/archived_sessions/` | `CODEX_HOME` |
 | OpenCode | `~/.local/share/opencode/opencode.db` (current `session_message` and older `message` tables); if absent or unreadable, fallback `~/.local/share/opencode/storage/message/**/*.json` | `OPENCODE_PATH` |
 | Kimi Code | `~/.kimi-code/sessions/**/agents/*/wire.jsonl` | `KIMI_CODE_HOME` |
+| Gemini CLI | Session JSON and JSONL under `~/.gemini/tmp/<project>/chats/`, including subagents. On macOS, also reads `~/.cache/.gemini/tmp/<project>/chats/` | `GEMINI_CLI_HOME` (base directory for both locations) |
+| Antigravity CLI | `~/.gemini/antigravity-cli/brain/<session>/.system_generated/logs/` transcripts and chunks | `ANTIGRAVITY_CLI_DIR` (CLI data directory for toksight) |
+
+Run `toksight --client gemini,antigravity` to report both. Gemini also accepts `geminicli` and `gemini-cli`; Antigravity accepts `agy`, `antigravitycli` and `antigravity-cli`. Antigravity usage comes from recorded CLI transcript steps. A conversation database with no readable transcript produces a warning. Desktop IDE sessions are outside this collector's scope.
+
+Gemini CLI sessions created with `--session-file` can contain copies of earlier requests. toksight counts those requests once under the original session, or under the earliest available import if only copies remain. New requests belong to the session that made them.
 
 ## Install
 
@@ -74,7 +80,7 @@ zcode   GLM-5.3             41   116K    1.99M        0   43.3K  94.5%   $0.870
 ### Options
 
 ```
---client <a,b>   only include these clients (zcode, claude, codex, opencode, kimi)
+--client <a,b>   only include these clients (zcode, claude, codex, opencode, kimi, gemini, antigravity)
 --since <date>   local date (YYYY-MM-DD), inclusive
 --until <date>   local date (YYYY-MM-DD), inclusive
 --today --week --month   date shortcuts
@@ -145,6 +151,10 @@ with an explicit timezone. Overlapping equally specific bindings stay unresolved
 usage or update prices after editing. Unknown custom providers require a binding or a
 `pricing.json` override; today's agent configuration is never applied to all past sessions.
 A binding requests the native API reference price, rather than a quote for the proxy.
+
+Antigravity CLI can append a thinking level (`low`, `medium`, `high`, or `xhigh`) to a Gemini model ID.
+Within each price source, toksight looks up the full ID first. For example, if `gemini-3.8-flash-high`
+has no dedicated rate, toksight uses the rate for `gemini-3.8-flash`. Usage details keep the full ID.
 
 Kimi Code's versioned IDs `kimi-code/k3` and `kimi-code/k3-256k` resolve to the
 `moonshot/kimi-k3` reference price, following the official

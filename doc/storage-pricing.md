@@ -36,6 +36,7 @@ occurrence 序号保留相同请求的多次出现，防止重叠备份双算。
 - src/firstparty.js 同时校验提供商和模型归属，防止旧缓存、历史或备份恢复转售价格。来源统一为 litellm，provider 表示原厂渠道。
 - src/pricecatalog.js 将原始计价键与展示 modelId 分离。同来源先精确原名，再尝试提供商前缀/唯一后缀和日期别名；不剥离 ft: 等计费前缀。同模型、同提供商的日期别名仅在完整费率一致时合并。
 - Kimi Code 的 kimi-code/k3、kimi-code/k3-256k 使用 moonshot/kimi-k3 参考别名，保留原始用量 ID。精确端点和用户覆盖优先，不使用第三方 K3 报价；滚动端点不推断历史底层模型。
+- Antigravity CLI 的 Gemini 模型在同一来源内先查完整 ID，再尝试去除末尾的 `-low`、`-medium`、`-high` 或 `-xhigh`。基础模型使用用户覆盖或 Google 第一方价，用量记录保留完整 ID。
 - 四类 USD/token 费率为 input、output、cacheRead、cacheWrite。缓存价缺失退回输入价，costCoverage 披露受影响请求。缓存读取不计入新鲜输入，缓存写入不进入命中率分母。
 - src/contextpricing.js 解析标准 `*_above_N_tokens` / `*_above_Nk_tokens` 字段及 `tiered_pricing` 连续范围表，以单次 input + cacheRead + cacheWrite 选择最高阈值；输出和会话累计量不参与。xAI 阈值包含边界。档位缺少输出/缓存价沿用已公布基础价；基础缓存价也缺失时使用档位输入价。不推断缓存时长、Priority、Flex、Batch 条件。
 - model_prices.metadata_json 保存 contextTiers 与 maxInputTokens / maxTokens 等可选元数据，encodePriceMetadata / decodePriceRecord 统一编码和校验。上下文上限只作展示，priceSignature 不包含它们，因此只改上限不会产生价格历史修订。备份验证非负费率、阈值和回退标志；旧库无元数据时使用基础价。

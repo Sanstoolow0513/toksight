@@ -47,6 +47,8 @@
     --agent-opencode: #77767a;
     --agent-kimi: #3f6db3;
     --agent-zcode: #8c5aa8;
+    --agent-gemini: #007c98;
+    --agent-antigravity: #996d16;
     --agent-other: #8a898e;
     /* Absence (future days, unpriced): use a flat fill. */
     --empty: var(--surface-3);
@@ -178,6 +180,8 @@
     --agent-opencode: #a9a8ae;
     --agent-kimi: #86aef0;
     --agent-zcode: #c49ae0;
+    --agent-gemini: #64c9e0;
+    --agent-antigravity: #e4b965;
     --agent-other: #9c9ba1;
     --shadow-pop: 0 1px 2px rgb(0 0 0 / .4), 0 10px 30px rgb(0 0 0 / .45);
     --shadow-thumb: 0 1px 2px rgb(0 0 0 / .5);

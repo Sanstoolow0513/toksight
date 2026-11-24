@@ -4,6 +4,7 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { readFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { DatabaseSync } from 'node:sqlite';
 import { createUsageDatabase } from '../src/database.js';
 import { readDatabaseBackup } from '../src/dbtransfer.js';
@@ -78,6 +79,24 @@ test('overlapping backups preserve identical occurrences and known charges; a re
     assert.equal(b.importDatabase(a.exportDatabase()).duplicates, 1);
     assert.equal(b.read().entries[0].costUsd, 2);
   } finally { a.close(); b.close(); }
+});
+
+test('Gemini CLI and Antigravity CLI usage survives backup and repeated import', async t => {
+  const ctx = await fixture(t);
+  const fixtures = fileURLToPath(new URL('./fixtures/', import.meta.url));
+  ctx.env.GEMINI_CLI_HOME = path.join(fixtures, 'gemini');
+  ctx.env.ANTIGRAVITY_CLI_DIR = path.join(fixtures, 'antigravity');
+  const source = createUsageDatabase({ file: ':memory:' });
+  const target = createUsageDatabase({ file: ':memory:' });
+  ctx.cleanup.push(() => source.close(), () => target.close());
+  const raw = await collectAll({ offline: true }, ctx);
+  source.replace(raw);
+  const bytes = source.exportDatabase();
+  assert.equal(target.importDatabase(bytes).imported, 5);
+  assert.equal(target.importDatabase(bytes).duplicates, 5);
+  const entries = target.read().entries;
+  assert.equal(entries.filter(e => e.client === 'gemini').length, 3);
+  assert.equal(entries.filter(e => e.client === 'antigravity').length, 2);
 });
 
 test('upgraded databases and legacy backups ignore retired clients and non-first-party rates without discarding reported charges', async (t) => {

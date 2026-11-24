@@ -13,12 +13,16 @@
 | Claude Code | `~/.claude/projects/**/*.jsonl` | 同一 message ID 可能有递增的 streaming 用量快照；按 token 总数保留最大一条 |
 | Codex | `~/.codex/sessions/` 和 `~/.codex/archived_sessions/` 下的 `.jsonl`、`.jsonl.zst` | 优先用 `last_token_usage`，否则对累计 `total_token_usage` 做差；`cached_input_tokens` 从总输入中扣出 |
 | Kimi Code | `~/.kimi-code/sessions/**/agents/*/wire.jsonl` | 每条 `usage.record` 都是真实请求，`turn` 与 `session` scope 都计入；`state.json` 给会话元数据 |
+| Gemini CLI | `~/.gemini/tmp/<项目>/chats/session-*.json{,l}` 及子会话 JSONL | 只读带 tokens 的 Gemini 回复，按会话和消息 ID 合并重复写入与历史快照。新鲜输入为 input − cached + tool，输出为 output + thoughts，thoughts 同时作为推理子集 |
+| Antigravity CLI | `~/.gemini/antigravity-cli/brain/<会话>/.system_generated/logs/` | transcript、transcript_full 和 chunks 副本按会话 ID 和 step_index 去重。input_tokens 已是新鲜输入，cache_read_tokens 单列；从 created_at 取时间，按步骤保留模型。conversations 中仅有 .db 时给出覆盖提示 |
 | OpenCode | `<base>/opencode.db`：新版 `session_message`（`type = 'assistant'`，联结 `session_v2`），旧版 `message`（联结 `session`） | 新、旧消息表在同一只读事务中采集；同一 ID 优先计入新表的有效用量，遇到空用量或坏行时可采用旧表记录；DB 存在且可读时只用 DB；缺失或打不开才退到 `storage/message/*.json`，绝不合算两处。DB 中 `cost: 0` 是占位，只有非零自报费用可信；旧 JSON 的数值费用照录 |
 | ZCode | `~/.zcode/cli/db/db.sqlite` 的 `model_usage`，联结 `session` | DB 优先，缺失或打不开才退到 `cli/rollout/*.jsonl`；两种来源的 `input_tokens` 都包含 cache read，需扣掉后作为新鲜输入 |
 
 OpenCode 的消息表查询失败时报告警告，并继续采集同一数据库中其他可读的消息表。两种表均缺失时报告警告。ZCode 无法查询数据库用量表时也会报告警告。两者仅在数据库缺失或无法打开时读取旧文件。
 
 Codex 流式解压归档。归档损坏时丢弃该文件的全部用量，并在警告中给出路径。标准 rollout 文件名中的线程 UUID 决定会话归属，旧式文件名依次回退到首个有效的 `session_meta.id` 和去掉格式后缀的文件名。模型随 `turn_context` 更新。同一线程的多个分段按事件时间合并，跨文件用时间戳和两份用量快照匹配重叠事件，每个事件保留单个文件中的最大出现次数。
+
+Gemini CLI 在 macOS 同时扫描普通目录和 Seatbelt 的 `~/.cache/.gemini/tmp`。两处共享会话和消息去重。对于带 `--session-file` 导入标记的会话，按消息 ID、原始时间、模型及原始 token 分类匹配复制的历史请求，优先归属原会话。只剩副本时选最早的导入，导入时间相同则按会话 ID 排序。导入时间之后的请求计入当前会话。刷新会重新计算本机日志；旧备份的用量行缺少原始消息 ID 和导入标记，不能据此追溯重复历史。
 
 ## 容错与过滤
 

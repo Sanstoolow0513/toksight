@@ -85,18 +85,22 @@ const KIMI_CODE_REFERENCE_MODELS = new Map([
   ['kimi-code/k3-256k', 'moonshot/kimi-k3'],
 ]);
 
+function antigravityGeminiBase(key) {
+  const match = /^((?:(?:google|gemini)\/)?gemini-[a-z0-9]+(?:[.-][a-z0-9]+)*)-([a-z]+)$/.exec(key);
+  return match && EFFORT.has(match[2]) ? match[1] : null;
+}
+
 function findPrice({ exact, aliases, normalized }, key, alias = priceAlias(key)) {
   const candidates = [exact.get(key), aliases.get(key), exact.get(alias), aliases.get(alias), normalized.get(alias)];
   const index = candidates.findIndex(Boolean);
   return index < 0 ? null : { record: candidates[index], priority: candidates.length - index };
 }
 
-export function storedPriceFor(model, record, entry = null) {
-  // Saved per-model estimates obey the same namespace and provider rules as
-  // the live catalog, including explicit Kimi Code reference aliases.
-  if (record?.source === 'litellm') {
+export function storedPriceFor(model, record, entry = null, client = entry?.client) {
+  // Recheck catalog-backed rates because multiple clients can log the same ID.
+  if (record?.source === 'litellm' || (record?.source === 'user' && record.name && record.scope === 'default')) {
     if (!storedLookups.has(record)) storedLookups.set(record, createPriceLookup([record]));
-    return storedLookups.get(record)(model, null, entry);
+    return storedLookups.get(record)(model, client, entry);
   }
   const rawProvider = entry?.pricingProvider ?? entry?.providerId;
   const provider = nativeChannel(rawProvider === 'kimi-code' && KIMI_CODE_REFERENCE_MODELS.has(priceModelKey(model)) ? 'moonshot' : rawProvider);
@@ -169,6 +173,7 @@ export function createPriceLookup(records) {
     const key = priceModelKey(routerPrefix ? name.slice(11) : name), alias = priceAlias(key);
     if (!key) return null;
     const reference = KIMI_CODE_REFERENCE_MODELS.get(key);
+    const geminiBase = client === 'antigravity' && !routerPrefix ? antigravityGeminiBase(key) : null;
     const matches = [];
     // Source priority comes first; within a source, exact names precede
     // normalized aliases. Ambiguous aliases never displace an exact entry.
@@ -177,7 +182,8 @@ export function createPriceLookup(records) {
       const provider = nativeChannel(rawProvider === 'kimi-code' && reference ? 'moonshot' : rawProvider);
       if (index.source !== 'user' && (routerPrefix || provider && provider !== nativeChannel(index.provider))) continue;
       const direct = findPrice(index, key, alias);
-      const fallback = !direct && reference ? findPrice(index, reference) : null;
+      const fallbackKey = reference ?? (index.source === 'user' || index.provider === 'google' ? geminiBase : null);
+      const fallback = !direct && fallbackKey ? findPrice(index, fallbackKey) : null;
       const match = direct ?? (fallback ? { ...fallback, priority: 0 } : null);
       if (match && index.source === 'user') return applyOfficialRules(priceForContext(match.record, entry), entry);
       if (match) matches.push(match);

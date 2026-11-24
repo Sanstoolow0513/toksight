@@ -1,10 +1,20 @@
 import { createReadStream } from 'node:fs';
-import { opendir, readFile } from 'node:fs/promises';
+import { opendir, readdir, readFile } from 'node:fs/promises';
 import { createInterface } from 'node:readline';
 import path from 'node:path';
 import { pipeline } from 'node:stream/promises';
 import { createZstdDecompress } from 'node:zlib';
 import { zstdFrameChunks } from './zstd.js';
+
+// Enumerate one level when a collector knows the layout below each project or session.
+export async function listDirectory(dir, warnings) {
+  try {
+    return await readdir(dir, { withFileTypes: true });
+  } catch (err) {
+    if (err.code !== 'ENOENT') warnings.push(`cannot read directory ${dir} (${err.code || err.message})`);
+    return [];
+  }
+}
 
 // Returns { files, warnings }. A root that simply does not exist (ENOENT) is
 // silent — the user may not have every agent installed. Anything else
