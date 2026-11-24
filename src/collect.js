@@ -78,7 +78,7 @@ export async function collectAll(opts, { env = process.env, home = os.homedir() 
   warnings.push(...filteredResult.warnings);
   const pricing = {
     ...basePricing,
-    priceFor: (model, client, entry = null) => currentPriceFor(model, client, entry) ?? storedPriceFor(model, importedPrices.get(model), entry),
+    priceFor: (model, client, entry = null) => currentPriceFor(model, client, entry) ?? storedPriceFor(model, importedPrices.get(model), entry, client),
     sourceDetails: { ...basePricing.sourceDetails, ...savedPriceFor.sourceDetails },
     sources: { ...basePricing.sources, ...Object.fromEntries(Object.entries(savedPriceFor.sourceDetails ?? {}).map(([source, detail]) => [source, detail.state])) },
   };

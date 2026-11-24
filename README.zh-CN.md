@@ -139,6 +139,10 @@ Codex 会话提供商、OpenCode 消息提供商、能安全关联到用量的 K
 不推断。编辑后刷新用量或更新价格。未知自定义提供商需要绑定或 `pricing.json` 覆盖；不会用今天的
 Agent 配置倒推全部历史。绑定使用原厂 API 参考价，不代表中转商报价。
 
+Antigravity CLI 的 Gemini 模型 ID 可以带思考程度后缀（`low`、`medium`、`high`、`xhigh`）。
+toksight 在每个价格来源中先查完整 ID。例如，`gemini-3.8-flash-high` 没有单独定价时，
+使用 `gemini-3.8-flash` 的单价估算费用。用量明细保留完整 ID。
+
 Kimi Code 的版本化 ID `kimi-code/k3`、`kimi-code/k3-256k` 按官方
 [模型对应关系](https://www.kimi.com/code/docs/kimi-code/models.html)匹配 `moonshot/kimi-k3` 参考价，
 原始用量 ID 不变。同来源内端点原名价格优先，用户覆盖始终优先。需要 Moonshot 目录价格或用户覆盖。

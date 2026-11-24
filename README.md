@@ -150,6 +150,10 @@ usage or update prices after editing. Unknown custom providers require a binding
 `pricing.json` override; today's agent configuration is never applied to all past sessions.
 A binding requests the native API reference price, rather than a quote for the proxy.
 
+Antigravity CLI can append a thinking level (`low`, `medium`, `high`, or `xhigh`) to a Gemini model ID.
+Within each price source, toksight looks up the full ID first. For example, if `gemini-3.8-flash-high`
+has no dedicated rate, toksight uses the rate for `gemini-3.8-flash`. Usage details keep the full ID.
+
 Kimi Code's versioned IDs `kimi-code/k3` and `kimi-code/k3-256k` resolve to the
 `moonshot/kimi-k3` reference price, following the official
 [model mapping](https://www.kimi.com/code/docs/en/kimi-code/models.html). Original usage IDs

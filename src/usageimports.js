@@ -68,7 +68,7 @@ export function readStoredPriceFor(file, warnings = []) {
     const lookup = createHistoricalPriceLookup(history, catalog);
     const priceFor = (model, client, entry = null) => {
       const fallback = prices.get(model);
-      return lookup(model, client, entry) ?? (priceEnabled(fallback, selectedSources) ? storedPriceFor(model, fallback, entry) : null);
+      return lookup(model, client, entry) ?? (priceEnabled(fallback, selectedSources) ? storedPriceFor(model, fallback, entry, client) : null);
     };
     priceFor.selectedSources = selectedSources;
     priceFor.hasLocalPrices = history.length > 0;
