@@ -1,0 +1,7 @@
+{
+  "sessionId": "legacy",
+  "messages": [
+    {"id":"request","type":"gemini","model":"gemini-2.5-pro","timestamp":"2026-08-29T15:40:00Z","tokens":{"input":100,"cached":60,"tool":7,"output":20,"thoughts":3,"total":130}},
+    {"id":"prompt","type":"user","tokens":{"input":999}}
+  ]
+}

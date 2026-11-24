@@ -19,6 +19,10 @@ toksight 读取各 AI 编程智能体已经写在本地磁盘的会话文件，�
 | Codex CLI | `~/.codex/sessions/` 和 `~/.codex/archived_sessions/` 下的 `.jsonl`、`.jsonl.zst` | `CODEX_HOME` |
 | OpenCode | `~/.local/share/opencode/opencode.db`（新版 `session_message` 与旧版 `message` 表），数据库不存在或不可读时回退 `~/.local/share/opencode/storage/message/**/*.json` | `OPENCODE_PATH` |
 | Kimi Code | `~/.kimi-code/sessions/**/agents/*/wire.jsonl` | `KIMI_CODE_HOME` |
+| Gemini CLI | `~/.gemini/tmp/<项目>/chats/` 中的 JSON、JSONL 会话，含子 Agent 会话 | `GEMINI_CLI_HOME`（`.gemini` 的上级目录） |
+| Antigravity CLI | `~/.gemini/antigravity-cli/brain/<会话>/.system_generated/logs/` 中的 transcript 及其分片 | `ANTIGRAVITY_CLI_DIR`（供 toksight 读取的 CLI 数据目录） |
+
+使用 `toksight --client gemini,antigravity` 统计两者。Gemini 支持别名 `geminicli`、`gemini-cli`，Antigravity 支持 `agy`、`antigravitycli`、`antigravity-cli`。Antigravity 按 CLI transcript 中记录的步骤统计用量；仅存会话数据库且缺少可读 transcript 时会给出警告。桌面 IDE 会话不在采集范围内。
 
 ## 安装
 
@@ -73,7 +77,7 @@ zcode   GLM-5.3             41   116K    1.99M        0   43.3K  94.5%   $0.870
 ### 参数
 
 ```
---client <a,b>   只统计指定客户端（zcode, claude, codex, opencode, kimi）
+--client <a,b>   只统计指定客户端（zcode, claude, codex, opencode, kimi, gemini, antigravity）
 --since <date>   本地日期（YYYY-MM-DD），含当天
 --until <date>   本地日期（YYYY-MM-DD），含当天
 --today --week --month   日期快捷方式

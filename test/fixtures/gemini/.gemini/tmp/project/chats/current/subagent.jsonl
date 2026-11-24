@@ -1,0 +1,2 @@
+{"sessionId":"subagent"}
+{"id":"request","type":"gemini","model":"gemini-flash","timestamp":"bad-date","tokens":{"input":2,"output":1}}

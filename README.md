@@ -20,6 +20,10 @@ Inspired by [tokscale](https://github.com/junhoyeo/tokscale) (and in the same sp
 | Codex CLI | Files ending in `.jsonl` or `.jsonl.zst` under `~/.codex/sessions/` and `~/.codex/archived_sessions/` | `CODEX_HOME` |
 | OpenCode | `~/.local/share/opencode/opencode.db` (current `session_message` and older `message` tables); if absent or unreadable, fallback `~/.local/share/opencode/storage/message/**/*.json` | `OPENCODE_PATH` |
 | Kimi Code | `~/.kimi-code/sessions/**/agents/*/wire.jsonl` | `KIMI_CODE_HOME` |
+| Gemini CLI | `~/.gemini/tmp/<project>/chats/` session JSON and JSONL, including subagent sessions | `GEMINI_CLI_HOME` (parent of `.gemini`) |
+| Antigravity CLI | `~/.gemini/antigravity-cli/brain/<session>/.system_generated/logs/` transcripts and chunks | `ANTIGRAVITY_CLI_DIR` (CLI data directory for toksight) |
+
+Run `toksight --client gemini,antigravity` to report both. Gemini also accepts `geminicli` and `gemini-cli`; Antigravity accepts `agy`, `antigravitycli` and `antigravity-cli`. Antigravity usage comes from recorded CLI transcript steps. A conversation database with no readable transcript produces a warning. Desktop IDE sessions are outside this collector's scope.
 
 ## Install
 
@@ -74,7 +78,7 @@ zcode   GLM-5.3             41   116K    1.99M        0   43.3K  94.5%   $0.870
 ### Options
 
 ```
---client <a,b>   only include these clients (zcode, claude, codex, opencode, kimi)
+--client <a,b>   only include these clients (zcode, claude, codex, opencode, kimi, gemini, antigravity)
 --since <date>   local date (YYYY-MM-DD), inclusive
 --until <date>   local date (YYYY-MM-DD), inclusive
 --today --week --month   date shortcuts

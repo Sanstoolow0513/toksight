@@ -88,6 +88,8 @@ async function main() {
       CODEX_HOME: path.join(fixture, 'codex'),
       ZCODE_HOME: path.join(fixture, 'zcode'),
       KIMI_CODE_HOME: path.join(fixture, 'kimi'),
+      GEMINI_CLI_HOME: fixture,
+      ANTIGRAVITY_CLI_DIR: path.join(fixture, 'antigravity'),
       OPENCODE_PATH: path.join(fixture, 'opencode-data'),
       XDG_CONFIG_HOME: path.join(fixture, 'xdg-config'),
       XDG_DATA_HOME: path.join(fixture, 'xdg-data'),

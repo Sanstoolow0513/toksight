@@ -1,12 +1,21 @@
 import * as claude from './claude.js';
+import * as antigravity from './antigravity.js';
+import * as gemini from './gemini.js';
 import * as codex from './codex.js';
 import * as kimi from './kimi.js';
 import * as opencode from './opencode.js';
 import * as zcode from './zcode.js';
 
-export const clients = { zcode, claude, codex, opencode, kimi };
+export const clients = { zcode, claude, codex, opencode, kimi, gemini, antigravity };
 
 export const clientAliases = {
+  gemini: 'gemini',
+  geminicli: 'gemini',
+  'gemini-cli': 'gemini',
+  antigravity: 'antigravity',
+  antigravitycli: 'antigravity',
+  'antigravity-cli': 'antigravity',
+  agy: 'antigravity',
   claude: 'claude',
   'claude-code': 'claude',
   codex: 'codex',

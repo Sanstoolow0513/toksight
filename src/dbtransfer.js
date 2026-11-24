@@ -4,6 +4,7 @@ import { mkdtempSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
+import { clients } from './clients/index.js';
 import { mergeUsageRows, usageRows } from './usageimports.js';
 import { decodePriceRecord } from './pricecatalog.js';
 import { validContextTiers } from './contextpricing.js';
@@ -12,7 +13,6 @@ import { PRICE_SOURCES, priceEnabled } from './priceselection.js';
 
 export const MAX_DATABASE_BYTES = 256 * 1024 * 1024;
 const HEADER = Buffer.from('SQLite format 3\0');
-const CLIENTS = new Set(['claude', 'codex', 'opencode', 'zcode', 'kimi']);
 const tokenFields = ['inputTokens', 'outputTokens', 'reasoningTokens', 'cacheReadTokens', 'cacheWriteTokens'];
 const rateFields = ['input', 'output', 'cacheRead', 'cacheWrite'];
 const fields = ['client', 'sessionId', 'model', 'timestamp', ...tokenFields, 'costUsd', 'directory', 'title'];
@@ -34,7 +34,7 @@ function record(row) {
   if (Object.hasOwn(entry, 'cacheWrite1hTokens')) check(Number.isSafeInteger(entry.cacheWrite1hTokens) && entry.cacheWrite1hTokens >= 0 && entry.cacheWrite1hTokens <= entry.cacheWriteTokens, 'invalid cache duration token count');
   check(object(entry) && fields.every((field) => Object.hasOwn(entry, field)) &&
     Object.keys(entry).every((field) => allowedFields.includes(field)), 'invalid usage record');
-  check(CLIENTS.has(entry.client), 'invalid agent');
+  check(typeof entry.client === 'string' && Object.hasOwn(clients, entry.client), 'invalid agent');
   check(typeof entry.model === 'string' && nullableText(entry.sessionId) && nullableText(entry.title) && nullableText(entry.directory), 'invalid usage text');
   check(entry.timestamp === null || (Number.isSafeInteger(entry.timestamp) && Math.abs(entry.timestamp) <= 8640000000000000), 'invalid timestamp');
   check(tokenFields.every((key) => Number.isSafeInteger(entry[key]) && entry[key] >= 0), 'invalid token count');

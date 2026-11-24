@@ -3,9 +3,11 @@ import assert from 'node:assert/strict';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 
 import * as claude from '../src/clients/claude.js';
+import * as gemini from '../src/clients/gemini.js';
+import * as antigravity from '../src/clients/antigravity.js';
 import * as codex from '../src/clients/codex.js';
 import * as opencode from '../src/clients/opencode.js';
 import * as kimi from '../src/clients/kimi.js';
@@ -15,6 +17,51 @@ import { collectAll } from '../src/collect.js';
 import { parseArgs } from '../src/args.js';
 
 const fixtures = path.join(path.dirname(fileURLToPath(import.meta.url)), 'fixtures');
+
+test('Gemini CLI merges repeated messages, scopes IDs to sessions, and splits token categories', async () => {
+  const { entries, warnings } = await gemini.collect({ env: {}, home: path.join(fixtures, 'gemini') });
+  assert.deepEqual(warnings, []);
+  assert.equal(entries.length, 3);
+  const legacy = entries.find(e => e.sessionId === 'legacy');
+  assert.deepEqual(legacy, {
+    client: 'gemini', model: 'gemini-2.5-pro', sessionId: 'legacy', directory: null, title: null,
+    timestamp: Date.parse('2026-08-29T15:40:00Z'), inputTokens: 47, cacheReadTokens: 60,
+    outputTokens: 23, reasoningTokens: 3, cacheWriteTokens: 0, costUsd: null,
+  });
+  const current = entries.find(e => e.sessionId === 'current');
+  assert.deepEqual([current.directory, current.inputTokens, current.cacheReadTokens, current.outputTokens],
+    ['C:\\work\\demo', 16, 2, 6]);
+  assert.equal(entries.find(e => e.sessionId === 'subagent').timestamp, null);
+});
+
+test('Antigravity CLI counts each transcript step once across copies and chunks', async () => {
+  const env = { ANTIGRAVITY_CLI_DIR: path.join(fixtures, 'antigravity') };
+  const { entries, warnings } = await antigravity.collect({ env });
+  assert.deepEqual(warnings, []);
+  assert.equal(entries.length, 2);
+  const step = entries.find(e => e.timestamp !== null);
+  assert.deepEqual(step, {
+    client: 'antigravity', sessionId: 'session-a', model: 'gemini-3.8-flash-high',
+    timestamp: Date.parse('2026-08-29T10:00:00Z'), inputTokens: 30, cacheReadTokens: 170,
+    outputTokens: 10, reasoningTokens: 0, cacheWriteTokens: 0, costUsd: null, directory: null, title: null,
+  });
+  assert.equal(entries.find(e => e.timestamp === null).inputTokens, 2);
+});
+
+test('client discovery distinguishes shared home, CLI transcripts and database-only sessions', async t => {
+  const home = await mkdtemp(path.join(os.tmpdir(), 'toksight-google-'));
+  t.after(() => rm(home, { recursive: true, force: true }));
+  const base = path.join(home, '.gemini');
+  await mkdir(path.join(base, 'antigravity-cli', 'conversations'), { recursive: true });
+  await writeFile(path.join(base, 'antigravity-cli', 'conversations', 'only-db.db'), '');
+  assert.deepEqual(await gemini.collect({ env: {}, home }), { entries: [], warnings: [] });
+  const result = await antigravity.collect({ env: {}, home });
+  assert.deepEqual(result.entries, []);
+  assert.match(result.warnings.join(' '), /no readable transcript for only-db\.db/);
+  for (const aliases of ['geminicli,agy', 'gemini-cli,antigravity-cli', 'gemini,antigravitycli']) {
+    assert.deepEqual(parseArgs(['--client', aliases]).clients, ['gemini', 'antigravity']);
+  }
+});
 
 test('claude parser dedupes message ids, keeping the largest usage snapshot', async () => {
   const { entries } = await claude.collect({

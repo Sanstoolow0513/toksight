@@ -86,7 +86,7 @@ toksight 是每天打开查看的本地数据工具。界面首先要保证信�
 （“墨”指 `rgb(24 24 26)`，底面类为 `rgb(24 24 22)`；“白”指 `rgb(236 236 240)`。）
 
 - `--ink-2`、`--ink-3` 在两种主题下，对面板和底面的对比度都 ≥ 4.5:1。正文层级靠 `--ink` / `--ink-2` / `--ink-3` 区分，不再用透明度减淡（少数小字例外：日格费用 `.85`、选中 chip 计数 `.7`）。
-- **Agent 色**（`--agent-*`，浅 / 深）：Claude `#b0603f` / `#e0906d`、Codex `#2f7f6a` / `#6cc5a8`、Kimi `#3f6db3` / `#86aef0`、ZCode `#8c5aa8` / `#c49ae0`、OpenCode `#77767a` / `#a9a8ae`、其他 `#8a898e` / `#9c9ba1`。组件通过 `agentStyle(id)` 设置 `--agent`，同一个 Agent 在所有页面、卡片和导出图里颜色一致。
+- **Agent 色**（`--agent-*`，浅 / 深）：Claude `#b0603f` / `#e0906d`、Codex `#2f7f6a` / `#6cc5a8`、Kimi `#3f6db3` / `#86aef0`、ZCode `#8c5aa8` / `#c49ae0`、OpenCode `#77767a` / `#a9a8ae`、Gemini CLI `#007c98` / `#64c9e0`、Antigravity CLI `#996d16` / `#e4b965`、其他 `#8a898e` / `#9c9ba1`。组件通过 `agentStyle(id)` 设置 `--agent`，同一个 Agent 在所有页面、卡片和导出图里颜色一致。
 - **Token 构成四色**：输入 `--c-input`（= `--signal`）、缓存读 `--c-cache-read`（`#2b2b2e` / `#e2e2e6`）、缓存写 `--c-cache-write`（`#8c8c90` / `#8e8e94`）、输出 `--c-output`（`#c8c8cb` / `#4a4a50`）。深色主题反转明度。对应类名为 `.part-0…3`。
 - 不新增颜色。日历、价格、外壳全部复用上表令牌。
 

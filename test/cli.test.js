@@ -7,7 +7,7 @@ import path from 'node:path';
 import { collectAll } from '../src/collect.js';
 
 // A tiny live fixture tree: one Claude session with a timestamped entry and
-// one without; the other four clients are pointed at roots that do not exist
+// one without; the other clients are pointed at roots that do not exist
 // (ENOENT is silent — not every agent is installed). Built per test in a temp
 // dir so collectAll runs fully offline against controlled data.
 function makeFixture({ opencodeDbIsDir = false } = {}) {
@@ -174,7 +174,7 @@ test('client filters restrict entries and perClient stays complete', async () =>
     const ctx = await collectAll({ ...BASE_OPTS, clients: ['codex'] }, { env, home });
     assert.equal(ctx.entries.length, 0);
     // perClient reports every client regardless of the filter.
-    assert.equal(ctx.perClient.length, 5);
+    assert.equal(ctx.perClient.length, 7);
     const claude = ctx.perClient.find((c) => c.id === 'claude');
     assert.equal(claude.entries.length, 3);
   } finally {
