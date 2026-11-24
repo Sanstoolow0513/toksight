@@ -5,27 +5,42 @@ import { listDirectory, readJson, readJsonl, walkFiles } from '../fsutils.js';
 export const id = 'gemini';
 export const label = 'Gemini CLI';
 
-export function sourceRoots({ env = process.env, home = os.homedir() } = {}) {
-  return [path.join(env.GEMINI_CLI_HOME || home, '.gemini', 'tmp')];
+export function sourceRoots({ env = process.env, home = os.homedir(), platform = process.platform } = {}) {
+  const base = env.GEMINI_CLI_HOME || home;
+  const roots = [path.join(base, '.gemini', 'tmp')];
+  if (platform === 'darwin') roots.push(path.join(base, '.cache', '.gemini', 'tmp'));
+  return roots;
 }
 
-async function readSession(file, entries) {
+async function readSession(file, requests, imports) {
   let sessionId = path.basename(file, path.extname(file));
   let directory = null;
+  let importedAt = Infinity;
   const messages = new Map();
 
   function recordMessage(message) {
+    // --session-file prepends this info message to the copied conversation.
+    if (message?.type === 'info' && typeof message.id === 'string' && /^import-\d+$/.test(message.id) &&
+        typeof message.content === 'string' && message.content.startsWith('Imported session from ')) {
+      const timestamp = Date.parse(message.timestamp);
+      const time = Number.isFinite(timestamp) ? timestamp : Number(message.id.slice(7));
+      if (Number.isSafeInteger(time)) importedAt = Math.min(importedAt, time);
+      return;
+    }
     if (message?.type !== 'gemini' || typeof message.id !== 'string' || !message.id || !message.tokens) return;
     const { input = 0, output = 0, cached = 0, tool = 0, thoughts = 0 } = message.tokens;
     if (![input, output, cached, tool, thoughts].every(n => Number.isSafeInteger(n) && n >= 0) || cached > input) return;
     if (!(input || output || tool || thoughts)) return;
     const time = Date.parse(message.timestamp);
-    messages.set(message.id, {
-      model: typeof message.model === 'string' && message.model || 'unknown',
+    const model = typeof message.model === 'string' && message.model || 'unknown';
+    const identity = JSON.stringify([message.id, message.timestamp, model, input, cached, tool, output, thoughts]);
+    const fields = {
+      model,
       timestamp: Number.isFinite(time) ? time : null,
       inputTokens: input - cached + tool, cacheReadTokens: cached,
       outputTokens: output + thoughts, reasoningTokens: thoughts,
-    });
+    };
+    messages.set(message.id, { identity, fields });
   }
 
   function readRecord(record) {
@@ -43,17 +58,43 @@ async function readSession(file, entries) {
   else readRecord(await readJson(file));
 
   // Rewinds change the visible chat, but the earlier requests still incurred usage.
-  for (const [messageId, fields] of messages) {
-    entries.set(JSON.stringify([sessionId, messageId]), {
+  if (Number.isFinite(importedAt)) imports.set(sessionId, Math.min(imports.get(sessionId) ?? Infinity, importedAt));
+  for (const [messageId, { identity, fields }] of messages) {
+    const entry = {
       client: id, sessionId, directory, title: null, cacheWriteTokens: 0, costUsd: null, ...fields,
-    });
+    };
+    requests.set(JSON.stringify([sessionId, messageId]), { identity, entry });
   }
 }
 
-export async function collect({ env, home, roots } = {}) {
-  const entries = new Map();
+function resolveImports(requests, imports) {
+  const entries = [];
+  const originals = new Set();
+  const copies = new Map();
+  for (const { identity, entry } of requests.values()) {
+    const importedAt = imports.get(entry.sessionId);
+    if (importedAt === undefined || (entry.timestamp !== null && entry.timestamp > importedAt)) {
+      entries.push(entry);
+      if (imports.size) originals.add(identity);
+      continue;
+    }
+    const previous = copies.get(identity);
+    if (!previous || importedAt < previous.importedAt ||
+        (importedAt === previous.importedAt && entry.sessionId < previous.entry.sessionId)) {
+      copies.set(identity, { importedAt, entry });
+    }
+  }
+  for (const [identity, { entry }] of copies) {
+    if (!originals.has(identity)) entries.push(entry);
+  }
+  return entries;
+}
+
+export async function collect({ env, home, platform, roots } = {}) {
+  const requests = new Map();
+  const imports = new Map();
   const warnings = [];
-  for (const root of roots ?? sourceRoots({ env, home })) {
+  for (const root of roots ?? sourceRoots({ env, home, platform })) {
     for (const project of await listDirectory(root, warnings)) {
       if (!project.isDirectory()) continue;
       const chats = path.join(root, project.name, 'chats');
@@ -63,12 +104,12 @@ export async function collect({ env, home, roots } = {}) {
         const main = path.dirname(file) === chats;
         if (main ? !path.basename(file).startsWith('session-') : !file.endsWith('.jsonl')) continue;
         try {
-          await readSession(file, entries);
+          await readSession(file, requests, imports);
         } catch (err) {
           warnings.push(`gemini: cannot read ${file} (${err.code || err.message})`);
         }
       }
     }
   }
-  return { entries: [...entries.values()], warnings };
+  return { entries: resolveImports(requests, imports), warnings };
 }

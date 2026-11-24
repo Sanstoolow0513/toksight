@@ -20,10 +20,12 @@ Inspired by [tokscale](https://github.com/junhoyeo/tokscale) (and in the same sp
 | Codex CLI | Files ending in `.jsonl` or `.jsonl.zst` under `~/.codex/sessions/` and `~/.codex/archived_sessions/` | `CODEX_HOME` |
 | OpenCode | `~/.local/share/opencode/opencode.db` (current `session_message` and older `message` tables); if absent or unreadable, fallback `~/.local/share/opencode/storage/message/**/*.json` | `OPENCODE_PATH` |
 | Kimi Code | `~/.kimi-code/sessions/**/agents/*/wire.jsonl` | `KIMI_CODE_HOME` |
-| Gemini CLI | `~/.gemini/tmp/<project>/chats/` session JSON and JSONL, including subagent sessions | `GEMINI_CLI_HOME` (parent of `.gemini`) |
+| Gemini CLI | Session JSON and JSONL under `~/.gemini/tmp/<project>/chats/`, including subagents. On macOS, also reads `~/.cache/.gemini/tmp/<project>/chats/` | `GEMINI_CLI_HOME` (base directory for both locations) |
 | Antigravity CLI | `~/.gemini/antigravity-cli/brain/<session>/.system_generated/logs/` transcripts and chunks | `ANTIGRAVITY_CLI_DIR` (CLI data directory for toksight) |
 
 Run `toksight --client gemini,antigravity` to report both. Gemini also accepts `geminicli` and `gemini-cli`; Antigravity accepts `agy`, `antigravitycli` and `antigravity-cli`. Antigravity usage comes from recorded CLI transcript steps. A conversation database with no readable transcript produces a warning. Desktop IDE sessions are outside this collector's scope.
+
+Gemini CLI sessions created with `--session-file` can contain copies of earlier requests. toksight counts those requests once under the original session, or under the earliest available import if only copies remain. New requests belong to the session that made them.
 
 ## Install
 
