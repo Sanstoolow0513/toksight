@@ -28,6 +28,8 @@ Web 查询 `period` 接受 `all`、`today`、`7d`、`30d`、`month`、`custom`�
 
 ## JSON 形状
 
+`GET /api/calendar` 只接受可选的 `timezone`，省略时使用服务端时区。响应含 `daily`、`scopeRange`、`timezone`、`view.today`、`view.availableClients`、`snapshot`、`version`、`warnings` 和导出页脚所需的 `pricing.updates`、`pricing.unpricedModels`。它遵守启动时的 Agent 和日期限制，`scopeRange` 为该范围内的完整活动边界，`daily` 仅列截至所选时区今天有记录的日期，字段与同范围 `/api/data` 的 `daily` 一致。无记录时返回空数组和两个均为 `null` 的活动边界。
+
 LiteLLM 长上下文估价逐请求选档；同一原始 ID 跨多个实际单价时，`pricing.modelRates` 同样增加 `variableRates: true`、返回 `source: null` 并省略四种单价。只含同一档位的过滤结果输出该档实际单价。模型原始 ID、展示归并和已有字段的单位保持不变，不给标准用量记录增加缓存时长或服务档位字段。
 
 报告命令的 `--json` 由 `src/payload.js` 构造：元信息 `tool`、`version`、`generatedAt`、`range`、`clientsFilter`，以及 `totals`、`cacheHitRate`、`clients`、`models`、`daily`、`monthly`、`sessions`、`pricing`、`warnings`。`pricing` 有 `sources`、`configDir`、`unpricedModels`、`updates`、`modelRates`。`clients` 每项的总量和命中率都从过滤后的记录计算。`models` 按客户端和展示名聚合，并保留原始 `modelIds`；价格细节仍在 `modelRates` 按原始 ID 输出。`refresh --json` 返回数据库刷新状态，不是报告载荷。

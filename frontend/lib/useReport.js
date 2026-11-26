@@ -3,12 +3,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { periodBounds } from './period.js';
 
-// Loads /api/data for one local date range (optionally only some of its
-// days). The previous result stays on screen (tagged with what it was
-// requested for) while the next one loads, and an aborted or superseded
-// request can never overwrite a newer one. Without a range nothing loads and
-// the last result is kept.
-function useRange({ since, until, days = null, agent = '', timezone }, tag, revision = 0) {
+// Keep the last tagged response while reloading. A null URL pauses the
+// request, and an aborted or superseded request cannot publish its result.
+function useRequest(url, tag, revision) {
   const [state, setState] = useState({ data: null, tag: null, error: null, loading: false });
   const active = useRef(null);
   const sequence = useRef(0);
@@ -17,7 +14,7 @@ function useRange({ since, until, days = null, agent = '', timezone }, tag, revi
   const tagKey = JSON.stringify(tag);
 
   const load = useCallback(async () => {
-    if (!since) { setState((s) => ({ ...s, loading: false })); return; }
+    if (!url) { setState((s) => ({ ...s, loading: false })); return; }
     const requested = latest.current;
     active.current?.abort();
     const controller = new AbortController();
@@ -25,11 +22,7 @@ function useRange({ since, until, days = null, agent = '', timezone }, tag, revi
     const current = ++sequence.current;
     setState((s) => ({ ...s, error: null, loading: true }));
     try {
-      const query = new URLSearchParams({ period: 'custom', since, until });
-      if (days) query.set('days', days);
-      if (agent) query.set('client', agent);
-      if (timezone) query.set('timezone', timezone);
-      const res = await fetch(`/api/data?${query}`, { cache: 'no-store', signal: controller.signal });
+      const res = await fetch(url, { cache: 'no-store', signal: controller.signal });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body.error || `HTTP ${res.status}`);
       if (!controller.signal.aborted && current === sequence.current) setState({ data: body, tag: requested, error: null, loading: false });
@@ -38,7 +31,7 @@ function useRange({ since, until, days = null, agent = '', timezone }, tag, revi
         setState((s) => ({ ...s, error: String(err?.message || err), loading: false }));
       }
     }
-  }, [since, until, days, agent, timezone, tagKey]);
+  }, [url, tagKey]);
 
   useEffect(() => {
     void load();
@@ -46,6 +39,20 @@ function useRange({ since, until, days = null, agent = '', timezone }, tag, revi
   }, [load, revision]);
 
   return { ...state, reload: load };
+}
+
+function useRange({ since, until, days, agent, timezone }, tag, revision) {
+  const query = new URLSearchParams({ period: 'custom', since, until });
+  if (days) query.set('days', days);
+  if (agent) query.set('client', agent);
+  if (timezone) query.set('timezone', timezone);
+  return useRequest(since ? `/api/data?${query}` : null, tag, revision);
+}
+
+export function useCalendarReport(enabled, today, revision, timezone) {
+  const url = enabled ? `/api/calendar?${new URLSearchParams({ timezone })}` : null;
+  const { tag, ...rest } = useRequest(url, { today, timezone }, revision);
+  return { ...rest, data: tag?.today === today && tag?.timezone === timezone ? rest.data : null };
 }
 
 // One calendar period or custom range for all agents.

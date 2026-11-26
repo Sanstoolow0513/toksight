@@ -19,8 +19,9 @@ export function parseDayList(value) {
   return [...new Set(keys)].sort();
 }
 
-export function resolveWebQuery(params, base, now = Date.now()) {
-  const allowed = new Set(['period', 'client', 'since', 'until', 'timezone', 'days']);
+const reportOptions = new Set(['period', 'client', 'since', 'until', 'timezone', 'days']);
+
+export function resolveWebQuery(params, base, now = Date.now(), allowed = reportOptions) {
   for (const key of params.keys()) {
     if (!allowed.has(key) || params.getAll(key).length !== 1) throw new Error(`unknown or repeated query option: ${key}`);
   }

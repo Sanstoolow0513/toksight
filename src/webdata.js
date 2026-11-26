@@ -240,7 +240,7 @@ export function activityRange(entries) {
   return { firstAt, lastAt };
 }
 
-function localTimezone() {
+export function localTimezone() {
   try {
     return Intl.DateTimeFormat().resolvedOptions().timeZone || null;
   } catch {

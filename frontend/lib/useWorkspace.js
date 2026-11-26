@@ -1,7 +1,7 @@
 'use client';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useToasts } from '@/components/Toasts';
-import { useRangeReport, useReport, useSelectionReport } from '@/lib/useReport';
+import { useCalendarReport, useRangeReport, useReport, useSelectionReport } from '@/lib/useReport';
 import { dayKey, detectedTimezone, isContiguous, periodKey, quickPeriod, shiftDay, validTimezone } from '@/lib/period';
 import { fmtBytes, fmtInt } from '@/lib/format';
 import { DEFAULT_LOCALE, t } from '@/lib/i18n';
@@ -32,12 +32,10 @@ export function useWorkspace() {
   const [databaseFile, setDatabaseFile] = useState(null);
   const [databaseError, setDatabaseError] = useState(null);
   const [refreshRevision, setRefreshRevision] = useState(0);
-  // Calendar: the selected local days (sorted), the range anchor, the zoom
-  // level and the first active day of the whole history (from scopeRange).
+  // Calendar selection is kept when switching pages.
   const [selection, setSelection] = useState(null);
   const [anchor, setAnchor] = useState(null);
   const [calendarZoom, setCalendarZoom] = useState('large');
-  const [firstDays, setFirstDays] = useState({});
   const reportRef = useRef(null);
   const toasts = useToasts();
   const { push: pushToast } = toasts;
@@ -50,19 +48,14 @@ export function useWorkspace() {
   const report = useReport(activePeriod, refreshRevision, timezone);
   const trend = useRangeReport(ready && view === 'today' ? shiftDay(today, -29) : null, today, refreshRevision, timezone);
 
-  // Calendar: the full history in one request (until the first day is known,
-  // today alone, which reports it), and the selection's details.
-  const firstDay = timezone ? firstDays[timezone] ?? null : null;
+  // The calendar summary and the selected dates load independently.
   const historyOn = ready && view === 'calendar';
-  const history = useRangeReport(historyOn ? (firstDay && firstDay < today ? firstDay : today) : null, today, refreshRevision, timezone);
-  const scopeFirstAt = [report, history].map((r) => r.data?.timezone === timezone ? r.data?.scopeRange : undefined).find((range) => range !== undefined);
-  const scopeFirstDay = scopeFirstAt === undefined ? undefined : scopeFirstAt?.firstAt != null ? dayKey(new Date(scopeFirstAt.firstAt), timezone) : today;
-  useEffect(() => {
-    if (scopeFirstDay && timezone && firstDays[timezone] !== scopeFirstDay) setFirstDays((previous) => ({ ...previous, [timezone]: scopeFirstDay }));
-  }, [scopeFirstDay, timezone, firstDays]);
-  const calendarStart = firstDay ? `${(firstDay < today ? firstDay : today).slice(0, 7)}-01` : today;
-  const historyComplete = Boolean(history.data && firstDay && history.since === (firstDay < today ? firstDay : today) && history.until === today);
-  const selectable = useCallback((key) => Boolean(today && calendarStart) && key >= calendarStart && key <= today, [today, calendarStart]);
+  const history = useCalendarReport(historyOn, today, refreshRevision, timezone);
+  const firstAt = history.data?.scopeRange.firstAt;
+  const firstDay = firstAt != null ? dayKey(new Date(firstAt), timezone) : today;
+  const calendarStart = today ? `${(firstDay < today ? firstDay : today).slice(0, 7)}-01` : null;
+  const selectionStart = history.data ? calendarStart : null;
+  const selectable = useCallback((key) => Boolean(today) && (!selectionStart || key >= selectionStart) && key <= today, [today, selectionStart]);
   const selected = useMemo(() => {
     const keys = (selection ?? []).filter(selectable);
     return keys.length ? keys : today ? [today] : [];
@@ -71,10 +64,10 @@ export function useWorkspace() {
   const selectionReport = useSelectionReport(historyOn ? selected : null, contiguous, refreshRevision, timezone);
 
   const current = view === 'calendar' ? history : report;
-  const data = view === 'calendar' ? (historyComplete ? history.data : null) : report.timezone === timezone ? report.data : null;
+  const data = view === 'calendar' ? history.data : report.timezone === timezone ? report.data : null;
   const shown = report.period;
   const pending = view === 'today' ? Boolean(activePeriod) && (JSON.stringify(activePeriod) !== JSON.stringify(shown) || timezone !== report.timezone)
-    : historyOn && !historyComplete;
+    : historyOn && !history.data;
   const reportBusy = current.loading || (pending && !current.error);
   const selectionPending = view === 'calendar' && (selectionReport.key !== selected.join(',') || !selectionReport.data || selectionReport.loading || Boolean(selectionReport.error));
   const updatingPrices = priceUpdating || Boolean(prices.status?.updating);

@@ -1,16 +1,18 @@
 import { collectAll, filterEntries } from './collect.js';
-import { activityRange, buildHeatmap, buildTrend, buildTrendByAgent, buildWebExtras } from './webdata.js';
+import { activityRange, buildHeatmap, buildTrend, buildTrendByAgent, buildWebExtras, localTimezone } from './webdata.js';
 import { buildComparison } from './comparison.js';
 import { buildCostCoverage } from './costcoverage.js';
 import { resolveWebQuery } from './webquery.js';
 import { calendarDaysBetween, dateKey, endOfDay, startOfDay, stepDay, weekday } from './dates.js';
-import { localDate } from './aggregate.js';
+import { localDate, unpricedModels } from './aggregate.js';
 import { createUsageDatabase } from './database.js';
 import { getPricing, PRICE_REFRESH_MS } from './pricing.js';
 import { PRICE_SOURCES, validPriceSources } from './priceselection.js';
 import { resetPriceDatabase } from './pricereset.js';
-import { buildPayload } from './payload.js';
+import { buildPayload, dailyRows, reportVersion } from './payload.js';
 import { createGitHubBackup } from './ghsync.js';
+
+const calendarOptions = new Set(['timezone']);
 
 // The database is loaded before serving. Requests reuse its in-memory snapshot;
 // refreshes share a single collection/write and swap only after commit.
@@ -102,11 +104,13 @@ export function createWebDataService(base, { collect = collectAll, env, home, da
     await refresh();
     return database.read();
   }
+  function resolveQuery(params, time, allowed) {
+    try { return resolveWebQuery(params, base, time, allowed); }
+    catch (err) { err.status = 400; err.code = 'BAD_QUERY'; throw err; }
+  }
   const getData = async (params = new URLSearchParams()) => {
     const time = now();
-    let opts;
-    try { opts = resolveWebQuery(params, base, time); }
-    catch (err) { err.status = 400; err.code = 'BAD_QUERY'; throw err; }
+    const opts = resolveQuery(params, time);
     if (initialized && database.priceStatus().completed && database.priceStatus().autoUpdate) await updatePrices();
     const raw = await snapshot();
     const timezone = opts.timezone;
@@ -150,6 +154,31 @@ export function createWebDataService(base, { collect = collectAll, env, home, da
         startup: { clients: base.clients, since: base.since == null ? null : localDate(base.since, timezone), until: base.until == null ? null : localDate(base.until, timezone) },
       },
     };
+  };
+  // A committed snapshot owns one calendar result. Replacing it also releases
+  // the old cache, including when another process writes to the database.
+  const calendars = new WeakMap();
+  getData.calendar = async (params = new URLSearchParams()) => {
+    const time = now();
+    const opts = resolveQuery(params, time, calendarOptions);
+    const timezone = opts.timezone ?? localTimezone();
+    const today = localDate(time, timezone);
+    const raw = await snapshot();
+    let result = calendars.get(raw);
+    if (!result || result.timezone !== timezone || result.view.today !== today) {
+      const until = Math.min(opts.until ?? Infinity, endOfDay(time, timezone));
+      const { entries, warnings } = filterEntries(raw.entries, { ...opts, until });
+      result = {
+        version: reportVersion, timezone, view: { today, availableClients: opts.availableClients },
+        scopeRange: activityRange(filterEntries(raw.entries, opts).entries),
+        snapshot: { refreshedAt: raw.refreshedAt, entries: raw.entries.length },
+        daily: dailyRows(entries, timezone),
+        pricing: { updates: raw.pricing.updates ?? {}, unpricedModels: unpricedModels(entries, raw.pricing.priceFor) },
+        warnings: [...raw.warnings, ...warnings],
+      };
+      calendars.set(raw, result);
+    }
+    return { ...result, warnings: [...result.warnings, ...startupPricingWarnings] };
   };
   getData.initialize = initialize;
   getData.refresh = refresh;

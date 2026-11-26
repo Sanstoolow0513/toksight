@@ -13,6 +13,7 @@ Agent 文件 / toksight 中的导入记录
        -> refresh -> SQLite 已提交快照
 
 GET /api/data -> 读取快照 -> 查询范围与筛选 -> buildPayload + Web 聚合
+GET /api/calendar -> 读取快照 -> 复用或生成该时区截至今天的按日汇总
 POST /api/refresh -> collectAll -> 事务替换快照
 数据库备份 -> 验证并合并 toksight SQLite -> 后续报告读取
 
