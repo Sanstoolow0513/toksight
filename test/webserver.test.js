@@ -76,6 +76,25 @@ test('/api/data serves JSON with no-store and no CORS', async () => {
   );
 });
 
+test('/api/calendar serves the summary for GET and HEAD only', async () => {
+  const getData = () => assert.fail('calendar should not build a full report');
+  getData.calendar = (params) => ({ timezone: params.get('timezone'), daily: [] });
+  await withServer({ getData }, async (url) => {
+    const route = url + '/api/calendar?timezone=UTC';
+    const res = await fetch(route);
+    assert.equal(res.headers.get('cache-control'), 'no-store');
+    assert.deepEqual(await res.json(), { timezone: 'UTC', daily: [] });
+    const head = await fetch(route, { method: 'HEAD' });
+    assert.equal(head.status, 200);
+    assert.equal(await head.text(), '');
+    const post = await fetch(route, { method: 'POST' });
+    assert.equal(post.status, 405);
+    assert.equal(post.headers.get('allow'), 'GET, HEAD');
+    const foreign = await rawRequest(Number(new URL(url).port), rawGet('/api/calendar', 'example.test'));
+    assert.match(foreign, /^HTTP\/1\.1 403/);
+  });
+});
+
 test('/api/data remains read-only and other /api paths are JSON 404s', async () => {
   await withServer({}, async (url) => {
     const posted = await fetch(`${url}/api/data`, { method: 'POST', body: '{}' });

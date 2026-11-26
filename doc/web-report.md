@@ -7,6 +7,7 @@
 | 路由 | 方法 | 作用 |
 | --- | --- | --- |
 | `/api/data` | GET/HEAD | 从已提交快照生成筛选后的报告；参数见[数据契约](data-contract.md) |
+| `/api/calendar` | GET/HEAD | 日历左栏所用的历史范围与每日用量；可选参数为 `timezone` |
 | `/api/refresh` | POST | 重扫 Agent 并事务替换快照 |
 | `/api/prices/update` | POST | 本机强制下载 LiteLLM 第一方价格 |
 | `/api/prices/reset` | POST | 清除价格、历史及下载缓存，返回建库引导，保留用量与导入；本服务忙时返回 409 |
@@ -52,7 +53,7 @@ Tokens 与费用在昨日有非零基数时展示相对变化，文案明确比�
 会话初始五条，可展开 API 返回的前十条，显示当前数量和总会话数；PNG 捕获当前展开状态。
 
 日历使用 `CalendarView`，两栏 `minmax(--cal-col-min, --cal-col) 1fr` 占满视口剩余高度（页面不滚动），≤1200px 改为上下堆叠（日历 70vh）。
-`Calendar`（日历栏）一次请求全部历史（`since=<首个记录日>&until=<今天>`，首日来自 `scopeRange.firstAt`），按月渲染记忆化的 `MonthBlock`（`role="grid"`，周一开始，月标题吸顶）；第 8 列为 ISO 周单元（`isoWeek` / `weekLabelParts`，跨月的周在两个月块里都显示整周合计，未来日不计）。热度为 `heatLevel(value, heatMax(全部历史))`，滚动时色阶不变。
+`Calendar`（日历栏）通过 `/api/calendar` 一次获取历史边界与每日用量，与右栏选区请求并行。服务端为当前已提交快照缓存最近一个时区和当地日期的汇总；更换快照、时区或跨过当地午夜后重新汇总。左栏从 `scopeRange.firstAt` 所在月份开始，按月渲染记忆化的 `MonthBlock`（`role="grid"`，周一开始，月标题吸顶）；第 8 列为 ISO 周单元（`isoWeek` / `weekLabelParts`，跨月的周在两个月块里都显示整周合计，未来日不计）。热度为 `heatLevel(value, heatMax(全部历史))`，滚动时色阶不变。
 缩放两级（大 / 紧凑），由按钮、Ctrl/⌘ + 滚轮（累计 40）、双指捏合（1.25 / 0.8）或 `+` / `-` 切换，用 `el.animate` 做 FLIP（360ms，锚点日保持原位，动画中忽略新请求，减少动态效果时直接切换），级别存入 prefs。
 选择规则：单击单选、拖动（指针捕获，距边缘 48px 自动滚动）、Shift 区间、Ctrl/⌘ 增减（至少保留一天）、单击周数选整周（Ctrl/⌘ 追加）、Esc 回到今天；未来日不可选。键盘使用 roving tabindex：方向键 ±1 / ±7 天（大档在行尾右移到周单元，周单元上下移动到相邻周行）、Shift+方向键扩展区间、Home / End、PageUp / PageDown、Enter / 空格、Ctrl+空格。悬停或键盘聚焦显示日 / 周提示，拖动时隐藏。
 `CalendarDetail`（详情栏）通过 `useSelectionReport` 请求选区：连续区间用 `since` / `until`，不连续时追加 `days=`。头部、四项数字与说明行；单日显示时段条；“用量拆分”按 Agent（`agentRows`）与按模型（`mergedModelRows`，同模型跨 Agent 合并、提示列出 Agent），可切换为会话列表（复用 `SessionRow`）。拆分 / 会话的滚动区 `.dcard-body` 是 `tabIndex=0` 的 `role="region"`（`aria-label` 为 `splitRegion` / `sessionsRegion`），可用键盘聚焦滚动，焦点环画在区域内侧。日格与周单元的焦点环偏移 `--focus-offset-sel`（3px）；选中日获得焦点时选中框改由外圈 `box-shadow` 绘制，焦点环始终在选中框之外。

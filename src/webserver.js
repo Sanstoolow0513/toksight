@@ -232,7 +232,7 @@ export function createWebServer({
     // 127.0.0.1 is still remoteAddress-loopback, but its Host header is not.
     const localHostHeader = isLocalHostHeader(req.headers.host);
 
-    if (['/api/data', '/api/refresh', '/api/prices', '/api/prices/update', '/api/prices/reset', '/api/prices/status', '/api/setup', '/api/import/db', '/api/export/db', ...SYNC_ROUTES].includes(pathname)) {
+    if (['/api/data', '/api/calendar', '/api/refresh', '/api/prices', '/api/prices/update', '/api/prices/reset', '/api/prices/status', '/api/setup', '/api/import/db', '/api/export/db', ...SYNC_ROUTES].includes(pathname)) {
       // Loopback-bound servers (the default) reject foreign Host headers;
       // a user who deliberately binds --host 0.0.0.0 exposes the dashboard
       // to the LAN on purpose, so the Host check would only break that.
@@ -241,6 +241,7 @@ export function createWebServer({
         return;
       }
       const refresh = pathname === '/api/refresh';
+      const calendar = pathname === '/api/calendar';
       const priceReset = pathname === '/api/prices/reset';
       const priceUpdate = pathname === '/api/prices/update';
       const priceStatus = pathname === '/api/prices/status';
@@ -269,7 +270,7 @@ export function createWebServer({
         return;
       }
       try {
-        if ((priceReset && !getData.resetPrices) || (refresh && !getData.refresh) || (priceUpdate && !getData.updatePrices) ||
+        if ((calendar && !getData.calendar) || (priceReset && !getData.resetPrices) || (refresh && !getData.refresh) || (priceUpdate && !getData.updatePrices) ||
           (importingDb && !getData.importDatabase) || (exportingDb && !getData.exportDatabase) || (setup && !getData.setup) || (priceStatus && !getData.priceStatus) || (prices && !getData.prices)
           || (syncStatus && !getData.syncStatus) || (syncConfig && !getData.syncConfig) || (syncUpload && !getData.syncUpload) || (syncRestore && !getData.syncRestore)) {
           sendJson(res, 501, { error: 'operation is not configured', code: 'NOT_IMPLEMENTED' }, req.method);
@@ -286,7 +287,7 @@ export function createWebServer({
           : syncUpload ? await getData.syncUpload() : syncRestore ? await getData.syncRestore()
           : priceReset ? await getData.resetPrices() : refresh ? await getData.refresh() : priceUpdate ? await getData.updatePrices()
           : setup ? await getData.setup(await readSetupBody(req)) : priceStatus ? await getData.priceStatus() : prices ? await getData.prices(url.searchParams)
-          : importingDb ? await getData.importDatabase(await readDatabaseBody(req)) : await getData(url.searchParams);
+          : importingDb ? await getData.importDatabase(await readDatabaseBody(req)) : calendar ? await getData.calendar(url.searchParams) : await getData(url.searchParams);
         sendJson(res, 200, payload, req.method);
       } catch (err) {
         // 404 and 502 come only from GitHub backup (no remote backup / GitHub or network failure).

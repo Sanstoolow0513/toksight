@@ -65,7 +65,7 @@ Run `toksight web --open` to open the report at `http://127.0.0.1:4729`.
 | To… | Use |
 | --- | --- |
 | See today's activity | **Today** shows tokens, cost, cache hit rate and sessions. Expand an agent to see its models. |
-| Explore another period | In **Calendar**, select a day or drag across a range to see its totals and sessions. |
+| Explore another period | **Calendar** loads daily totals and selection details independently. Select a day or drag across a range to see its totals and sessions. |
 | Share a report | **Export image** saves the current Today or Calendar view as a PNG. |
 | Pick up new sessions | Click **Refresh** or run `toksight refresh`. Change the reporting timezone in **Settings**. |
 

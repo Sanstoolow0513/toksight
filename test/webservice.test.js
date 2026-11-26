@@ -24,6 +24,63 @@ const createWebDataService = (base, options) => createService(base, { genericPri
 const service = (entries, opts = base) => createWebDataService(opts, { collect: async () => raw(entries), database: memoryDatabase(), now });
 const query = (text) => new URLSearchParams(text);
 
+test('calendar daily rows and footer match the scoped report across DST and midnight', async (t) => {
+  let time = Date.parse('2026-11-02T07:59:59Z');
+  const start = Date.parse('2026-11-01T08:30:00Z');
+  const end = Date.parse('2026-11-02T08:30:00Z');
+  const get = createWebDataService({ ...base, since: start, until: end, clients: ['claude'] }, {
+    database: memoryDatabase(), now: () => time, collect: async () => raw([
+      entry({ timestamp: start - 1 }), entry({ timestamp: start }), entry({ timestamp: start + 3600000 }),
+      entry({ client: 'codex', timestamp: start }), entry({ timestamp: null }),
+      entry({ timestamp: end }), entry({ timestamp: end + 1 }),
+    ]),
+  });
+  t.after(() => get.close());
+  const zone = query('timezone=America/Los_Angeles');
+  const calendar = await get.calendar(zone);
+  const report = await get(query('period=custom&since=2026-11-01&until=2026-11-01&timezone=America/Los_Angeles'));
+  for (const key of ['daily', 'scopeRange', 'timezone', 'version', 'snapshot', 'warnings']) assert.deepEqual(calendar[key], report[key]);
+  for (const key of ['updates', 'unpricedModels']) assert.deepEqual(calendar.pricing[key], report.pricing[key]);
+  assert.deepEqual(calendar.view.availableClients, report.view.availableClients);
+  assert.deepEqual(calendar.scopeRange, { firstAt: start, lastAt: end });
+  assert.equal(calendar.daily[0].requests, 2);
+  assert.equal(calendar.daily[0].sessions, 1);
+  assert.equal((await get.calendar(zone)).daily, calendar.daily);
+  const tokyo = await get.calendar(query('timezone=Asia/Tokyo'));
+  assert.equal(tokyo.view.today, '2026-11-02');
+  assert.deepEqual(tokyo.daily.map((r) => r.requests), [2, 1]);
+  assert.deepEqual((await get.calendar(zone)).daily, calendar.daily);
+  time = Date.parse('2026-11-02T08:00:00Z');
+  assert.deepEqual((await get.calendar(zone)).daily.map((r) => r.requests), [2, 1]);
+  for (const params of ['timezone=', 'timezone=bogus', 'timezone=UTC&timezone=UTC', 'period=all']) {
+    await assert.rejects(get.calendar(query(params)), { status: 400, code: 'BAD_QUERY' });
+  }
+});
+
+test('calendar reads the new committed snapshot even if its refresh timestamp is unchanged', async (t) => {
+  const db = memoryDatabase();
+  const get = createWebDataService(base, { database: db, now });
+  t.after(() => get.close());
+  const refreshedAt = new Date(now()).toISOString();
+  db.replace(raw([]), refreshedAt);
+  const empty = await get.calendar();
+  assert.deepEqual(empty.daily, []);
+  assert.deepEqual(empty.scopeRange, { firstAt: null, lastAt: null });
+  db.replace(raw([entry()]), refreshedAt);
+  const filled = await get.calendar();
+  assert.equal(filled.snapshot.refreshedAt, empty.snapshot.refreshedAt);
+  assert.equal(filled.daily[0].totalTokens, 160);
+  db.updatePriceCatalog({ records: [], sources: [], sourceDetails: { litellm: { fetchedAt: refreshedAt, state: 'fresh' } } }, refreshedAt);
+  assert.equal((await get.calendar()).pricing.updates.litellm.fetchedAt, refreshedAt);
+  const donor = memoryDatabase();
+  t.after(() => donor.close());
+  const imported = raw([entry({ timestamp: at(7), sessionId: 'imported', costUsd: null })]);
+  imported.pricing.priceFor = () => null;
+  donor.replace(imported);
+  await get.importDatabase(donor.exportDatabase());
+  assert.deepEqual((await get.calendar()).daily.map((r) => r.totalTokens), [160, 160]);
+});
+
 test('timezone queries align filtering, daily/hourly series and comparisons without sharing zone state', async () => {
   const time = Date.parse('2026-09-30T01:00:00Z');
   const get = createWebDataService(base, { database: memoryDatabase(), now: () => time, collect: async () => raw([

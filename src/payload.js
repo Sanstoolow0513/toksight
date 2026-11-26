@@ -10,6 +10,11 @@ import { modelIdentity, reportModelName } from './pricecatalog.js';
 
 const require = createRequire(import.meta.url);
 const pkg = require('../package.json');
+export const reportVersion = pkg.version;
+
+export function dailyRows(entries, timezone) {
+  return agg.byDay(entries, timezone).map((r) => ({ date: r.key, ...r.totals, cacheHitRate: agg.cacheHitRate(r.totals) }));
+}
 
 function modelRateRows(entries, pricing) {
   const groups = new Map(), rows = [];
@@ -50,7 +55,7 @@ export function buildPayload(ctx) {
   const totals = agg.summarize(entries);
   return {
     tool: 'toksight',
-    version: pkg.version,
+    version: reportVersion,
     generatedAt: new Date().toISOString(),
     range: { since: opts.since, until: opts.until },
     clientsFilter: opts.clients,
@@ -70,7 +75,7 @@ export function buildPayload(ctx) {
       firstAt: r.firstAt,
       lastAt: r.lastAt,
     })),
-    daily: agg.byDay(entries, opts.timezone).map((r) => ({ date: r.key, ...r.totals, cacheHitRate: agg.cacheHitRate(r.totals) })),
+    daily: dailyRows(entries, opts.timezone),
     monthly: agg.byMonth(entries, opts.timezone).map((r) => ({ month: r.key, ...r.totals, cacheHitRate: agg.cacheHitRate(r.totals) })),
     sessions: agg.bySession(entries, pricing.priceFor).slice(0, opts.top).map((r) => ({
       client: r.client,
